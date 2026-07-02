@@ -419,7 +419,10 @@ function sanitizeChoiceFillResult(field, parsed, value, source, evidence, extern
 
   const context = getTemplateContextText(field);
   const reasonText = `${source || ""}\n${evidence || ""}`;
-  const isExternallySupported = valueSupportedByExternalText(value, externalText) || choiceEvidenceSupportsValue(value, reasonText);
+  const isExternallySupported =
+    valueSupportedByExternalText(value, externalText) ||
+    choiceOptionSupportedByExternalText(value, externalText) ||
+    choiceEvidenceSupportsValue(value, reasonText);
 
   if (looksLikeUnfilledChoiceTemplate(value) || looksLikeChoiceProofNote(value)) {
     return createMissingChoiceResult(source, "模型返回的是模板占位或证明材料说明，未作为有效选择写入。");
@@ -464,6 +467,13 @@ function valueSupportedByExternalText(value, externalText) {
   const normalizedValue = normalizeForSearch(value);
   if (normalizedValue.length < 4) return false;
   return normalizeForSearch(externalText).includes(normalizedValue);
+}
+
+function choiceOptionSupportedByExternalText(value, externalText) {
+  const normalizedExternal = normalizeForSearch(externalText);
+  return [...String(value || "").matchAll(/[（(]([^（）()]{2,24})[）)]/g)]
+    .map((match) => normalizeForSearch(match[1]))
+    .some((term) => term.length >= 2 && normalizedExternal.includes(term));
 }
 
 function choiceEvidenceSupportsValue(value, evidenceText) {
