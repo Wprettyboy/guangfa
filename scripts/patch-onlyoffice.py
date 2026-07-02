@@ -101,7 +101,7 @@ ai_plugin = Path("/var/www/onlyoffice/documentserver/sdkjs-plugins/{9DC93CDB-B57
 plugin_index = ai_plugin / "index.html"
 if plugin_index.exists():
     plugin_index_text = plugin_index.read_text(encoding="utf-8")
-    plugin_index_next = re.sub(r'src="scripts/engine/register\.js(?:\?gf=\d+)?"', 'src="scripts/engine/register.js?gf=2"', plugin_index_text)
+    plugin_index_next = re.sub(r'src="scripts/engine/register\.js(?:\?gf=\d+)?"', 'src="scripts/engine/register.js?gf=3"', plugin_index_text)
     if plugin_index_next != plugin_index_text:
         write_patched(plugin_index, plugin_index_next)
     else:
@@ -134,6 +134,25 @@ if chat_js.exists():
         rewrite_gzip(chat_js)
 
 register_js = ai_plugin / "scripts/engine/register.js"
+base_prompt_helper = r'''
+
+	function guangfaEnsureBaseChatPrompt(requestData) {
+		let messages = Array.isArray(requestData && requestData.messages) ? requestData.messages : [];
+		let prompt = "你是招标文件制作助手。只能用自然语言回答用户问题；禁止调用或输出 OnlyOffice 宏、writeMacro、functionCalling、工具调用、代码块或内部 API。优先依据【广发知识库上下文】回答；资料不足时明确说明缺少依据，不要编造。";
+		if (messages.length > 0 && messages[0].role === "system") {
+			messages[0].content = prompt + "\n\n" + String(messages[0].content || "");
+			return;
+		}
+		messages.unshift({ role: "system", content: prompt });
+	}
+
+	function guangfaCleanChatReply(text) {
+		let value = String(text || "").trim();
+		if (/^\[functionCalling/i.test(value) || /\bwriteMacro\b/i.test(value))
+			return "当前聊天机器人已禁用 OnlyOffice 宏工具。请直接用自然语言提问，我会优先依据已挂载知识库回答。";
+		return value;
+	}
+'''
 knowledge_helper = r'''
 
 	async function guangfaAttachKnowledgeToChatRequest(requestData) {
@@ -216,7 +235,62 @@ knowledge_helper = r'''
 if register_js.exists():
     register_text = register_js.read_text(encoding="utf-8")
     register_next = register_text
-    if "guangfaAttachKnowledgeToChatRequest" not in register_next:
+    pure_chat_handler = r'''		chatWindow.attachEvent("onChatMessage", async function(messageHistory) {
+			AgentState.isStopped = false;
+
+			let requestEngine = AI.Request.create(AI.ActionType.Chat);
+			if (!requestEngine)
+				return;
+
+			let requestData = {
+				messages: Array.isArray(messageHistory) ? messageHistory.slice() : []
+			};
+
+			guangfaEnsureBaseChatPrompt(requestData);
+			await guangfaAttachKnowledgeToChatRequest(requestData);
+
+			let isStreamToChat = false;
+			try {
+				let fullResponse = await requestEngine.chatRequestAgent(requestData, false, async function(chunk) {
+					if (AgentState.isStopped)
+						return;
+					if (!isStreamToChat) {
+						isStreamToChat = true;
+						chatWindow.command("onChatStreamStart");
+					}
+					chatWindow.command("onChatStreamChunk", chunk);
+				});
+
+				if (isStreamToChat)
+					chatWindow.command("onChatStreamEnd");
+
+				if (AgentState.isStopped)
+					return;
+
+				if (!fullResponse) {
+					chatWindow.command("onChatReply", Asc.plugin.tr("Error:") + " [provider]");
+					return;
+				}
+
+				let result = guangfaCleanChatReply(fullResponse.content || "");
+				if (!isStreamToChat && result)
+					chatWindow.command("onChatReply", result);
+			} catch (error) {
+				chatWindow.command("onChatReply", "AI 回复失败：" + (error && (error.message || error) || "未知错误"));
+			} finally {
+				chatWindow.command("onChatStreamEnd");
+			}
+		});'''
+    register_next = re.sub(
+        r'\t\tchatWindow\.attachEvent\("onChatMessage", async function\(messageHistory\) \{.*?\n\t\t\}\);\s*(?=\n\t\tchatWindow\.attachEvent\("onChatReplace")',
+        pure_chat_handler,
+        register_next,
+        count=1,
+        flags=re.S,
+    )
+    if "function guangfaEnsureBaseChatPrompt" not in register_next:
+        register_next = register_next.replace("\n\twindow.chatWindowShow = chatWindowShow;\n", "\n\twindow.chatWindowShow = chatWindowShow;\n" + base_prompt_helper + "\n")
+    if "async function guangfaAttachKnowledgeToChatRequest" not in register_next:
         register_next = register_next.replace("\n\twindow.chatWindowShow = chatWindowShow;\n", "\n\twindow.chatWindowShow = chatWindowShow;\n" + knowledge_helper + "\n")
     if "await guangfaAttachKnowledgeToChatRequest(requestData);" not in register_next:
         register_next = register_next.replace("\n\t\t\t// LOOP\n", "\n\t\t\tawait guangfaAttachKnowledgeToChatRequest(requestData);\n\n\t\t\t// LOOP\n")
