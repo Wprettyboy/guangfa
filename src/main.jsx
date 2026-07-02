@@ -388,7 +388,7 @@ function inferFillMode(field = {}) {
   const text = getTemplateFieldSourceText(field) || field.label || field.name || "";
   const context = `${text} ${field.question || ""} ${field.answerFormat || ""}`.replace(/\s+/g, " ");
   if (category === "单选项") return isAmountChoiceContext(context) ? "amount-choice" : "choice";
-  if (legacyType === "日期" || /日期|年月日|编制时间/.test(context)) return "date";
+  if (legacyType === "日期" || /日期|年\s*月\s*日|年月日|编制时间/.test(context)) return "date";
   if (legacyType === "金额" || /金额|限价|报价|费用|预算|元|万元/.test(context)) return "amount";
   if (legacyType === "长文本" || legacyType === "表格字段" || /包括但不限于|包括|包含|不限于|清单|配置|分项|表格|主要施工内容|工作内容|采购范围|实施范围|服务范围|内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
   return "short";
@@ -4558,6 +4558,7 @@ function buildOnlyOfficeLiveFillText(field = {}) {
   if (hasInputPoint(field) && !isReplacementField(field)) return value;
   const source = getTemplateFieldSourceText(field);
   if (!source) return value;
+  if (isDateField(field) && hasDateSegmentBlank(source)) return buildDateSegmentFillText(source, value) || source;
   if (/[□☐○〇▢☑✓✔]/.test(source)) return buildOnlyOfficeChoiceFillText(source, getFieldChoiceValue(field) || value);
   if (/[_＿—-]{2,}|\s{2,}/.test(source)) return source.replace(/_{2,}|＿+|—+|-{2,}|\s{2,}/, value);
   const quoteBlank = source.match(/^(.*?[“"])\s+([”"].*)$/);
@@ -4983,7 +4984,7 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
               value={draftValue}
               onChange={(event) => setDraftValue(event.target.value)}
               onKeyDown={(event) => event.stopPropagation()}
-              placeholder="YYYY年MM月DD日"
+              placeholder="YYYY年MM月DD日 HH时mm分"
             />
           </div>
         ) : (
@@ -6741,6 +6742,8 @@ function replaceDateSegmentInTarget(target, field, parts) {
   const text = target.textContent || "";
   const match = getDateSegmentBlankPattern().exec(text);
   if (!match) return false;
+  const replacement = buildDateSegmentReplacement(match[0], parts);
+  if (!replacement) return true;
 
   storeOriginalText(target);
   target.innerHTML = "";
@@ -6750,7 +6753,14 @@ function replaceDateSegmentInTarget(target, field, parts) {
   appendDateFillPart(target, field, parts.month);
   target.append(document.createTextNode("月"));
   appendDateFillPart(target, field, parts.day);
-  target.append(document.createTextNode(`日${text.slice(match.index + match[0].length)}`));
+  target.append(document.createTextNode("日"));
+  if (dateSegmentNeedsTime(match[0])) {
+    appendDateFillPart(target, field, parts.hour);
+    target.append(document.createTextNode("时"));
+    appendDateFillPart(target, field, parts.minute);
+    target.append(document.createTextNode("分"));
+  }
+  target.append(document.createTextNode(text.slice(match.index + match[0].length)));
   target.classList.add("docx-fill-mutated");
   return true;
 }
@@ -6768,7 +6778,24 @@ function hasDateSegmentBlank(text) {
 }
 
 function getDateSegmentBlankPattern() {
-  return /[_＿—\-\s]{1,12}年[_＿—\-\s]{1,8}月[_＿—\-\s]{1,8}日/;
+  return /[_＿—\-\s]{0,12}年[_＿—\-\s]{0,8}月[_＿—\-\s]{0,8}日(?:[_＿—\-\s]{0,8}时[_＿—\-\s]{0,8}分)?/;
+}
+
+function buildDateSegmentFillText(source, value) {
+  const parts = parseDateParts(value);
+  if (!parts) return "";
+  return String(source || "").replace(getDateSegmentBlankPattern(), (match) => buildDateSegmentReplacement(match, parts) || match);
+}
+
+function buildDateSegmentReplacement(segment, parts) {
+  if (!parts?.year || !parts.month || !parts.day) return "";
+  if (dateSegmentNeedsTime(segment) && (!parts.hour || !parts.minute)) return "";
+  const dateText = `${parts.year}年${parts.month}月${parts.day}日`;
+  return dateSegmentNeedsTime(segment) ? `${dateText}${parts.hour}时${parts.minute}分` : dateText;
+}
+
+function dateSegmentNeedsTime(segment) {
+  return /时[_＿—\-\s]{0,8}分/.test(segment || "");
 }
 
 function scoreDateSegmentCandidate(text, field) {
@@ -7484,11 +7511,13 @@ function applyDateSegmentFillToDocxXml(paragraphs, field) {
 
   const match = getDateSegmentBlankPattern().exec(target.text);
   if (!match) return false;
+  const replacement = buildDateSegmentReplacement(match[0], parts);
+  if (!replacement) return true;
 
   setXmlParagraphWithFill(
     target.item,
     target.text.slice(0, match.index),
-    `${parts.year}年${parts.month}月${parts.day}日`,
+    replacement,
     target.text.slice(match.index + match[0].length),
     field,
     { underline: shouldUnderlineFilledValue(match[0]) },
@@ -7987,30 +8016,36 @@ function parseDateParts(value) {
   const text = String(value || "").trim();
   if (!text) return null;
 
-  const chineseMatch = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  const chineseMatch = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*(\d{1,2})(?:\s*时\s*|[:：])\s*(\d{1,2})\s*分?)?/);
   if (chineseMatch) {
     return {
       year: chineseMatch[1],
       month: chineseMatch[2],
       day: chineseMatch[3],
+      hour: chineseMatch[4] || "",
+      minute: chineseMatch[5] || "",
     };
   }
 
-  const numericMatch = text.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  const numericMatch = text.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s]+(\d{1,2})[:：时](\d{1,2})(?:分)?)?/);
   if (numericMatch) {
     return {
       year: numericMatch[1],
       month: padDatePart(numericMatch[2]),
       day: padDatePart(numericMatch[3]),
+      hour: numericMatch[4] ? padDatePart(numericMatch[4]) : "",
+      minute: numericMatch[5] ? padDatePart(numericMatch[5]) : "",
     };
   }
 
-  const spacedMatch = text.match(/(\d{4})\s+(\d{1,2})\s+(\d{1,2})/);
+  const spacedMatch = text.match(/(\d{4})\s+(\d{1,2})\s+(\d{1,2})(?:\s+(\d{1,2})\s+(\d{1,2}))?/);
   if (spacedMatch) {
     return {
       year: spacedMatch[1],
       month: padDatePart(spacedMatch[2]),
       day: padDatePart(spacedMatch[3]),
+      hour: spacedMatch[4] ? padDatePart(spacedMatch[4]) : "",
+      minute: spacedMatch[5] ? padDatePart(spacedMatch[5]) : "",
     };
   }
 
@@ -8022,7 +8057,7 @@ function padDatePart(value) {
 }
 
 function isDateField(field) {
-  return normalizeFillMode(field?.fillMode, field) === "date" || field?.type === "日期" || /日期|年月日|编制时间/.test(`${field?.name || ""} ${field?.answerFormat || ""} ${field?.question || ""}`);
+  return normalizeFillMode(field?.fillMode, field) === "date" || field?.type === "日期" || /日期|年\s*月\s*日|年月日|编制时间/.test(`${field?.name || ""} ${field?.answerFormat || ""} ${field?.question || ""}`);
 }
 
 function collectTextNodes(root) {

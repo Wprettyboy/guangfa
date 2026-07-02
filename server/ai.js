@@ -205,7 +205,7 @@ async function fillField(payload) {
       `12. 当前字段是金额填空，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。若能识别模板单位，value 必须按模板单位换算后输出，不要带单位；若模板未给单位，value 保留资料中的金额和单位。`,
     ] : []),
     ...(fillMode === "date" ? [
-      "12. 当前字段是日期填空，常见模板只有两类：选区为“ 年 月 日”这类日期空位时输出完整日期；选区为“日期：”这类标签时只输出日期值，不要重复“日期：”。",
+      "12. 当前字段是日期填空，常见模板包括“ 年 月 日”“ 年 月 日 时 分”这类日期/时间空位，以及“日期：”这类标签；模板有时分空位时 value 必须包含明确到“时、分”的时间，不要重复字段标签。",
     ] : []),
     ...(fillMode === "paragraph" ? [
       "12. 当前字段是长文本填空：AI 只负责通过语义理解定位应复制的知识库/资料原文，value 必须逐字复制召回片段中的连续原文；不得总结、改写、扩写、压缩或自行组织语言；不要复制“知识库1/临时资料1/相关度”等片段包装前缀。",
@@ -527,7 +527,7 @@ function inferFillMode(field = {}) {
     field.name,
   ].filter(Boolean).join(" ");
   if (category === "单选项") return isAmountChoiceContext(context) ? "amount-choice" : "choice";
-  if (legacyType === "日期" || /日期|年月日|编制时间/.test(context)) return "date";
+  if (legacyType === "日期" || /日期|年\s*月\s*日|年月日|编制时间/.test(context)) return "date";
   if (legacyType === "金额" || /金额|限价|报价|费用|预算|元|万元/.test(context)) return "amount";
   if (legacyType === "长文本" || legacyType === "表格字段" || /包括但不限于|包括|包含|不限于|清单|配置|分项|表格|主要施工内容|工作内容|采购范围|实施范围|服务范围|内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
   return "short";
@@ -547,7 +547,7 @@ function getFillModeLabel(mode) {
 
 function getFillModePromptRule(mode) {
   if (mode === "paragraph") return "长文本填空应输出资料中的完整描述，可为多句或一段；不要为了追求简短而删掉建设规模、范围边界、数量、地点、对象等关键信息。不得输出字段标签和序号。";
-  if (mode === "date") return "日期填空只输出资料明确支持的日期，优先使用模板要求的中文年月日或指定格式；不得输出字段标签、解释或无依据日期。";
+  if (mode === "date") return "日期填空只输出资料明确支持的日期或时间，优先使用模板要求的中文年月日/年月日时分格式；模板有时分空位时必须输出到时、分；不得输出字段标签、解释或无依据日期。";
   if (mode === "amount") return "金额填空只输出资料明确支持的金额，保留模板需要的单位；不得输出字段标签、解释或无依据金额。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
   if (mode === "choice-replace") return "替换选择填空先判断资料是否给出对应内容：有对应内容时 AI 只定位复制范围，value 必须逐字复制知识库/上传资料中的连续原文；没有对应内容时只输出模板中的“无xx要求”选项文本。";
