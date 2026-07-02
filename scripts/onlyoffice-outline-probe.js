@@ -331,16 +331,7 @@
   }
 
   function buildChoiceSelectionReplacementText(field) {
-    const value = String(field?.value || field?.fillText || "").replace(/\s+/g, " ").trim();
-    const compactValue = value.replace(/\s+/g, "").replace(/^[□☐○〇▢☑✓✔]/, "");
-    const source = String(field?.marker?.text || field?.sourceText || "");
-    const label = source.match(/^\s*(\d+[.、]\s*)?[□☐○〇▢☑✓✔]?\s*([^：:；;。]{2,24}要求)\s*[：:]/)?.[0]
-      ?.replace(/[□☐○〇▢☑✓✔]\s*/, "")
-      ?.replace(/\s+/g, "");
-    const labelText = label?.replace(/[：:]$/, "");
-    const bareLabelText = labelText?.replace(/^\d+[.、]?/, "");
-    if (!value || (labelText && (compactValue.startsWith(labelText) || compactValue.startsWith(bareLabelText)))) return value.replace(/[□☐○〇▢☑✓✔]\s*/, "");
-    return (label || "") + value;
+    return String(field?.value || field?.fillText || "").trim();
   }
 
   function checkChoiceMarker(field) {
