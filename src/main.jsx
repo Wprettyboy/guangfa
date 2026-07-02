@@ -4823,6 +4823,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
   const category = normalizeFieldCategory(field.category || field.type);
   const fillMode = normalizeFillMode(field.fillMode, field);
   const modeOptions = getFillModeOptions({ ...field, category, type: category });
+  const modeLabel = category === "单选项" ? "单选细分" : "填空类型";
   const hasInput = hasInputPoint(field);
 
   return (
@@ -4842,7 +4843,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
         </select>
       </label>
       <label>
-        <span>填空类型</span>
+        <span>{modeLabel}</span>
         <select value={fillMode} onChange={(event) => updateFillMode(event.target.value)}>
           {modeOptions.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
