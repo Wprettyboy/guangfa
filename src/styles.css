@@ -3438,10 +3438,31 @@ h1 {
   font-size: 13px;
 }
 
+.field-evidence-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+
 .field-evidence em {
+  flex: 1;
+  min-width: 0;
   color: #64748b;
   font-size: 12px;
   font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-evidence-line button {
+  border: 0;
+  background: transparent;
+  color: #0f63e9;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
 }
 
 .row-actions {

@@ -245,6 +245,7 @@ function createFillFieldsFromTemplate(templateFields, existingFields = []) {
       confidence: existing?.confidence ?? 0,
       source: existing?.source ?? "待上传资料后生成",
       evidence: existing?.evidence ?? `${getFieldDisplayText(field)}尚未执行 AI 填充，暂无溯源证据。`,
+      sourceSnippetText: existing?.sourceSnippetText ?? "",
     };
   });
 }
@@ -1315,6 +1316,7 @@ function App() {
               confidence: 0,
               source: "缺少输入点",
               evidence: "该字段是填空写入字段，请先在模板标注工作台把光标放到实际填写位置并添加输入点。",
+              sourceSnippetText: "",
             }
           : field,
       );
@@ -1329,6 +1331,7 @@ function App() {
                 confidence: 0,
                 source: "缺少输入点",
                 evidence: "该字段是填空写入字段，请先在模板标注工作台把光标放到实际填写位置并添加输入点。",
+                sourceSnippetText: "",
               }
             : field,
         ),
@@ -1385,6 +1388,7 @@ function App() {
         confidence: result.confidence || 0,
         source: result.source || "AI 基于上传资料生成",
         evidence: result.evidence || "AI 未返回明确证据。",
+        sourceSnippetText: result.sourceSnippetText || "",
       };
       const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? appliedField : field));
       enrichedFillFieldsRef.current = nextFieldsSnapshot;
@@ -1405,6 +1409,7 @@ function App() {
         confidence: 0,
         source: "AI 填充失败",
         evidence: error.message || "请检查模型配置、网络或上传资料。",
+        sourceSnippetText: "",
       };
       const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? errorField : field));
       enrichedFillFieldsRef.current = nextFieldsSnapshot;
@@ -1465,6 +1470,7 @@ function App() {
           confidence: targetField.confidence || 100,
           source: "人工修改",
           evidence: value.trim() ? "用户对 AI 填充内容进行了人工修改。" : "用户清空了填充内容。",
+          sourceSnippetText: "",
         }
       : null;
     if (appliedField && value.trim()) {
@@ -1481,6 +1487,7 @@ function App() {
               confidence: field.confidence || 100,
               source: "人工修改",
               evidence: value.trim() ? "用户对 AI 填充内容进行了人工修改。" : "用户清空了填充内容。",
+              sourceSnippetText: "",
             }
           : field,
       ),
@@ -4986,13 +4993,19 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
   const rowRef = useRef(null);
   const [editing, setEditing] = useState(false);
   const [draftValue, setDraftValue] = useState(field.value || "");
+  const [sourceExpanded, setSourceExpanded] = useState(false);
   const choiceOptions = useMemo(() => getChoiceEditOptions(field), [field]);
   const isChoiceEditing = field.type === "单选项" && choiceOptions.length > 0;
   const isDateEditing = isDateField(field);
+  const sourceSnippetText = String(field.sourceSnippetText || "").trim();
 
   useEffect(() => {
     if (!editing) setDraftValue(field.value || "");
   }, [editing, field.value]);
+
+  useEffect(() => {
+    setSourceExpanded(false);
+  }, [field.id, field.sourceSnippetText]);
 
   useGSAP(
     () => {
@@ -5084,11 +5097,21 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
           {field.value || "暂未生成"}
         </div>
       )}
-      {field.evidence && field.status !== "未填充" ? (
-        <div className="field-evidence">
+      {(field.source || sourceSnippetText) && field.status !== "未填充" ? (
+        <div className="field-evidence" onClick={(event) => event.stopPropagation()}>
           <span>溯源</span>
-          <p>{field.evidence}</p>
-          <em>{field.source}</em>
+          <div className="field-evidence-line">
+            <em>{field.source || "未找到来源片段"}</em>
+            {sourceSnippetText ? (
+              <button
+                type="button"
+                onClick={() => setSourceExpanded((value) => !value)}
+              >
+                {sourceExpanded ? "收起" : "展开"}
+              </button>
+            ) : null}
+          </div>
+          {sourceExpanded && sourceSnippetText ? <p>{sourceSnippetText}</p> : null}
         </div>
       ) : null}
       <div className="row-actions" onClick={(event) => event.stopPropagation()}>
@@ -5257,8 +5280,8 @@ function CitationDrawer({ field, onClose }) {
         <span style={{ width: `${Math.max(field.confidence, 8)}%` }} />
       </div>
       <div className="evidence-box">
-        <strong>证据片段</strong>
-        <p>{field.evidence}</p>
+        <strong>引用片段</strong>
+        <p>{field.sourceSnippetText || "暂无系统引用片段。"}</p>
       </div>
       <button className="wide-button">
         <Sparkles size={16} />

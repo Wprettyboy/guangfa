@@ -216,6 +216,7 @@ async function fillField(payload) {
     knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
     materialSnippets: summarizeSnippetsForDebug(materialSnippets),
   };
+  const systemCitation = buildFillSourceCitation(knowledgeSnippets, materialSnippets);
   if (!materialText.trim() && !knowledgeText.trim()) {
     if (isPackageOrSegmentShortField(promptField)) {
       const result = createDefaultPackageOrSegmentResult("未检索到分包/分标段资料，按通用规则默认填写 1。");
@@ -326,8 +327,9 @@ async function fillField(payload) {
       source,
       evidence,
     };
-    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "ok");
-    return result;
+    const citedResult = applySystemCitation(result, systemCitation);
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, citedResult, "ok");
+    return citedResult;
   }
 
   let value = normalizeFilledValueForTemplate(promptField, rawValue);
@@ -379,8 +381,9 @@ async function fillField(payload) {
     source,
     evidence,
   };
-  await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "ok");
-  return result;
+  const citedResult = applySystemCitation(result, systemCitation);
+  await writeFillFinalDebugLog(runtime, debugContext, parsed, citedResult, "ok");
+  return citedResult;
 }
 
 async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens, options = {}) {
@@ -554,6 +557,46 @@ function summarizeSnippetsForDebug(snippets = []) {
     score: item.score,
     text: String(item.text || "").slice(0, 1200),
   }));
+}
+
+function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = []) {
+  const knowledge = knowledgeSnippets.map((item, index) => {
+    const scopeName = item.scope === "global" ? "全局库" : "项目库";
+    const location = item.page ? `第${item.page}页` : `片段${item.chunkIndex || index + 1}`;
+    return {
+      rank: index,
+      score: Number(item.score || 0),
+      source: `知识库${index + 1}（${scopeName}｜${item.documentName || "未命名资料"} ${location}）`,
+      text: String(item.text || "").trim(),
+    };
+  });
+  const materials = materialSnippets.map((item, index) => ({
+    rank: knowledge.length + index,
+    score: Number(item.score || 0),
+    source: `临时资料${index + 1}（${item.name || "未命名资料"}｜片段${item.chunkIndex || index + 1}）`,
+    text: String(item.text || "").trim(),
+  }));
+  return [...knowledge, ...materials]
+    .filter((item) => item.text)
+    .sort((a, b) => b.score - a.score || a.rank - b.rank)[0] || null;
+}
+
+function applySystemCitation(result, citation) {
+  if (!citation) {
+    return {
+      ...result,
+      source: "未找到来源片段",
+      evidence: "",
+      sourceSnippetText: "",
+    };
+  }
+  const text = citation.text.slice(0, 2000);
+  return {
+    ...result,
+    source: citation.source,
+    evidence: text,
+    sourceSnippetText: text,
+  };
 }
 
 function formatChatSourceSnippets(snippets = [], bases = []) {
