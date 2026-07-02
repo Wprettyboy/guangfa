@@ -971,7 +971,7 @@
       ".gf-ai-chat-message.user{margin-left:auto;background:#e8f1ff;color:#0f172a}",
       ".gf-ai-chat-message.assistant{margin-right:auto;background:#f3f4f6;color:#111827;padding-right:48px}",
       ".gf-ai-chat-message.pending{color:#64748b}",
-      ".gf-ai-chat-copy{position:absolute;right:6px;top:6px;border:0;background:#e2e8f0;color:#334155;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer;user-select:none!important;-webkit-user-select:none!important}",
+      ".gf-ai-chat-write{position:absolute;right:6px;top:6px;border:0;background:#e2e8f0;color:#334155;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer;user-select:none!important;-webkit-user-select:none!important}",
       ".gf-ai-chat-sources{margin-top:8px;padding-top:7px;border-top:1px solid #e2e8f0;display:flex;flex-direction:column;gap:4px}",
       ".gf-ai-chat-source-title{font-size:12px;color:#64748b}",
       ".gf-ai-chat-source{border:0;background:#fff;color:#1d4ed8;border-radius:4px;padding:4px 6px;font-size:12px;line-height:1.35;text-align:left;cursor:pointer}",
@@ -989,28 +989,12 @@
     document.head.appendChild(style);
   }
 
-  function copyGuangfaAiChatText(text, button) {
-    const value = String(text || "");
-    const done = function () {
-      if (!button) return;
-      button.textContent = "已复制";
-      window.setTimeout(function () { button.textContent = "复制"; }, 900);
-    };
-    const fallback = function () {
-      const textarea = document.createElement("textarea");
-      textarea.value = value;
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand("copy");
-        done();
-      } catch {}
-      textarea.remove();
-    };
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(value).then(done).catch(fallback);
-    else fallback();
+  function writeGuangfaAiChatText(text, button) {
+    const result = enterTextAtSelection(text);
+    if (!button) return result;
+    button.textContent = result.ok ? "已写入" : "写入失败";
+    window.setTimeout(function () { button.textContent = "写入"; }, 1200);
+    return result;
   }
 
   function getGuangfaAiChatSourceLabel(snippet, index) {
@@ -1066,18 +1050,19 @@
     item.appendChild(block);
   }
 
-  function setGuangfaAiChatMessageText(item, text, copyable, snippets) {
+  function setGuangfaAiChatMessageText(item, text, writable, snippets) {
     if (!item) return;
     item.textContent = text;
-    if (copyable) {
+    if (writable) {
       const button = document.createElement("button");
-      button.className = "gf-ai-chat-copy";
+      button.className = "gf-ai-chat-write";
       button.type = "button";
-      button.textContent = "复制";
+      button.textContent = "写入";
+      button.title = "写入到当前光标位置";
       button.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
-        copyGuangfaAiChatText(text, button);
+        writeGuangfaAiChatText(text, button);
       });
       item.appendChild(button);
     }
@@ -1135,7 +1120,7 @@
     } catch (error) {
       if (pending) {
         pending.classList.remove("pending");
-        setGuangfaAiChatMessageText(pending, `AI 回复失败：${error?.message || "未知错误"}`, true);
+        setGuangfaAiChatMessageText(pending, `AI 回复失败：${error?.message || "未知错误"}`, false);
       }
     } finally {
       sendButton.disabled = false;

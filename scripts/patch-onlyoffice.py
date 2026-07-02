@@ -37,7 +37,7 @@ unregister = '+function unregisterOnlyOfficeServiceWorker(){if("serviceWorker"in
 html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister, html)
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=53"></script>\n</body>')
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=54"></script>\n</body>')
 html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=6"', html)
 if 'urlArgs: "gf=6"' not in html:
     html = html.replace(
