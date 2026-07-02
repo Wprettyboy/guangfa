@@ -81,11 +81,12 @@ export async function searchKnowledgeBase(payload = {}) {
   const includeGlobal = payload.includeGlobal !== false;
   const selectedKbIds = new Set(Array.isArray(payload.kbIds) ? payload.kbIds.filter(Boolean) : []);
   const selectedGlobalKbIds = new Set(Array.isArray(payload.globalKbIds) ? payload.globalKbIds.filter(Boolean) : []);
+  const explicitKbIds = new Set([...selectedKbIds, ...selectedGlobalKbIds]);
   const metadata = await readMetadata();
   const allowedKbIds = new Set(
     metadata.knowledgeBases
       .filter((kb) => {
-        if (selectedKbIds.size > 0) return selectedKbIds.has(kb.id);
+        if (explicitKbIds.size > 0) return explicitKbIds.has(kb.id);
         if (kb.scope === "project") return (kb.projectId || defaultProjectId) === projectId;
         return selectedGlobalKbIds.size > 0 ? selectedGlobalKbIds.has(kb.id) : includeGlobal;
       })
