@@ -316,7 +316,7 @@ async function fillField(payload) {
       "12. 当前字段是分包/分标段短文本：知识库/资料有对应分包、标段数量或编号时按原值填写；没有对应内容时填写 1。",
     ] : []),
     ...(fillMode === "choice-replace" ? [
-      "14. 当前字段是“替换+选择”：先按要求类型/主题做语义匹配，例如业绩、人员、资质、财务等；模板里的年限、数量、日期空位、候选项只是待替换格式，不是必须同时命中的硬条件。召回片段中只要有同类要求原文（包括评分项、履约能力、证明材料说明等相近表述）就视为命中，value 直接摘取该资料原文，status 为待确认。只有召回片段完全没有该要求类型的原文时，value 输出“未命中”，status 为需补充资料。不得套用模板选项、不得添加勾选符号、不得总结改写；不要输出模板中的“无xx要求”，未命中由系统自动处理。",
+      "14. 当前字段是“替换+选择”：只按要求类型/主题做语义匹配，例如业绩、人员、资质、财务等；模板里的年限、数量、日期空位、证书空位、候选项只是待替换格式，不是必须同时命中的硬条件。召回片段中只要有同类要求原文就视为命中，value 直接摘取该资料原文，status 为待确认。不得因为原文属于评分项、履约能力、实施人员要求、项目团队要求、证书加分项、证明材料说明，而判定为未命中或不能替换。只有召回片段完全没有该要求类型的原文时，value 输出“未命中”，status 为需补充资料。不得套用模板选项、不得添加勾选符号、不得总结改写；不要输出模板中的“无xx要求”，未命中由系统自动处理。",
     ] : []),
     "",
     knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未启用或未检索到相关片段。",
@@ -329,22 +329,28 @@ async function fillField(payload) {
     debugContext,
   });
   const rawValue = typeof parsed.value === "string" ? parsed.value.trim() : "";
+  const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
+  const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
+  const contextualCitation = findModelReferencedCitation(knowledgeSnippets, materialSnippets, `${source}\n${evidence}`)
+    || buildFillSourceCitation(knowledgeSnippets, materialSnippets, `${retrievalQuery} ${source} ${evidence}`);
   if (fillMode === "short" && isPackageOrSegmentShortField(promptField) && (!rawValue || parsed.status === "需补充资料")) {
     const result = createDefaultPackageOrSegmentResult("未在知识库/上传资料中检索到明确分包/分标段值，按通用规则默认填写 1。");
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "package-segment-default-one");
     return result;
   }
   if (fillMode === "choice-replace" && (!rawValue || parsed.status === "需补充资料" || isChoiceReplacementMiss(parsed, rawValue))) {
+    const fallback = extractChoiceReplacementCandidate(promptField, knowledgeSnippets, materialSnippets);
+    if (fallback) {
+      const result = createChoiceReplacementFallbackResult(fallback);
+      await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-theme-fallback");
+      return result;
+    }
     const result = createNoRequirementChoiceResult(promptField, sourceBundle);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-default-none");
     return result;
   }
 
   const amountChoice = fillMode === "amount-choice";
-  const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
-  const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
-  const contextualCitation = findModelReferencedCitation(knowledgeSnippets, materialSnippets, `${source}\n${evidence}`)
-    || buildFillSourceCitation(knowledgeSnippets, materialSnippets, `${retrievalQuery} ${source} ${evidence}`);
   if (amountChoice) {
     const amountValue = normalizeTemplateAmountValue(promptField, parsed.amountValue ?? parsed.value ?? "");
     const choiceValue = normalizeTaxChoiceValue(parsed.choiceValue ?? parsed.value ?? "");
@@ -380,6 +386,12 @@ async function fillField(payload) {
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
     if (fillMode === "choice-replace") {
+      const fallback = extractChoiceReplacementCandidate(promptField, knowledgeSnippets, materialSnippets);
+      if (fallback) {
+        const result = createChoiceReplacementFallbackResult(fallback);
+        await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-theme-fallback-guard");
+        return result;
+      }
       const result = createNoRequirementChoiceResult(promptField, sourceBundle);
       await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-default-guard");
       return result;
@@ -931,7 +943,7 @@ function getFillModePromptRule(mode) {
   if (mode === "date") return "日期填空只输出资料明确支持的日期或时间，优先使用模板要求的中文年月日/年月日时分格式；模板有时分空位时必须输出到时、分；不得输出字段标签、解释或无依据日期。";
   if (mode === "amount") return "金额填空只输出资料明确支持的金额，保留模板需要的单位；不得输出字段标签、解释或无依据金额。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
-  if (mode === "choice-replace") return "替换选择填空先按要求类型/主题判断召回片段是否有同类原文；不要把模板里的年限、数量、日期空位当成硬性匹配条件。有同类原文就摘取资料原文作为 value；完全没有同类原文才输出“未命中”、status 输出“需补充资料”，系统会自动转为模板中的“无xx要求”。";
+  if (mode === "choice-replace") return "替换选择填空先按要求类型/主题判断召回片段是否有同类原文；不要把模板里的年限、数量、日期空位、证书空位当成硬性匹配条件，也不要区分资格门槛和评分项。有同类原文就摘取资料原文作为 value；完全没有同类原文才输出“未命中”、status 输出“需补充资料”，系统会自动转为模板中的“无xx要求”。";
   if (mode === "amount-choice") return "金额选择填空必须同时判断金额和候选项：amountValue 输出按模板单位换算后的金额纯数字，choiceValue 输出应勾选的模板选项文本；不要输出整段原文。";
   return "短文本填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
 }
@@ -1024,6 +1036,75 @@ function isCopiedFromSource(value, sourceText) {
 function isChoiceReplacementMiss(parsed = {}, value = "") {
   const text = normalizeForSearch(value || parsed?.value);
   return text.length <= 24 && /^(未命中|未找到|未检索到|没有命中|无对应原文|无匹配原文|未发现对应原文)/.test(text);
+}
+
+function extractChoiceReplacementCandidate(field = {}, knowledgeSnippets = [], materialSnippets = []) {
+  const terms = getChoiceReplacementThemeTerms(field);
+  if (!terms.length) return null;
+  const items = [
+    ...knowledgeSnippets.map((item, index) => ({ item, index, type: "knowledge" })),
+    ...materialSnippets.map((item, index) => ({ item, index, type: "material" })),
+  ];
+  return items
+    .map(({ item, index, type }) => {
+      const text = String(item.text || "");
+      const matched = terms
+        .map((term, termIndex) => ({ term, termIndex, at: text.indexOf(term) }))
+        .filter((match) => match.at >= 0)
+        .sort((a, b) => a.termIndex - b.termIndex || a.at - b.at)[0];
+      if (!matched) return null;
+      const value = sliceChoiceReplacementText(text, matched.at);
+      if (!value) return null;
+      const source = type === "knowledge"
+        ? `知识库${index + 1}（${item.scope === "global" ? "全局库" : "项目库"}｜${item.documentName || "未命名资料"} 片段${item.chunkIndex || index + 1}）`
+        : `临时资料${index + 1}（${item.name || "未命名资料"}｜片段${item.chunkIndex || index + 1}）`;
+      return { text: value, source, score: scoreChoiceReplacementCandidate(field, text, 100 - matched.termIndex) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function scoreChoiceReplacementCandidate(field = {}, text = "", baseScore = 0) {
+  const context = [field.name, field.sourceText, field.templateContext, field.answerFormat, field.question].filter(Boolean).join(" ");
+  let score = baseScore;
+  if (/人员|项目经理|项目负责人|技术负责人|安全生产考核|证书|职称/.test(context)) {
+    if (/供应商必须根据项目特点|项目团队至少包括|项目服务团队组成|驻场服务要求/.test(text)) score += 80;
+    if (/履约能力|类似项目业绩/.test(text)) score -= 60;
+  } else if (/业绩|履约能力|类似项目/.test(context)) {
+    if (/履约能力|类似项目业绩|已完成类似项目业绩|合同关键页/.test(text)) score += 60;
+  }
+  return score;
+}
+
+function getChoiceReplacementThemeTerms(field = {}) {
+  const context = [field.name, field.sourceText, field.templateContext, field.answerFormat, field.question].filter(Boolean).join(" ");
+  if (/人员|项目经理|项目负责人|技术负责人|安全生产考核|证书|职称/.test(context)) return ["实施人员要求", "驻场服务要求", "项目服务团队", "本项目服务团队", "项目团队", "项目经理", "项目实施人员", "驻场服务人员", "人员保障"];
+  if (/业绩|履约能力|类似项目/.test(context)) return ["履约能力", "类似项目业绩", "类似项目", "业绩案例", "合同关键页"];
+  if (/资质|资格|许可证|营业执照/.test(context)) return ["资质要求", "资格要求", "安全生产许可证", "营业执照", "资质证书"];
+  if (/财务|审计|报表|亏损/.test(context)) return ["财务要求", "财务状况", "审计报告", "财务报表"];
+  return [];
+}
+
+function sliceChoiceReplacementText(text, start) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  const offset = Math.max(0, start);
+  let value = normalized.slice(offset, offset + 1000).trim();
+  for (const marker of [" 5 其他商务", " （5）厂商授权", " ★四、", " 格式", " 供应商名称："]) {
+    const index = value.indexOf(marker);
+    if (index > 80) value = value.slice(0, index).trim();
+  }
+  return value;
+}
+
+function createChoiceReplacementFallbackResult(candidate) {
+  return {
+    value: candidate.text,
+    status: "待确认",
+    confidence: 78,
+    source: candidate.source,
+    evidence: candidate.text,
+    sourceSnippetText: candidate.text,
+  };
 }
 
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
