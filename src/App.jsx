@@ -1,13 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { renderAsync } from "docx-preview";
-import JSZip from "jszip";
-import { PdfHighlighter, PdfLoader } from "react-pdf-highlighter";
 import "react-pdf-highlighter/dist/style.css";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { auditDocxFormat } from "./lib/docx/formatAudit";
-import { reviseDocxFormat } from "./lib/docx/formatRevise";
 import SystemSettings from "./pages/SystemSettings.jsx";
 import TemplateManagement from "./pages/TemplateManagement.jsx";
 import {
@@ -36,30 +30,12 @@ import {
   initialFillFields,
   initialTemplateFields,
   initialTemplateFile,
-  templateCategories,
 } from "./constants/templates.js";
-import StatusPill from "./components/StatusPill.jsx";
 import {
-  DocumentFrame,
-  FieldForm,
-  FieldLine,
-  FillFieldRow,
-  PreviewState,
-  auditConfigItems,
-  auditConfigStorageKey,
   clearPreviewMarkers,
-  createAnnotationMarkerData,
   createPreviewId,
-  enhanceAuditWithAiOutline,
-  exportFilledDocx,
   fetchOfficeDocumentBuffer,
-  getFillFieldDisplayPage,
   getNextFieldNumber,
-  getOutlineRevisionAction,
-  getOutlineRevisionReason,
-  isAuditIssueEnabled,
-  readAuditConfig,
-  readDocxStructure,
   removePreviewMarker,
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
@@ -67,46 +43,26 @@ import {
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
   waitForChangedOfficeDocumentBuffer,
-  waitForNextFrame,
 } from "./features/docx/runtime.jsx";
 import {
-  fillModeOptions,
-  fieldCategoryOptions,
   createAnnotatedField,
   createFillFieldsFromTemplate,
   mergeFillFieldsWithTemplate,
-  pickTemplateFillContext,
   normalizeTemplateFieldForRuntime,
   createDynamicSlot,
   getTemplateFieldSourceText,
   normalizeFieldCategory,
-  isReplacementField,
   requiresInputPoint,
   getFieldWriteMode,
   hasInputPoint,
-  canUseMarkedSelectionAsFillTarget,
-  hasMarkedSelection,
-  getFieldDisplayText,
   normalizeFillMode,
-  getFillModeOptions,
-  inferFillMode,
-  getFillModeLabel,
-  hasFillBlank,
 } from "./utils/fields.js";
 import {
-  buildExportFileName,
-  buildFormatRevisionFileName,
-  downloadDocxBuffer,
   formatFileSize,
-  getExportStatusText,
   readKnowledgeDocumentFile,
   readMaterialFile,
 } from "./utils/files.js";
 import {
-  buildContractFolders,
-  getContractFolder,
-  getTemplateCategoryTone,
-  groupContractFolders,
   inferTemplateCategory,
   normalizeTemplateCategory,
   summarizeFieldTypes,
@@ -115,37 +71,12 @@ import SidebarItem from "./components/SidebarItem.jsx";
 import {
   Archive,
   BookOpenText,
-  Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  Database,
-  Download,
-  Eye,
-  FileCheck2,
-  FileText,
-  FolderOpen,
-  Highlighter,
-  Info,
-  Layers,
   LayoutDashboard,
-  ListChecks,
-  Loader2,
   Menu,
   MessageSquareText,
-  PenLine,
-  RotateCcw,
-  Save,
-  Search,
   Settings,
   ShieldCheck,
-  Sparkles,
-  Trash2,
-  Undo2,
-  Upload,
-  Wand2,
-  X,
 } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
