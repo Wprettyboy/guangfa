@@ -5220,6 +5220,7 @@ function getFillSupplementReason(field = {}) {
   if (field.status !== "需补充资料" || field.value) return "";
   const reason = String(field.evidence || "")
     .split("可参考相近原文：")[0]
+    .split("系统判断：")[0]
     .replace(/\s+/g, " ")
     .trim();
   return reason ? `召回原因：${reason.slice(0, 180)}` : "";

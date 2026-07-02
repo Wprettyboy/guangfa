@@ -350,7 +350,10 @@ async function fillField(payload) {
     const choiceValue = normalizeTaxChoiceValue(parsed.choiceValue ?? parsed.value ?? "");
     const guard = sanitizeAmountChoiceFillResult(parsed, amountValue, choiceValue, source, evidence);
     if (guard) {
-      const result = attachSupplementCitation(guard, contextualCitation || systemCitation);
+      const result = attachSupplementCitation({
+        ...guard,
+        evidence: buildSupplementEvidence(guard.evidence, evidence),
+      }, contextualCitation || systemCitation);
       await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "amount-choice-guard");
       return result;
     }
@@ -370,26 +373,29 @@ async function fillField(payload) {
 
   let value = normalizeFilledValueForTemplate(promptField, rawValue);
   if (fillMode === "paragraph" && value && !isCopiedFromSource(value, sourceBundle)) {
-    const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，长文本填空不做语义改写。", contextualCitation || systemCitation);
+    const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，长文本填空不做语义改写。", contextualCitation || systemCitation, evidence);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-not-copied");
     return result;
   }
   if (fillMode === "choice-replace" && value && !isNoRequirementChoiceValue(promptField, value)) {
     if (!isCopiedFromSource(value, sourceBundle)) value = extractChoiceReplacementSourceText(promptField, parsed, sourceBundle) || value;
     if (!isCopiedFromSource(value, sourceBundle)) {
-      const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，替换+选择有资料分支必须复制资料原文。", contextualCitation || systemCitation);
+      const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，替换+选择有资料分支必须复制资料原文。", contextualCitation || systemCitation, evidence);
       await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-not-copied");
       return result;
     }
   }
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
-    const result = attachSupplementCitation(choiceGuard, contextualCitation || systemCitation);
+    const result = attachSupplementCitation({
+      ...choiceGuard,
+      evidence: buildSupplementEvidence(choiceGuard.evidence, evidence),
+    }, contextualCitation || systemCitation);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-guard");
     return result;
   }
   if (isTemplateOnlyFillEvidence(promptField, value, `${source}\n${evidence}`, `${knowledgeText}\n${materialText}`)) {
-    const result = createSupplementResult("模型仅引用模板选区原文，未在知识库或上传资料中找到可填依据。", contextualCitation || systemCitation);
+    const result = createSupplementResult("模型仅引用模板选区原文，未在知识库或上传资料中找到可填依据。", contextualCitation || systemCitation, evidence);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "template-only-evidence");
     return result;
   }
@@ -639,14 +645,22 @@ function applySystemCitation(result, citation) {
   };
 }
 
-function createSupplementResult(reason, citation) {
+function createSupplementResult(reason, citation, detail = "") {
   return attachSupplementCitation({
     value: "",
     status: "需补充资料",
     confidence: 0,
     source: "未找到可直接写入原文",
-    evidence: reason,
+    evidence: buildSupplementEvidence(reason, detail),
   }, citation);
+}
+
+function buildSupplementEvidence(ruleReason, detail = "") {
+  const cleanRule = String(ruleReason || "").replace(/\s+/g, " ").trim();
+  const cleanDetail = String(detail || "").replace(/\s+/g, " ").trim();
+  if (!cleanDetail || /模型未返回明确证据片段/.test(cleanDetail)) return cleanRule;
+  if (cleanDetail.includes(cleanRule)) return cleanDetail;
+  return `${cleanDetail}\n系统判断：${cleanRule}`;
 }
 
 function attachSupplementCitation(result, citation) {
