@@ -390,11 +390,16 @@
   }
 
   function getAmountBlankDescriptor(source) {
-    const match = String(source || "").match(/(?:_{2,}|＿+|—+|-{2,}|(?<=[：:])\s+|\s{2,})(?=\s*(?:万元|元))/);
+    const unitPattern = amountUnitPattern();
+    const match = String(source || "").match(new RegExp("(?:_{2,}|＿+|—+|-{2,}|(?<=[：:])\\s+|\\s{2,})(?=\\s*(?:" + unitPattern + "))"));
     if (!match) return null;
     const prefix = source.slice(0, match.index).replace(/\s+/g, " ").trim().slice(-24);
-    const suffix = (source.slice(match.index + match[0].length).match(/^\s*((?:万元|元)[（(]?)/)?.[1] || "").trim();
+    const suffix = (source.slice(match.index + match[0].length).match(new RegExp("^\\s*((?:" + unitPattern + ")[（(]?)"))?.[1] || "").trim();
     return prefix.length >= 2 ? { prefix, suffix, blankLength: match[0].length } : null;
+  }
+
+  function amountUnitPattern() {
+    return "[十百千]?亿(?:元)?|[十百千]?万(?:元)?|[十百千]?元|元";
   }
 
   function parseChoiceOptions(source) {
@@ -837,12 +842,21 @@
     const taxOptions = parseChoiceOptions("□含税 □不含税");
     const taxTarget = findChoiceOption(taxOptions, { value: "9832553", choiceValue: "不含税" });
     const amountDescriptor = getAmountBlankDescriptor("三、最高限价： 元（□含税 □不含税）");
+    const wanDescriptor = getAmountBlankDescriptor("三、最高限价： 万元（□含税 □不含税）");
+    const shiwanDescriptor = getAmountBlankDescriptor("三、最高限价： 十万（□含税 □不含税）");
     return {
-      ok: options.length === 2 && /综合评估法/.test(target?.text || "") && /不含税/.test(taxTarget?.text || "") && amountDescriptor?.suffix === "元（",
+      ok: options.length === 2
+        && /综合评估法/.test(target?.text || "")
+        && /不含税/.test(taxTarget?.text || "")
+        && amountDescriptor?.suffix === "元（"
+        && wanDescriptor?.suffix === "万元（"
+        && shiwanDescriptor?.suffix === "十万（",
       count: options.length,
       target: target?.text || "",
       taxTarget: taxTarget?.text || "",
       amountDescriptor,
+      wanDescriptor,
+      shiwanDescriptor,
     };
   };
   window.guangfaPostFieldPages = function () {

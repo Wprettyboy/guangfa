@@ -177,7 +177,7 @@ async function fillField(payload) {
     "10. 知识库片段是当前招标/采购文件的编制依据，可能来自技术文件、项目资料、上游审批、历史招采说明或命名规则；不要因为片段出现“后续”“分包”“统一使用”等上下文词就排除它。",
     "11. 对项目名称/工程名称字段，若资料写有“名称统一使用……”“项目名称为……”“工程名称为……”，应视为当前模板的权威命名依据，直接提取引号或冒号后的完整名称。",
     ...(fillMode === "amount-choice" ? [
-      `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；资料为 3000000 元且模板单位为万元，则 amountValue 为 300。`,
+      `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；模板单位为万元则 amountValue 为 300；模板单位为十万元/十万则 amountValue 为 30。`,
       "13. choiceValue 只能输出模板候选项中的“含税”或“不含税”。金额或含税状态任一项没有资料依据时，status 必须为需补充资料。",
     ] : []),
     "",
@@ -554,8 +554,11 @@ function normalizeTemplateAmountValue(field, value) {
   if (!amount) return "";
   const targetUnit = getTemplateAmountUnit(field);
   let number = amount.number;
-  if (targetUnit === "元" && amount.unit === "万元") number *= 10000;
-  if (targetUnit === "万元" && amount.unit === "元") number /= 10000;
+  const sourceMultiplier = getAmountUnitMultiplier(amount.unit);
+  const targetMultiplier = getAmountUnitMultiplier(targetUnit);
+  if (amount.unit && sourceMultiplier && targetMultiplier) {
+    number = (number * sourceMultiplier) / targetMultiplier;
+  }
   return formatAmountNumber(number);
 }
 
@@ -565,17 +568,40 @@ function parseAmountWithUnit(value) {
   if (!match) return null;
   const number = Number(match[1].replace(/,/g, ""));
   if (!Number.isFinite(number)) return null;
-  const unitText = text.slice(Math.max(0, match.index - 4), match.index + match[0].length + 4);
-  const unit = /万元|万/.test(unitText) ? "万元" : /元/.test(unitText) ? "元" : "";
+  const after = text.slice(match.index + match[0].length);
+  const before = text.slice(0, match.index);
+  const unit = after.match(getAmountUnitRegexp(true))?.[1] || before.match(getAmountUnitRegexp(false))?.[1] || "";
   return { number, unit };
 }
 
 function getTemplateAmountUnit(field = {}) {
   const context = String(field.sourceText || field.templateContext || field.answerFormat || field.question || "");
-  const blankUnit = context.match(/(?:_{2,}|＿+|—+|-{2,}|\s{2,})\s*(万元|元)/);
+  const blankUnit = context.match(new RegExp(`(?:_{2,}|＿+|—+|-{2,}|(?<=[：:])\\s+|\\s{2,})\\s*(${amountUnitPattern()})`));
   if (blankUnit) return blankUnit[1];
-  const labelUnit = context.match(/(?:金额|限价|报价|费用|预算)[^。；;]{0,40}[：:]\s*(万元|元)/);
+  const labelUnit = context.match(new RegExp(`(?:金额|限价|报价|费用|预算)[^。；;]{0,40}[：:]\\s*(${amountUnitPattern()})`));
   return labelUnit?.[1] || "";
+}
+
+function amountUnitPattern() {
+  return "[十百千]?亿(?:元)?|[十百千]?万(?:元)?|[十百千]?元|元";
+}
+
+function getAmountUnitRegexp(afterNumber) {
+  const body = `(${amountUnitPattern()})`;
+  return new RegExp(afterNumber ? `^\\s*${body}` : `${body}\\s*$`);
+}
+
+function getAmountUnitMultiplier(unit) {
+  const text = String(unit || "").replace(/\s+/g, "");
+  if (!text) return 0;
+  if (text.includes("亿")) return getChineseAmountPrefixMultiplier(text.split("亿")[0]) * 100000000;
+  if (text.includes("万")) return getChineseAmountPrefixMultiplier(text.split("万")[0]) * 10000;
+  if (text.endsWith("元")) return getChineseAmountPrefixMultiplier(text.slice(0, -1));
+  return 0;
+}
+
+function getChineseAmountPrefixMultiplier(prefix) {
+  return { "": 1, 十: 10, 百: 100, 千: 1000 }[prefix] || 1;
 }
 
 function formatAmountNumber(value) {
