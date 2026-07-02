@@ -911,6 +911,75 @@
     return payload;
   }
 
+  function isVisibleElement(node) {
+    const rect = node?.getBoundingClientRect?.();
+    return !!rect && rect.width > 0 && rect.height > 0;
+  }
+
+  function findVisibleElementByText(pattern) {
+    const nodes = [...document.querySelectorAll("button, [role='button'], .btn, [role='tab'], .toolbar-tab")];
+    return nodes.find(function (node) {
+      if (node.id === "id-right-menu-guangfa-ai-chat" || node.closest?.("#id-right-menu-guangfa-ai-chat")) return false;
+      const text = String(node.getAttribute("aria-label") || node.getAttribute("title") || node.textContent || "").replace(/\s+/g, " ").trim();
+      return isVisibleElement(node) && pattern.test(text);
+    }) || null;
+  }
+
+  function openOnlyOfficeAiChat() {
+    try {
+      if (typeof window.chatWindowShow === "function") {
+        window.chatWindowShow();
+        return true;
+      }
+      const chatButton = findVisibleElementByText(/^(聊天机器人|Chatbot)$/i);
+      if (chatButton) {
+        chatButton.click();
+        return true;
+      }
+      const aiTab = findVisibleElementByText(/^AI$/);
+      if (aiTab) {
+        aiTab.click();
+        window.setTimeout(function () {
+          const nextChatButton = findVisibleElementByText(/^(聊天机器人|Chatbot)$/i);
+          if (nextChatButton) nextChatButton.click();
+        }, 120);
+        return true;
+      }
+    } catch (error) {
+      console.warn("[guangfa-onlyoffice-ai-chat-error]", error?.message || error);
+    }
+    return false;
+  }
+
+  function ensureAiChatQuickButton() {
+    const holder = document.querySelector("#slot-right-menu-more") || document.querySelector("#view-right-menu .tool-menu-btns");
+    if (!holder) return false;
+    if (!document.getElementById("guangfa-ai-chat-quick-style")) {
+      const style = document.createElement("style");
+      style.id = "guangfa-ai-chat-quick-style";
+      style.textContent = "#id-right-menu-guangfa-ai-chat{display:inline-flex!important}#id-right-menu-guangfa-ai-chat .guangfa-ai-chat-icon{width:16px;height:16px;background:url('/sdkjs-plugins/{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}/resources/icons/light/ask-ai.png') center/16px 16px no-repeat!important}";
+      document.head.appendChild(style);
+    }
+    if (document.getElementById("id-right-menu-guangfa-ai-chat")) return true;
+    const button = document.createElement("button");
+    button.id = "id-right-menu-guangfa-ai-chat";
+    button.type = "button";
+    button.className = "btn btn-category arrow-left";
+    button.title = "聊天机器人";
+    button.setAttribute("aria-label", "聊天机器人");
+    button.setAttribute("data-hint", "0");
+    button.setAttribute("data-hint-direction", "left");
+    button.setAttribute("data-hint-offset", "big");
+    button.innerHTML = '<i class="icon toolbar__icon guangfa-ai-chat-icon">&nbsp;</i>';
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      openOnlyOfficeAiChat();
+    });
+    holder.appendChild(button);
+    return true;
+  }
+
   window.guangfaExtractOnlyOfficeOutline = extractOnlyOfficeOutline;
   window.guangfaPostOnlyOfficeOutline = function () {
     return postOutline("manual");
@@ -954,6 +1023,8 @@
   window.guangfaPostFieldPages = function () {
     return postFieldPages("manual");
   };
+  window.guangfaOpenOnlyOfficeAiChat = openOnlyOfficeAiChat;
+  window.guangfaEnsureAiChatQuickButton = ensureAiChatQuickButton;
 
   window.addEventListener("message", function (event) {
     const data = event.data || {};
@@ -1003,6 +1074,7 @@
   let lastPostedPage = 0;
   window.setInterval(function () {
     try {
+      ensureAiChatQuickButton();
       wirePageCallback();
       const page = extractOnlyOfficeVisiblePage().page;
       if (page && page !== lastPostedPage) {
