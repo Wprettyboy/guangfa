@@ -564,7 +564,9 @@ function normalizeFilledValueForTemplate(field, value) {
   const context = String(field.templateContext || field.answerFormat || field.question || "").replace(/\s+/g, " ").trim();
   if (field.fillMode === "choice-replace") {
     const noRequirementOption = extractNoRequirementOption(field);
-    return noRequirementOption && normalizeForSearch(text).startsWith(normalizeForSearch(noRequirementOption)) ? noRequirementOption : text;
+    return noRequirementOption && normalizeForSearch(text).startsWith(normalizeForSearch(noRequirementOption))
+      ? noRequirementOption
+      : normalizeChoiceReplacementValue(text);
   }
   if (!/(业绩|人员|资质|资格)/.test(`${field.name || ""} ${context}`)) return text;
 
@@ -630,7 +632,7 @@ function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
 
   const reasonText = `${source || ""}\n${evidence || ""}`;
 
-  if (looksLikeUnfilledChoiceTemplate(value) || looksLikeChoiceProofNote(value)) {
+  if (looksLikeUnfilledChoiceTemplate(value) || looksLikeChoiceProofNote(value, field)) {
     return createMissingChoiceResult(source, "模型返回的是模板占位或证明材料说明，未作为有效选择写入。");
   }
 
@@ -774,14 +776,21 @@ function extractNoRequirementOption(field = {}) {
   return context.match(/无[^□☐○〇▢☑✓✔；;。，,、\s]{0,12}要求/)?.[0] || "";
 }
 
+function normalizeChoiceReplacementValue(value) {
+  return String(value || "").replace(/[□☐○〇▢☑✓✔]\s*/g, "").replace(/\s+/g, " ").trim();
+}
+
 function looksLikeUnfilledChoiceTemplate(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return false;
-  return /[□☐○〇▢]|_{2,}|＿{2,}|—{2,}| 年 月 日|不少于\s*个|不少于 个|类似项目是指[:：]\s*[。；;]?|具有\s*证书|具有\s*相关专业\s*级|省级及以上\s*部门|其他人员[:：]\s*[。；;]?|（(?:业绩|人员业绩)要求）/.test(text);
+  return /[□☐○〇▢]|_{2,}|＿{2,}|—{2,}| 年 月 日|不少于\s*个|不少于 个|类似项目是指[:：]\s*(?:[。；;]|$)|具有\s*证书|具有\s*相关专业\s*级|省级及以上\s*部门|其他人员[:：]\s*(?:[。；;]|$)|（(?:业绩|人员业绩)要求）/.test(text);
 }
 
-function looksLikeChoiceProofNote(value) {
+function looksLikeChoiceProofNote(value, field = {}) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (normalizeFillMode(field) === "choice-replace" && /(?:具有|具备|至少|不少于|近\s*\d|类似项目|安全生产许可证|劳务资质|合同金额|职称|负责人|管理人员)/.test(text)) {
+    return false;
+  }
   return /证明材料须提供|复印件|社保缴费证明|附以上人员|验收证明材料|合同协议|发票|身份证|聘用合同|本项目不接受退休返聘/.test(text);
 }
 
