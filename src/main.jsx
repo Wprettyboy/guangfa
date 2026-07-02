@@ -2269,7 +2269,7 @@ function KnowledgeBaseManagement({
     }
     setSearching(true);
     try {
-      const results = await searchKnowledge(searchTerm, projectId);
+      const results = await searchKnowledge(searchTerm, projectId, selectedBase);
       setSearchResults(results);
       setSelectedResultId(results[0]?.id || "");
     } finally {
@@ -2442,7 +2442,7 @@ function KnowledgeBaseManagement({
           <div className="panel-title align-top">
             <div>
               <h2>检索预览</h2>
-              <p>同时检索当前项目库与全局库。</p>
+              <p>{selectedBase ? `仅检索当前选中的知识库：${selectedBase.name}` : "请选择知识库后检索。"}</p>
             </div>
           </div>
           <form className="knowledge-search-form" onSubmit={handleSearch}>
@@ -8629,14 +8629,16 @@ async function removeKnowledgeBase(kbId) {
   return result;
 }
 
-async function searchKnowledge(query, projectId) {
+async function searchKnowledge(query, projectId, knowledgeBase) {
+  const kbId = knowledgeBase?.id || "";
   const response = await fetch("/api/knowledge-bases/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       query,
       projectId,
-      includeGlobal: true,
+      kbIds: kbId ? [kbId] : [],
+      includeGlobal: false,
       topK: 8,
     }),
   });
