@@ -294,34 +294,6 @@ export async function fillField(payload) {
   return citedResult;
 }
 
-function summarizeFieldForDebug(field = {}) {
-  return {
-    id: field.id,
-    name: field.name,
-    category: field.category || field.type,
-    fillMode: field.fillMode,
-    sourceText: field.sourceText || field.templateContext || field.answerFormat || "",
-    question: field.question,
-    aiInstruction: field.aiInstruction,
-    page: field.page,
-  };
-}
-
-function summarizeSnippetsForDebug(snippets = []) {
-  return snippets.map((item, index) => ({
-    index: index + 1,
-    id: item.id,
-    kbId: item.kbId,
-    documentId: item.documentId,
-    source: item.documentName || item.name || "未命名资料",
-    scope: item.scope,
-    chunkIndex: item.chunkIndex,
-    page: item.page || "",
-    score: item.score,
-    text: String(item.text || "").slice(0, 1200),
-  }));
-}
-
 function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = [], query = "") {
   const tokens = createSearchTokens(query);
   const knowledge = knowledgeSnippets.map((item, index) => {
