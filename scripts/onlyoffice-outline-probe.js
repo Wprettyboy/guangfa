@@ -965,17 +965,59 @@
       ".gf-ai-chat-title{font-size:14px;font-weight:600;white-space:nowrap}",
       ".gf-ai-chat-kb{flex:1;min-width:0;font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".gf-ai-chat-close{width:26px;height:26px;border:0;background:transparent;font-size:18px;line-height:24px;cursor:pointer;color:#64748b}",
+      "#guangfa-ai-chat-panel,#guangfa-ai-chat-panel *{user-select:text!important;-webkit-user-select:text!important}",
       ".gf-ai-chat-messages{flex:1;overflow:auto;padding:12px;background:#fff}",
-      ".gf-ai-chat-message{max-width:92%;margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}",
+      ".gf-ai-chat-message{position:relative;max-width:92%;margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}",
       ".gf-ai-chat-message.user{margin-left:auto;background:#e8f1ff;color:#0f172a}",
-      ".gf-ai-chat-message.assistant{margin-right:auto;background:#f3f4f6;color:#111827}",
+      ".gf-ai-chat-message.assistant{margin-right:auto;background:#f3f4f6;color:#111827;padding-right:48px}",
       ".gf-ai-chat-message.pending{color:#64748b}",
+      ".gf-ai-chat-copy{position:absolute;right:6px;top:6px;border:0;background:#e2e8f0;color:#334155;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer;user-select:none!important;-webkit-user-select:none!important}",
       ".gf-ai-chat-form{display:flex;gap:8px;padding:10px;border-top:1px solid #e5e7eb;background:#f8fafc}",
       ".gf-ai-chat-input{flex:1;min-height:38px;max-height:96px;resize:vertical;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:13px;line-height:1.4}",
       ".gf-ai-chat-send{width:56px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:#fff;font-size:13px;cursor:pointer}",
       ".gf-ai-chat-send:disabled{opacity:.55;cursor:not-allowed}",
     ].join("");
     document.head.appendChild(style);
+  }
+
+  function copyGuangfaAiChatText(text, button) {
+    const value = String(text || "");
+    const done = function () {
+      if (!button) return;
+      button.textContent = "已复制";
+      window.setTimeout(function () { button.textContent = "复制"; }, 900);
+    };
+    const fallback = function () {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+        done();
+      } catch {}
+      textarea.remove();
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(value).then(done).catch(fallback);
+    else fallback();
+  }
+
+  function setGuangfaAiChatMessageText(item, text, copyable) {
+    if (!item) return;
+    item.textContent = text;
+    if (!copyable) return;
+    const button = document.createElement("button");
+    button.className = "gf-ai-chat-copy";
+    button.type = "button";
+    button.textContent = "复制";
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      copyGuangfaAiChatText(text, button);
+    });
+    item.appendChild(button);
   }
 
   function updateGuangfaAiChatKnowledgeLabel(panel) {
@@ -988,7 +1030,7 @@
     if (!list) return null;
     const item = document.createElement("div");
     item.className = ["gf-ai-chat-message", role, className || ""].filter(Boolean).join(" ");
-    item.textContent = text;
+    setGuangfaAiChatMessageText(item, text, role === "assistant" && className !== "pending");
     list.appendChild(item);
     list.scrollTop = list.scrollHeight;
     return item;
@@ -1022,14 +1064,14 @@
       const reply = String(result.reply || "未生成有效回复。").trim();
       if (pending) {
         pending.classList.remove("pending");
-        pending.textContent = reply;
+        setGuangfaAiChatMessageText(pending, reply, true);
       }
       aiChatHistory.push({ role: "user", content: message }, { role: "assistant", content: reply });
       aiChatHistory = aiChatHistory.slice(-16);
     } catch (error) {
       if (pending) {
         pending.classList.remove("pending");
-        pending.textContent = `AI 回复失败：${error?.message || "未知错误"}`;
+        setGuangfaAiChatMessageText(pending, `AI 回复失败：${error?.message || "未知错误"}`, true);
       }
     } finally {
       sendButton.disabled = false;
