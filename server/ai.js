@@ -170,7 +170,7 @@ async function fillField(payload) {
     `3. ${getFillModePromptRule(fillMode)}`,
     "4. value 只输出将被写入输入点或替换选区的内容，不要附带模板字段标签、固定前后缀或解释。",
     "5. 必须先判断字段语义再填值：名称字段填名称，地点/地址字段填地点或地址，工期字段填期限，金额字段填金额，范围字段填范围；不要把资料中其他明确但语义不匹配的信息填入当前字段。",
-    "6. 对业绩要求、人员要求、资质要求等选择型字段：只能返回资料能明确支持的选项或完整替换段；不得复制模板中的空白占位、证明材料、社保/证书附件说明；资料不足时 value 为空。",
+    "6. 对业绩要求、人员要求、资质要求、财务要求等选择型字段：只能返回资料能明确支持的选项或完整替换段；不得复制模板中的空白占位、证明材料、社保/证书附件说明；资料不足时 value 为空。",
     "7. 不要输出解释性短语，例如“类似项目是指...”，除非这句话本身就是模板原文或资料原文。",
     "8. evidence 和 source 必须来自资料内容或知识库片段，不得写“模板选区原文”或把模板选区当依据。",
     "9. 知识库片段与临时资料都可作为依据；如果二者冲突，优先采用字段上下文匹配度更高、证据更明确的内容。",
@@ -179,6 +179,9 @@ async function fillField(payload) {
     ...(fillMode === "amount-choice" ? [
       `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；模板单位为万元则 amountValue 为 300；模板单位为十万元/十万则 amountValue 为 30。`,
       "13. choiceValue 只能输出模板候选项中的“含税”或“不含税”。金额或含税状态任一项没有资料依据时，status 必须为需补充资料。",
+    ] : []),
+    ...(isFinancialRequirementChoiceField(promptField) ? [
+      "14. 当前字段是财务要求选择，本条优先于选择填空通用规则：如果资料明确写有财务要求，value 输出可直接替换模板选区的财务要求正文；如果资料没有明确财务要求，value 输出“无财务要求”，用于只勾选“无财务要求”。",
     ] : []),
     "",
     knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未启用或未检索到相关片段。",
@@ -199,6 +202,13 @@ async function fillField(payload) {
     debugFileName: "ai-fill-last.json",
     debugContext,
   });
+  const rawValue = typeof parsed.value === "string" ? parsed.value.trim() : "";
+  if (isFinancialRequirementChoiceField(promptField) && (!rawValue || parsed.status === "需补充资料")) {
+    const result = createNoFinancialRequirementResult(sourceBundle);
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "financial-default-none");
+    return result;
+  }
+
   const amountChoice = fillMode === "amount-choice";
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
   const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
@@ -223,7 +233,7 @@ async function fillField(payload) {
     return result;
   }
 
-  const value = normalizeFilledValueForTemplate(promptField, typeof parsed.value === "string" ? parsed.value.trim() : "");
+  const value = normalizeFilledValueForTemplate(promptField, rawValue);
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
     await writeFillFinalDebugLog(runtime, debugContext, parsed, choiceGuard, "choice-guard");
@@ -492,6 +502,9 @@ function normalizeFilledValueForTemplate(field, value) {
   if (field.type !== "单选项") return text;
 
   const context = String(field.templateContext || field.answerFormat || field.question || "").replace(/\s+/g, " ").trim();
+  if (/财务要求/.test(`${field.name || ""} ${context}`)) {
+    return normalizeForSearch(text).startsWith("无财务要求") ? "无财务要求" : text;
+  }
   if (!/(业绩|人员|资质|资格)/.test(`${field.name || ""} ${context}`)) return text;
 
   const options = extractTemplateOptions(context);
@@ -513,6 +526,7 @@ function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
   const status = String(parsed?.status || "").trim();
   if (status === "需补充资料") return createMissingChoiceResult(source, evidence || "资料不足，选择型字段不写入。");
   if (!String(value || "").trim()) return createMissingChoiceResult(source, "未返回可写入的选择值。");
+  if (isNoRequirementChoiceValue(field, value)) return null;
 
   const reasonText = `${source || ""}\n${evidence || ""}`;
 
@@ -621,6 +635,38 @@ function createMissingChoiceResult(source, evidence) {
     source: source && source !== "AI 基于上传资料与知识库生成" ? source : "未找到资料依据",
     evidence,
   };
+}
+
+function isFinancialRequirementChoiceField(field = {}) {
+  return isChoiceField(field) && /财务要求/.test([
+    field.name,
+    field.sourceText,
+    field.templateContext,
+    field.answerFormat,
+    field.question,
+  ].filter(Boolean).join(" "));
+}
+
+function createNoFinancialRequirementResult(sourceBundle) {
+  return {
+    value: "无财务要求",
+    status: "待确认",
+    confidence: sourceBundle && /财务要求|无亏损/.test(sourceBundle) ? 86 : 78,
+    source: "知识库未提供明确财务要求",
+    evidence: "未在知识库/上传资料中检索到明确财务要求，按财务要求选择规则勾选“无财务要求”。",
+  };
+}
+
+function isNoRequirementChoiceValue(field = {}, value = "") {
+  const normalized = normalizeForSearch(value);
+  const context = normalizeForSearch([
+    field.name,
+    field.sourceText,
+    field.templateContext,
+    field.answerFormat,
+    field.question,
+  ].filter(Boolean).join(" "));
+  return normalized.startsWith("无财务要求") && context.includes("财务要求");
 }
 
 function looksLikeUnfilledChoiceTemplate(value) {
@@ -823,6 +869,7 @@ function expandDomainSearchTokens(value) {
   if (/业绩|类似项目|合同金额|发票/.test(value)) add("业绩要求", "类似项目业绩", "合同金额");
   if (/人员|技术负责人|安全员|项目负责人|专职安全/.test(value)) add("人员要求", "技术负责人", "专职安全生产管理人员");
   if (/资质|资格|安全生产许可证|劳务资质/.test(value)) add("资质要求", "施工劳务资质", "安全生产许可证");
+  if (/财务|无亏损|亏损/.test(value)) add("财务要求", "无财务要求", "无亏损", "近三年", "近3年", "财务报表");
   if (/工期|合同工期|日历天|进场通知/.test(value)) add("工期", "合同工期", "日历天");
   if (/付款|支付|进度款|结算款|质保金|缺陷责任/.test(value)) add("付款方式", "进度款", "结算款", "质保金");
   if (/金额选择|含税|不含税|最高限价|控制价|预算金额|报价|费用/.test(value)) add("最高限价", "控制价", "预算金额", "含税", "不含税", "万元", "元");

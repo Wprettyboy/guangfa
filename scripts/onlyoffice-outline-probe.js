@@ -298,6 +298,14 @@
     const fillText = String(field?.fillText || field?.value || "");
     if (!fillText) return { ok: false, id: field?.id, error: "字段填充值为空" };
     if (isChoiceMarkerField(field)) {
+      if (shouldReplaceChoiceSelectionWithAnswer(field)) {
+        if (!selectFieldBookmark(field)) {
+          return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
+        }
+        const result = enterTextAtSelection(buildChoiceSelectionReplacementText(field));
+        postFieldPages("fill-choice-replacement");
+        return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field), source: "choice-selection-replacement" };
+      }
       const result = checkChoiceMarker(field);
       const amountResult = result.ok && (field?.amountValue || field?.fillMode === "amount-choice") ? fillAmountBlank(field) : null;
       postFieldPages("fill-choice-field");
@@ -315,6 +323,23 @@
     const category = String(field?.category || field?.type || "");
     const source = String(field?.sourceText || field?.marker?.text || "");
     return category.includes("单选") && /[□☐○〇▢☑✓✔]/.test(source);
+  }
+
+  function shouldReplaceChoiceSelectionWithAnswer(field) {
+    const context = normalizeChoiceText([field?.name, field?.sourceText, field?.marker?.text].filter(Boolean).join(" "));
+    const value = normalizeChoiceText(field?.value || field?.fillText);
+    return context.includes("财务要求") && value && !value.startsWith("无财务要求");
+  }
+
+  function buildChoiceSelectionReplacementText(field) {
+    const value = String(field?.value || field?.fillText || "").replace(/\s+/g, " ").trim();
+    const compactValue = value.replace(/\s+/g, "").replace(/^[□☐○〇▢☑✓✔]/, "");
+    if (!value || /^(?:\d+[.、]?)?财务要求[：:]?/.test(compactValue)) return value.replace(/[□☐○〇▢☑✓✔]\s*/, "");
+    const source = String(field?.marker?.text || field?.sourceText || "");
+    const label = source.match(/^\s*(\d+[.、]\s*)?[□☐○〇▢☑✓✔]?\s*财务要求\s*[：:]/)?.[0]
+      ?.replace(/[□☐○〇▢☑✓✔]\s*/, "")
+      ?.replace(/\s+/g, "") || "财务要求：";
+    return label + value;
   }
 
   function checkChoiceMarker(field) {

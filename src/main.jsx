@@ -7077,7 +7077,7 @@ function applySectionLeadFillValue(container, field) {
   storeOriginalText(target);
   replaceTargetTextWithValue({
     target,
-    field,
+    field: { ...field, value: getSectionAnswerValue(field, sectionLabel) },
     beforeValue: `${sectionLabel}：`,
     afterValue: "",
     lead: true,
@@ -7147,6 +7147,7 @@ function isSectionNoRequirementOption(text, sectionLabel) {
   if (normalizedLabel.includes("业绩要求")) return normalizedText.startsWith("无业绩要求");
   if (normalizedLabel.includes("人员要求")) return normalizedText.startsWith("无人员要求");
   if (normalizedLabel.includes("资质要求")) return normalizedText.startsWith("无资质要求");
+  if (normalizedLabel.includes("财务要求")) return normalizedText.startsWith("无财务要求");
   return false;
 }
 
@@ -7159,10 +7160,17 @@ function isSectionReplacementChoiceField(field) {
   return field.type === "单选项" && Boolean(resolveSectionLeadLabel(field)) && shouldReplaceSectionWithAnswer(field);
 }
 
+function getSectionAnswerValue(field, sectionLabel) {
+  const value = String(field.value || "").replace(/\s+/g, " ").trim();
+  const label = normalizeChoiceText(sectionLabel).replace(/^\d+/, "");
+  return value.replace(new RegExp(`^\\s*(?:\\d+[.、]\\s*)?${escapeRegExp(label)}\\s*[：:]?\\s*`), "").trim() || value;
+}
+
 function shouldReplaceSectionWithAnswer(field) {
   const value = String(field.value || "").replace(/\s+/g, " ").trim();
+  if (/^无(?:业绩|人员|资质|资格|财务)?要求/.test(normalizeChoiceText(value))) return false;
+  if (isFinancialRequirementField(field)) return true;
   if (value.length < 60) return false;
-  if (/^无(?:业绩|人员|资质|资格)?要求/.test(normalizeChoiceText(value))) return false;
   return /[。；;，,]/.test(value) || value.length >= 90;
 }
 
@@ -7507,7 +7515,7 @@ function applySectionLeadFillToDocxXml(paragraphs, field) {
   const paragraph = target?.item;
   if (!paragraph) return false;
 
-  setXmlParagraphWithFill(paragraph, `${sectionLabel}：`, field.value, "", field);
+  setXmlParagraphWithFill(paragraph, `${sectionLabel}：`, getSectionAnswerValue(field, sectionLabel), "", field);
   removeSectionTemplateOptionParagraphs(paragraphs, target.index, sectionLabel);
   return true;
 }
@@ -7550,6 +7558,7 @@ function removeSectionTemplateOptionParagraphs(paragraphs, startIndex, sectionLa
 
 function resolveSectionLeadLabel(field) {
   const normalizedName = normalizeChoiceText(field.name);
+  if (normalizedName.includes("财务要求")) return "2.财务要求";
   if (normalizedName.includes("业绩要求")) return "2.业绩要求";
   if (normalizedName.includes("人员要求")) return "3.人员要求";
   if (normalizedName.includes("资质要求") || normalizedName.includes("资格要求")) return "1.资质要求";
@@ -7559,7 +7568,11 @@ function resolveSectionLeadLabel(field) {
 function isSectionLeadParagraph(text, sectionLabel) {
   const normalizedText = normalizeChoiceText(text);
   const normalizedLabel = normalizeChoiceText(sectionLabel);
-  return normalizedText.startsWith(normalizedLabel) && normalizedText.length <= normalizedLabel.length + 8;
+  return normalizedText.startsWith(normalizedLabel) && (normalizedText.length <= normalizedLabel.length + 8 || normalizedLabel.includes("财务要求"));
+}
+
+function isFinancialRequirementField(field = {}) {
+  return /财务要求/.test(`${field.name || ""} ${field.sourceText || ""} ${field.answerFormat || ""} ${field.question || ""}`);
 }
 
 function applyLabelFillToDocxXml(paragraphs, field) {
