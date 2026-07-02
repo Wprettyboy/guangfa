@@ -330,22 +330,16 @@
     let changed = 0;
     for (const option of options) {
       if (option === target) continue;
-      for (const marker of ["☑", "✓", "✔"]) {
-        if (replaceChoiceToken(`${marker}${option.body}`, `${uncheckedChoiceMarker(option.marker)}${option.body}`, field)) changed += 1;
-      }
+      if (setChoiceMarkerBeforeOption(option, uncheckedChoiceMarker(option.marker), field, /[☑✓✔]/)) changed += 1;
     }
 
-    for (const marker of ["☑", "✓", "✔"]) {
-      if (findChoiceToken(`${marker}${target.body}`, field)) {
-        if (changed > 0) saveOnlyOfficeDocument("fill-choice-field");
-        return { ok: true, source: "choice-marker", changed, alreadyChecked: true };
-      }
+    if (setChoiceMarkerBeforeOption(target, "☑", field, /[☑]/)) {
+      if (changed > 0) saveOnlyOfficeDocument("fill-choice-field");
+      return { ok: true, source: "choice-marker", changed, alreadyChecked: true };
     }
 
-    for (const marker of ["□", "☐", "○", "〇", "▢"]) {
-      if (replaceChoiceToken(`${marker}${target.body}`, `☑${target.body}`, field)) {
-        return { ok: true, source: "choice-marker", changed: changed + 1 };
-      }
+    if (setChoiceMarkerBeforeOption(target, "☑", field, /[□☐○〇▢]/)) {
+      return { ok: true, source: "choice-marker", changed: changed + 1 };
     }
 
     return { ok: false, source: "choice-marker", changed, error: "未在文档中定位到选项前的方框" };
@@ -385,17 +379,18 @@
     return marker === "○" || marker === "〇" ? marker : "□";
   }
 
-  function findChoiceToken(token, field) {
-    return findOrReplaceChoiceToken(token, "", field, false);
+  function setChoiceMarkerBeforeOption(option, marker, field, allowedMarkerPattern) {
+    if (!selectChoiceOptionText(option, field)) return false;
+    const selectedMarker = selectMarkerBeforeSelection(allowedMarkerPattern);
+    if (!selectedMarker) return false;
+    if (selectedMarker.replace(/[^□☐○〇▢☑✓✔]/g, "") === marker) return true;
+    enterTextAtSelection(selectedMarker.replace(/[□☐○〇▢☑✓✔]/, marker));
+    return true;
   }
 
-  function replaceChoiceToken(token, replacement, field) {
-    return findOrReplaceChoiceToken(token, replacement, field, true);
-  }
-
-  function findOrReplaceChoiceToken(token, replacement, field, shouldReplace) {
+  function selectChoiceOptionText(option, field) {
     const api = getEditorApi();
-    const settings = createSearchSettings(token);
+    const settings = createSearchSettings(option.text);
     if (!api || !settings) return false;
     const expectedPage = Number(field?.page || 0);
     try {
@@ -407,8 +402,7 @@
         const selectedText = readSelectedText(getLogicDocument()) || readSelectedText(api);
         const page = currentSelectionPage();
         const pageOk = !expectedPage || !page || page === expectedPage;
-        if (pageOk && sameChoiceToken(selectedText, token)) {
-          if (shouldReplace) enterTextAtSelection(replacement);
+        if (pageOk && normalizeChoiceText(selectedText) === normalizeChoiceText(option.text)) {
           return true;
         }
         if (index < max - 1) api.asc_findText(settings, true);
@@ -421,9 +415,21 @@
     return false;
   }
 
-  function sameChoiceToken(actual, expected) {
-    const compact = function (value) { return String(value || "").replace(/\s+/g, ""); };
-    return compact(actual) === compact(expected);
+  function selectMarkerBeforeSelection(allowedMarkerPattern) {
+    const logicDocument = getLogicDocument();
+    if (!logicDocument || typeof logicDocument.MoveCursorLeft !== "function") return "";
+    try {
+      logicDocument.MoveCursorLeft(false, false);
+      let selected = "";
+      for (let index = 0; index < 4; index += 1) {
+        logicDocument.MoveCursorLeft(true, false);
+        selected = readSelectedText(logicDocument);
+        if (/[□☐○〇▢☑✓✔]/.test(selected)) {
+          return allowedMarkerPattern.test(selected) ? selected : "";
+        }
+      }
+    } catch {}
+    return "";
   }
 
   function moveSearchCursorToStart() {
