@@ -297,12 +297,133 @@
   function fillBookmarkedField(field) {
     const fillText = String(field?.fillText || field?.value || "");
     if (!fillText) return { ok: false, id: field?.id, error: "字段填充值为空" };
+    if (isChoiceMarkerField(field)) {
+      const result = checkChoiceMarker(field);
+      postFieldPages("fill-choice-field");
+      return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
+    }
     if (!selectFieldBookmark(field)) {
       return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
     }
     const result = enterTextAtSelection(fillText);
     postFieldPages("fill-field");
     return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
+  }
+
+  function isChoiceMarkerField(field) {
+    const category = String(field?.category || field?.type || "");
+    const source = String(field?.sourceText || field?.marker?.text || "");
+    return category.includes("单选") && /[□☐○〇▢☑✓✔]/.test(source);
+  }
+
+  function checkChoiceMarker(field) {
+    const api = getEditorApi();
+    if (!api || typeof api.asc_findText !== "function") {
+      return { ok: false, error: "选择项搜索接口不可用" };
+    }
+
+    const source = String(field?.sourceText || field?.marker?.text || "");
+    const options = parseChoiceOptions(source);
+    const target = findChoiceOption(options, field);
+    if (!target) return { ok: false, error: "未匹配到需要勾选的选项" };
+
+    let changed = 0;
+    for (const option of options) {
+      if (option === target) continue;
+      for (const marker of ["☑", "✓", "✔"]) {
+        if (replaceChoiceToken(`${marker}${option.body}`, `${uncheckedChoiceMarker(option.marker)}${option.body}`, field)) changed += 1;
+      }
+    }
+
+    for (const marker of ["☑", "✓", "✔"]) {
+      if (findChoiceToken(`${marker}${target.body}`, field)) {
+        if (changed > 0) saveOnlyOfficeDocument("fill-choice-field");
+        return { ok: true, source: "choice-marker", changed, alreadyChecked: true };
+      }
+    }
+
+    for (const marker of ["□", "☐", "○", "〇", "▢"]) {
+      if (replaceChoiceToken(`${marker}${target.body}`, `☑${target.body}`, field)) {
+        return { ok: true, source: "choice-marker", changed: changed + 1 };
+      }
+    }
+
+    return { ok: false, source: "choice-marker", changed, error: "未在文档中定位到选项前的方框" };
+  }
+
+  function parseChoiceOptions(source) {
+    return [...String(source || "").matchAll(/([□☐○〇▢☑✓✔])(\s*[^□☐○〇▢☑✓✔]{1,80})/g)]
+      .map(function (match) {
+        return {
+          marker: match[1],
+          body: match[2].replace(/\s+/g, " ").replace(/\s+$/, ""),
+          text: match[2].replace(/\s+/g, " ").trim(),
+        };
+      })
+      .filter(function (option) { return normalizeChoiceText(option.text).length >= 2; });
+  }
+
+  function findChoiceOption(options, field) {
+    const checked = parseChoiceOptions(field?.value).find(function (option) { return /[☑✓✔]/.test(option.marker); });
+    const value = normalizeChoiceText(checked?.text || field?.value || field?.fillText);
+    return options.find(function (option) {
+      const text = normalizeChoiceText(option.text);
+      return value && (text.includes(value) || value.includes(text));
+    }) || null;
+  }
+
+  function normalizeChoiceText(value) {
+    return String(value || "")
+      .replace(/[□☐○〇▢☑✓✔]/g, "")
+      .replace(/^第[一二三四五六七八九十\d]+章\s*/, "")
+      .replace(/[（）()：:，,。；;\s]/g, "")
+      .replace(/综合评分法/g, "综合评估法")
+      .trim();
+  }
+
+  function uncheckedChoiceMarker(marker) {
+    return marker === "○" || marker === "〇" ? marker : "□";
+  }
+
+  function findChoiceToken(token, field) {
+    return findOrReplaceChoiceToken(token, "", field, false);
+  }
+
+  function replaceChoiceToken(token, replacement, field) {
+    return findOrReplaceChoiceToken(token, replacement, field, true);
+  }
+
+  function findOrReplaceChoiceToken(token, replacement, field, shouldReplace) {
+    const api = getEditorApi();
+    const settings = createSearchSettings(token);
+    if (!api || !settings) return false;
+    const expectedPage = Number(field?.page || 0);
+    try {
+      if (typeof api.asc_endFindText === "function") api.asc_endFindText();
+      moveSearchCursorToStart();
+      const count = Number(api.asc_findText(settings, true)) || 0;
+      const max = Math.min(Math.max(count, 1), 80);
+      for (let index = 0; index < max; index += 1) {
+        const selectedText = readSelectedText(getLogicDocument()) || readSelectedText(api);
+        const page = currentSelectionPage();
+        const pageOk = !expectedPage || !page || page === expectedPage;
+        if (pageOk && sameChoiceToken(selectedText, token)) {
+          if (shouldReplace) enterTextAtSelection(replacement);
+          return true;
+        }
+        if (index < max - 1) api.asc_findText(settings, true);
+      }
+    } catch {
+      return false;
+    } finally {
+      try { if (typeof api.asc_endFindText === "function") api.asc_endFindText(); } catch {}
+    }
+    return false;
+  }
+
+  function sameChoiceToken(actual, expected) {
+    const compact = function (value) { return String(value || "").replace(/\s+/g, ""); };
+    return compact(actual) === compact(expected);
   }
 
   function moveSearchCursorToStart() {
@@ -614,6 +735,11 @@
   window.guangfaEnableTrackRevisions = enableTrackRevisions;
   window.guangfaSaveOnlyOfficeDocument = saveOnlyOfficeDocument;
   window.guangfaSetFillFields = setFillFields;
+  window.guangfaChoiceMarkerSelfTest = function () {
+    const options = parseChoiceOptions("□第五章 评审办法（经评审的最低投标价法） □第五章 评审办法（综合评估法）");
+    const target = findChoiceOption(options, { value: "综合评估法" });
+    return { ok: options.length === 2 && /综合评估法/.test(target?.text || ""), count: options.length, target: target?.text || "" };
+  };
   window.guangfaPostFieldPages = function () {
     return postFieldPages("manual");
   };
