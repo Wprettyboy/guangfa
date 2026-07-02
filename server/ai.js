@@ -182,28 +182,47 @@ async function fillField(payload) {
     materialText ? `【本次上传资料】\n${materialText}` : "【本次上传资料】\n未上传临时资料。",
   ].join("\n");
 
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" || fillMode === "list" ? 1536 : 768);
+  const debugContext = {
+    field: summarizeFieldForDebug(promptField),
+    fillMode,
+    retrievalQuery,
+    knowledgeCount: knowledgeSnippets.length,
+    materialCount: materialSnippets.length,
+    knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
+    materialSnippets: summarizeSnippetsForDebug(materialSnippets),
+  };
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" || fillMode === "list" ? 1536 : 768, {
+    debugFileName: "ai-fill-last.json",
+    debugContext,
+  });
   const value = normalizeFilledValueForTemplate(promptField, typeof parsed.value === "string" ? parsed.value.trim() : "");
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
   const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
-  if (choiceGuard) return choiceGuard;
+  if (choiceGuard) {
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, choiceGuard, "choice-guard");
+    return choiceGuard;
+  }
   if (isTemplateOnlyFillEvidence(promptField, value, `${source}\n${evidence}`, `${knowledgeText}\n${materialText}`)) {
-    return {
+    const result = {
       value: "",
       status: "需补充资料",
       confidence: 0,
       source: "未找到资料依据",
       evidence: "模型仅引用模板选区原文，未在知识库或上传资料中找到可填依据。",
     };
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "template-only-evidence");
+    return result;
   }
-  return {
+  const result = {
     value,
     status: parsed.status === "需补充资料" ? "需补充资料" : "待确认",
     confidence: clampConfidence(parsed.confidence),
     source,
     evidence,
   };
+  await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "ok");
+  return result;
 }
 
 async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens, options = {}) {
@@ -281,6 +300,43 @@ async function writeAiDebugLog(fileName, payload) {
   } catch {
     // Debug logging must not break the user-facing AI workflow.
   }
+}
+
+async function writeFillFinalDebugLog(runtime, debugContext, parsed, result, reason) {
+  await writeAiDebugLog("ai-fill-last-final.json", {
+    createdAt: new Date().toISOString(),
+    model: runtime.model,
+    baseUrl: runtime.baseUrl,
+    context: debugContext,
+    modelParsed: parsed,
+    returnedResult: result,
+    finalReason: reason,
+  });
+}
+
+function summarizeFieldForDebug(field = {}) {
+  return {
+    id: field.id,
+    name: field.name,
+    category: field.category || field.type,
+    fillMode: field.fillMode,
+    sourceText: field.sourceText || field.templateContext || field.answerFormat || "",
+    question: field.question,
+    aiInstruction: field.aiInstruction,
+    page: field.page,
+  };
+}
+
+function summarizeSnippetsForDebug(snippets = []) {
+  return snippets.map((item, index) => ({
+    index: index + 1,
+    source: item.documentName || item.name || "未命名资料",
+    scope: item.scope,
+    chunkIndex: item.chunkIndex,
+    page: item.page || "",
+    score: item.score,
+    text: String(item.text || "").slice(0, 1200),
+  }));
 }
 
 function getAiRuntimeConfig() {
