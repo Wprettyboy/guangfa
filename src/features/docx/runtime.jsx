@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import gsap from "gsap";
+
+import { useGSAP } from "@gsap/react";
+
 import { renderAsync } from "docx-preview";
 
 import JSZip from "jszip";
@@ -24,6 +28,8 @@ import {
 
   Eye,
 
+  FileCheck2,
+
   FileText,
 
   Highlighter,
@@ -31,6 +37,10 @@ import {
   Info,
 
   Loader2,
+
+  PenLine,
+
+  Save,
 
   Search,
 
