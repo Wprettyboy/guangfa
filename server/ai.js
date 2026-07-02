@@ -180,6 +180,12 @@ async function fillField(payload) {
       `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；模板单位为万元则 amountValue 为 300；模板单位为十万元/十万则 amountValue 为 30。`,
       "13. choiceValue 只能输出模板候选项中的“含税”或“不含税”。金额或含税状态任一项没有资料依据时，status 必须为需补充资料。",
     ] : []),
+    ...(fillMode === "amount" ? [
+      `12. 当前字段是金额填空，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。若能识别模板单位，value 必须按模板单位换算后输出，不要带单位；若模板未给单位，value 保留资料中的金额和单位。`,
+    ] : []),
+    ...(fillMode === "date" ? [
+      "12. 当前字段是日期填空，常见模板只有两类：选区为“ 年 月 日”这类日期空位时输出完整日期；选区为“日期：”这类标签时只输出日期值，不要重复“日期：”。",
+    ] : []),
     ...(fillMode === "choice-replace" ? [
       "14. 当前字段是“替换+选择”：如果资料明确写有该项要求，value 输出可直接替换模板选区的要求正文；如果资料没有明确要求，value 输出模板中的“无xx要求”选项文本，用于只勾选对应选项。",
     ] : []),
@@ -514,6 +520,8 @@ function isAmountChoiceContext(context) {
 function normalizeFilledValueForTemplate(field, value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
+  if (normalizeFillMode(field) === "date") return stripFillValueLabel(text, "日期|时间|编制日期");
+  if (normalizeFillMode(field) === "amount") return normalizeAmountFillValue(field, text);
   if (field.type !== "单选项") return text;
 
   const context = String(field.templateContext || field.answerFormat || field.question || "").replace(/\s+/g, " ").trim();
@@ -535,6 +543,16 @@ function normalizeFilledValueForTemplate(field, value) {
     .sort((a, b) => b.score - a.score || b.option.length - a.option.length);
 
   return ranked[0]?.score >= 2 ? ranked[0].option : text;
+}
+
+function normalizeAmountFillValue(field, value) {
+  const text = stripFillValueLabel(value, "金额|限价|报价|费用|预算|投标保证金|询比保证金");
+  if (!getTemplateAmountUnit(field)) return text;
+  return normalizeTemplateAmountValue(field, text) || text;
+}
+
+function stripFillValueLabel(value, labelPattern) {
+  return String(value || "").replace(new RegExp(`^(?:${labelPattern})\\s*[：:]\\s*`), "").trim();
 }
 
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
