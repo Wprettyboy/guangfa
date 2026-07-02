@@ -875,6 +875,7 @@
       if (aiKnowledgeContext) window.localStorage.setItem("guangfa_ai_knowledge_context", JSON.stringify(aiKnowledgeContext));
       else window.localStorage.removeItem("guangfa_ai_knowledge_context");
     } catch {}
+    updateGuangfaAiChatKnowledgeLabel(document.getElementById("guangfa-ai-chat-panel"));
   }
 
   function extractFieldPages() {
@@ -921,40 +922,173 @@
     return payload;
   }
 
-  function isVisibleElement(node) {
-    const rect = node?.getBoundingClientRect?.();
-    return !!rect && rect.width > 0 && rect.height > 0;
+  let aiChatHistory = [];
+
+  function getAiChatApiBase(context) {
+    const explicit = String(context?.apiBase || "").trim();
+    if (explicit) return explicit.replace(/\/$/, "");
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    const host = window.location.hostname || "127.0.0.1";
+    return window.location.port === "8080" ? `${protocol}//${host}:5173` : window.location.origin;
   }
 
-  function findVisibleElementByText(pattern) {
-    const nodes = [...document.querySelectorAll("button, [role='button'], .btn, [role='tab'], .toolbar-tab")];
-    return nodes.find(function (node) {
-      if (node.id === "id-right-menu-guangfa-ai-chat" || node.closest?.("#id-right-menu-guangfa-ai-chat")) return false;
+  function getAiChatKnowledgeContext() {
+    let context = aiKnowledgeContext;
+    if (!context) {
+      try {
+        context = JSON.parse(window.localStorage.getItem("guangfa_ai_knowledge_context") || "null");
+      } catch {}
+    }
+    const next = context && typeof context === "object" ? { ...context } : {};
+    next.kbIds = Array.isArray(next.kbIds) ? next.kbIds.filter(Boolean) : [];
+    next.topK = Number(next.topK) || 8;
+    next.apiBase = getAiChatApiBase(next);
+    next.enabled = next.enabled !== false && next.kbIds.length > 0;
+    return next;
+  }
+
+  function getAiChatKnowledgeLabel(context) {
+    const names = Array.isArray(context?.bases) ? context.bases.map((item) => item?.name).filter(Boolean) : [];
+    if (names.length > 0) return names.join("、");
+    if (Array.isArray(context?.kbIds) && context.kbIds.length > 0) return context.kbIds.join("、");
+    return "未挂载知识库";
+  }
+
+  function ensureGuangfaAiChatStyle() {
+    if (document.getElementById("guangfa-ai-chat-panel-style")) return;
+    const style = document.createElement("style");
+    style.id = "guangfa-ai-chat-panel-style";
+    style.textContent = [
+      "#guangfa-ai-chat-panel{position:fixed;right:42px;top:64px;bottom:18px;width:360px;z-index:1000000;background:#fff;border:1px solid #d9dee8;box-shadow:0 12px 32px rgba(15,23,42,.18);display:flex;flex-direction:column;font-family:Arial,'Microsoft YaHei',sans-serif;color:#1f2937}",
+      "#guangfa-ai-chat-panel.gf-hidden{display:none}",
+      ".gf-ai-chat-header{height:42px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #e5e7eb;background:#f8fafc}",
+      ".gf-ai-chat-title{font-size:14px;font-weight:600;white-space:nowrap}",
+      ".gf-ai-chat-kb{flex:1;min-width:0;font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".gf-ai-chat-close{width:26px;height:26px;border:0;background:transparent;font-size:18px;line-height:24px;cursor:pointer;color:#64748b}",
+      ".gf-ai-chat-messages{flex:1;overflow:auto;padding:12px;background:#fff}",
+      ".gf-ai-chat-message{max-width:92%;margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}",
+      ".gf-ai-chat-message.user{margin-left:auto;background:#e8f1ff;color:#0f172a}",
+      ".gf-ai-chat-message.assistant{margin-right:auto;background:#f3f4f6;color:#111827}",
+      ".gf-ai-chat-message.pending{color:#64748b}",
+      ".gf-ai-chat-form{display:flex;gap:8px;padding:10px;border-top:1px solid #e5e7eb;background:#f8fafc}",
+      ".gf-ai-chat-input{flex:1;min-height:38px;max-height:96px;resize:vertical;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:13px;line-height:1.4}",
+      ".gf-ai-chat-send{width:56px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:#fff;font-size:13px;cursor:pointer}",
+      ".gf-ai-chat-send:disabled{opacity:.55;cursor:not-allowed}",
+    ].join("");
+    document.head.appendChild(style);
+  }
+
+  function updateGuangfaAiChatKnowledgeLabel(panel) {
+    const label = panel?.querySelector?.(".gf-ai-chat-kb");
+    if (label) label.textContent = getAiChatKnowledgeLabel(getAiChatKnowledgeContext());
+  }
+
+  function appendGuangfaAiChatMessage(role, text, className) {
+    const list = document.querySelector("#guangfa-ai-chat-panel .gf-ai-chat-messages");
+    if (!list) return null;
+    const item = document.createElement("div");
+    item.className = ["gf-ai-chat-message", role, className || ""].filter(Boolean).join(" ");
+    item.textContent = text;
+    list.appendChild(item);
+    list.scrollTop = list.scrollHeight;
+    return item;
+  }
+
+  async function sendGuangfaAiChatMessage() {
+    const panel = document.getElementById("guangfa-ai-chat-panel");
+    const input = panel?.querySelector?.(".gf-ai-chat-input");
+    const sendButton = panel?.querySelector?.(".gf-ai-chat-send");
+    const message = String(input?.value || "").trim();
+    if (!message || sendButton?.disabled) return;
+
+    const context = getAiChatKnowledgeContext();
+    updateGuangfaAiChatKnowledgeLabel(panel);
+    input.value = "";
+    sendButton.disabled = true;
+    appendGuangfaAiChatMessage("user", message);
+    const pending = appendGuangfaAiChatMessage("assistant", "正在思考中...", "pending");
+    try {
+      const response = await fetch(`${context.apiBase}/api/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history: aiChatHistory.slice(-8),
+          knowledgeOptions: context,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+      const reply = String(result.reply || "未生成有效回复。").trim();
+      if (pending) {
+        pending.classList.remove("pending");
+        pending.textContent = reply;
+      }
+      aiChatHistory.push({ role: "user", content: message }, { role: "assistant", content: reply });
+      aiChatHistory = aiChatHistory.slice(-16);
+    } catch (error) {
+      if (pending) {
+        pending.classList.remove("pending");
+        pending.textContent = `AI 回复失败：${error?.message || "未知错误"}`;
+      }
+    } finally {
+      sendButton.disabled = false;
+      input.focus();
+    }
+  }
+
+  function ensureGuangfaAiChatPanel() {
+    ensureGuangfaAiChatStyle();
+    let panel = document.getElementById("guangfa-ai-chat-panel");
+    if (panel) return panel;
+    panel = document.createElement("aside");
+    panel.id = "guangfa-ai-chat-panel";
+    panel.className = "gf-hidden";
+    panel.innerHTML = [
+      '<div class="gf-ai-chat-header">',
+      '<span class="gf-ai-chat-title">聊天机器人</span>',
+      '<span class="gf-ai-chat-kb"></span>',
+      '<button class="gf-ai-chat-close" type="button" aria-label="关闭聊天机器人">×</button>',
+      "</div>",
+      '<div class="gf-ai-chat-messages"></div>',
+      '<form class="gf-ai-chat-form">',
+      '<textarea class="gf-ai-chat-input" rows="2" placeholder="输入问题"></textarea>',
+      '<button class="gf-ai-chat-send" type="submit">发送</button>',
+      "</form>",
+    ].join("");
+    document.body.appendChild(panel);
+    panel.querySelector(".gf-ai-chat-close")?.addEventListener("click", function () {
+      panel.classList.add("gf-hidden");
+    });
+    panel.querySelector(".gf-ai-chat-form")?.addEventListener("submit", function (event) {
+      event.preventDefault();
+      sendGuangfaAiChatMessage();
+    });
+    panel.querySelector(".gf-ai-chat-input")?.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendGuangfaAiChatMessage();
+      }
+    });
+    return panel;
+  }
+
+  function hideNativeAiChatEntrypoints() {
+    document.querySelectorAll("button, [role='button'], .btn, [role='tab'], .toolbar-tab").forEach(function (node) {
+      if (node.id === "id-right-menu-guangfa-ai-chat" || node.closest?.("#id-right-menu-guangfa-ai-chat")) return;
       const text = String(node.getAttribute("aria-label") || node.getAttribute("title") || node.textContent || "").replace(/\s+/g, " ").trim();
-      return isVisibleElement(node) && pattern.test(text);
-    }) || null;
+      if (/^(聊天机器人|Chatbot)$/i.test(text)) node.style.display = "none";
+    });
   }
 
   function openOnlyOfficeAiChat() {
     try {
-      if (typeof window.chatWindowShow === "function") {
-        window.chatWindowShow();
-        return true;
-      }
-      const chatButton = findVisibleElementByText(/^(聊天机器人|Chatbot)$/i);
-      if (chatButton) {
-        chatButton.click();
-        return true;
-      }
-      const aiTab = findVisibleElementByText(/^AI$/);
-      if (aiTab) {
-        aiTab.click();
-        window.setTimeout(function () {
-          const nextChatButton = findVisibleElementByText(/^(聊天机器人|Chatbot)$/i);
-          if (nextChatButton) nextChatButton.click();
-        }, 120);
-        return true;
-      }
+      hideNativeAiChatEntrypoints();
+      const panel = ensureGuangfaAiChatPanel();
+      updateGuangfaAiChatKnowledgeLabel(panel);
+      panel.classList.remove("gf-hidden");
+      panel.querySelector(".gf-ai-chat-input")?.focus();
+      return true;
     } catch (error) {
       console.warn("[guangfa-onlyoffice-ai-chat-error]", error?.message || error);
     }
@@ -988,10 +1122,12 @@
       button.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
+        event.stopImmediatePropagation();
         openOnlyOfficeAiChat();
-      });
+      }, true);
       button.__guangfaAiChatClickBound = true;
     }
+    hideNativeAiChatEntrypoints();
     return true;
   }
 

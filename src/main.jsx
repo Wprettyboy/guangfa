@@ -584,7 +584,7 @@ function App() {
   const onlyOfficeAiKnowledgeContext = useMemo(() => {
     const kbIds = [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds];
     return {
-      enabled: selectedProjectKnowledgeBaseIds.length > 0 && kbIds.length > 0,
+      enabled: kbIds.length > 0,
       apiBase: window.location.origin,
       projectId: currentProjectId,
       kbIds,
@@ -3380,6 +3380,7 @@ function FillWorkspace({
   const projectKnowledgeBases = knowledgeBases.filter((base) => base.scope !== "global");
   const globalKnowledgeBases = knowledgeBases.filter((base) => base.scope === "global" && (base.documentCount || 0) > 0);
   const knowledgeSelected = selectedProjectKnowledgeBaseIds.length > 0;
+  const anyKnowledgeSelected = selectedProjectKnowledgeBaseIds.length > 0 || selectedGlobalKnowledgeBaseIds.length > 0;
   const bulkProgressText = generatingAll && bulkFillProgress?.total
     ? `${bulkFillProgress.current}/${bulkFillProgress.total}`
     : "";
@@ -3472,7 +3473,7 @@ function FillWorkspace({
                 className="knowledge-topk-select"
                 value={knowledgeTopK}
                 onChange={(event) => onKnowledgeTopKChange(Number(event.target.value))}
-                disabled={!knowledgeSelected}
+                disabled={!anyKnowledgeSelected}
                 aria-label="知识库召回数量"
               >
                 <option value={3}>召回3段</option>

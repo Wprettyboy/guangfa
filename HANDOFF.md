@@ -49,7 +49,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - `src/main.jsx`：主前端，包含模板标注、填充确认、格式审核、OnlyOffice 预览。
 - `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
-- `server/ai.js`：AI 填充接口 `/api/ai/fill-field` 和大纲审查接口 `/api/ai/format-outline-plan`。
+- `server/ai.js`：AI 填充接口 `/api/ai/fill-field`、大纲审查接口 `/api/ai/format-outline-plan` 和知识库聊天接口 `/api/ai/chat`。
 - `server/knowledge-base.js`：知识库检索与召回。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
@@ -157,6 +157,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 删除字段、刷新页面、切换工作台时不要重载旧模板文件，否则预览会回到旧文档。
 - `scripts/start-onlyoffice.ps1` 会重启容器并重新打补丁，调试 OnlyOffice 注入脚本后要跑它或手动 `docker cp`。
 - `.js` 和 `.js.gz` 缓存都可能影响 OnlyOffice 前端脚本。调试 `guangfa-outline-probe.js` 后要确认容器内 `.js.gz` 解压内容和 `.js` 哈希一致，并 bump `index.html` 里脚本的 `?gf=` 缓存号；否则浏览器可能继续加载旧桥接脚本，表现为“代码改了但 OnlyOffice 仍按旧逻辑写入”。
+- OnlyOffice 右侧“聊天机器人”快捷入口不能再调用原生 `window.chatWindowShow()` 或点击原生 AI 插件 Chatbot。原生 AI Chat 会进入 OnlyOffice 宏/工具代理链路，表现为“运行宏、格式化文本、重写文本”等工具调用，并且知识库上下文不稳定；应打开自研 `guangfa-ai-chat-panel`，通过 `/api/ai/chat` 使用当前选择的知识库。
 
 ## 当前建议接手方式
 

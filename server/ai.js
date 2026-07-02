@@ -10,20 +10,89 @@ const materialChunkOverlap = 120;
 
 export function aiFillMiddleware() {
   return async function handleAiFill(request, response, next) {
-    if (request.method !== "POST" || !["/api/ai/fill-field", "/api/ai/format-outline-plan"].includes(request.url)) {
+    if (request.method !== "POST" || !["/api/ai/fill-field", "/api/ai/format-outline-plan", "/api/ai/chat"].includes(request.url)) {
       next();
       return;
     }
 
     try {
       const payload = await readJsonBody(request);
-      const result = request.url === "/api/ai/format-outline-plan" ? await createFormatOutlinePlan(payload) : await fillField(payload);
+      const result = request.url === "/api/ai/format-outline-plan"
+        ? await createFormatOutlinePlan(payload)
+        : request.url === "/api/ai/chat"
+          ? await createKnowledgeChat(payload)
+          : await fillField(payload);
       sendJson(response, 200, result);
     } catch (error) {
       sendJson(response, error.statusCode || 500, {
         error: error.message || "AI 处理失败",
       });
     }
+  };
+}
+
+async function createKnowledgeChat(payload) {
+  const message = String(payload?.message || "").trim().slice(0, 4000);
+  if (!message) {
+    const error = new Error("请输入聊天内容。");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const knowledgeOptions = payload?.knowledgeOptions && typeof payload.knowledgeOptions === "object" ? payload.knowledgeOptions : {};
+  const kbIds = Array.isArray(knowledgeOptions.kbIds) ? knowledgeOptions.kbIds.filter(Boolean) : [];
+  const knowledgeSnippets = knowledgeOptions.enabled === false || kbIds.length === 0
+    ? []
+    : await searchKnowledgeBase({
+      query: message,
+      projectId: knowledgeOptions.projectId || "default-project",
+      kbIds,
+      globalKbIds: Array.isArray(knowledgeOptions.globalKbIds) ? knowledgeOptions.globalKbIds.filter(Boolean) : [],
+      includeGlobal: knowledgeOptions.includeGlobal,
+      topK: knowledgeOptions.topK || 8,
+    }).catch(() => []);
+  const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets).slice(0, maxKnowledgeChars);
+  const history = normalizeChatHistory(payload?.history);
+  const runtime = getAiRuntimeConfig();
+  const baseNames = Array.isArray(knowledgeOptions.bases)
+    ? knowledgeOptions.bases.map((item) => item?.name).filter(Boolean).join("、")
+    : "";
+  const systemPrompt = [
+    "你是中文招标文件制作助手，只用自然语言回答。",
+    "禁止调用或输出 OnlyOffice 宏、writeMacro、functionCalling、工具调用、代码块或内部 API。",
+    "优先依据已挂载知识库召回片段回答；资料不足时明确说明缺少依据，不要编造。",
+  ].join("\n");
+  const userPrompt = [
+    `当前挂载知识库：${baseNames || (kbIds.length ? kbIds.join("、") : "未挂载")}`,
+    "",
+    knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未检索到相关片段。",
+    "",
+    `用户问题：${message}`,
+  ].join("\n");
+  const reply = sanitizeChatReply(await callChatModel(runtime, [
+    { role: "system", content: systemPrompt },
+    ...history,
+    { role: "user", content: userPrompt },
+  ], 2048, {
+    debugFileName: "ai-chat-last.json",
+    debugContext: {
+      message,
+      knowledgeOptions: {
+        enabled: knowledgeOptions.enabled !== false,
+        projectId: knowledgeOptions.projectId || "default-project",
+        kbIds,
+        topK: knowledgeOptions.topK || 8,
+        bases: knowledgeOptions.bases || [],
+      },
+      knowledgeCount: knowledgeSnippets.length,
+      knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
+    },
+  }));
+
+  return {
+    reply,
+    knowledgeCount: knowledgeSnippets.length,
+    snippets: summarizeSnippetsForDebug(knowledgeSnippets),
   };
 }
 
@@ -382,6 +451,62 @@ async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens, optio
   return parsed;
 }
 
+async function callChatModel(runtime, messages, maxTokens, options = {}) {
+  const { baseUrl, model, apiKey } = runtime;
+  const isLocalEndpoint = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(\/|$)/i.test(baseUrl);
+  if (!apiKey && !isLocalEndpoint) {
+    const error = new Error("缺少 AI API Key，请在系统设置中配置当前模型的 API Key。");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  let apiResponse;
+  try {
+    apiResponse = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: maxTokens,
+        ...(isLocalEndpoint ? { reasoning: false } : {}),
+        messages,
+      }),
+    });
+  } catch {
+    const error = new Error(`AI 服务连接失败：${baseUrl}。请先启动本地模型服务，或在系统设置切换到可用云端模型。`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  if (!apiResponse.ok) {
+    const text = await apiResponse.text();
+    const error = new Error(`AI 接口返回异常：${apiResponse.status} ${text.slice(0, 160)}`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const data = await apiResponse.json();
+  const content = stripThinking(data?.choices?.[0]?.message?.content || "").trim();
+  if (options.debugFileName) {
+    await writeAiDebugLog(options.debugFileName, {
+      createdAt: new Date().toISOString(),
+      model,
+      baseUrl,
+      maxTokens,
+      context: options.debugContext || {},
+      messages,
+      finishReason: data?.choices?.[0]?.finish_reason || "",
+      usage: data?.usage || null,
+      content,
+    });
+  }
+  return content;
+}
+
 async function writeAiDebugLog(fileName, payload) {
   try {
     const logsDir = new URL("../logs/", import.meta.url);
@@ -427,6 +552,26 @@ function summarizeSnippetsForDebug(snippets = []) {
     score: item.score,
     text: String(item.text || "").slice(0, 1200),
   }));
+}
+
+function normalizeChatHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map((item) => {
+      const role = item?.role === "assistant" ? "assistant" : item?.role === "user" ? "user" : "";
+      const content = String(item?.content || "").trim().slice(0, 2000);
+      return role && content ? { role, content } : null;
+    })
+    .filter(Boolean)
+    .slice(-8);
+}
+
+function sanitizeChatReply(reply) {
+  const text = String(reply || "").trim();
+  if (!text) return "未生成有效回复，请稍后重试。";
+  if (/\b(writeMacro|functionCalling|Asc\.|Api\.)\b/i.test(text) || /运行宏|格式化文本|重写文本/.test(text)) {
+    return "当前聊天机器人已禁用 OnlyOffice 宏和工具调用。请直接用自然语言提问，我会优先依据已挂载知识库回答。";
+  }
+  return text;
 }
 
 function getAiRuntimeConfig() {
