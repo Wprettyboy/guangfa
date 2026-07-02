@@ -100,7 +100,7 @@ export async function searchKnowledgeBase(payload = {}) {
     console.warn("[knowledge] vector search unavailable:", error.message || error);
     return [];
   });
-  return mergeSearchResults(vectorResults, keywordResults, topK);
+  return mergeSearchResults(keywordResults, vectorResults, topK);
 }
 
 async function listKnowledgeBases() {
@@ -317,21 +317,23 @@ async function searchVectorChunks(query, topK, allowedKbIds) {
 }
 
 function rankKeywordChunks(chunks, query) {
+  const exactTokens = createExactSearchTokens(query);
   const tokens = createSearchTokens(query);
   return chunks
     .map((chunk) => {
       const normalizedText = normalizeForSearch(chunk.text);
-      const score = tokens.reduce((sum, token) => sum + (normalizedText.includes(token) ? Math.max(1, token.length) : 0), 0);
-      return { ...chunk, score: score / 100, mode: "keyword" };
+      const exactScore = exactTokens.reduce((sum, token) => sum + (normalizedText.includes(token) ? Math.max(20, token.length * 4) : 0), 0);
+      const keywordScore = tokens.reduce((sum, token) => sum + (normalizedText.includes(token) ? Math.max(1, token.length) : 0), 0);
+      return { ...chunk, exactScore, keywordScore, score: (exactScore + keywordScore) / 100, mode: exactScore > 0 ? "exact" : "keyword" };
     })
-    .filter((chunk) => chunk.score >= 0.04)
-    .sort((a, b) => b.score - a.score || a.text.length - b.text.length);
+    .filter((chunk) => chunk.exactScore > 0 || chunk.keywordScore >= 4)
+    .sort((a, b) => b.exactScore - a.exactScore || b.score - a.score || a.text.length - b.text.length);
 }
 
-function mergeSearchResults(vectorResults, keywordResults, topK) {
+function mergeSearchResults(primaryResults, fallbackResults, topK) {
   const merged = [];
   const seen = new Set();
-  [...vectorResults, ...keywordResults].forEach((item) => {
+  [...primaryResults, ...fallbackResults].forEach((item) => {
     if (!item || seen.has(item.id)) return;
     seen.add(item.id);
     merged.push(formatSearchResult(item));
@@ -514,6 +516,17 @@ function createSearchTokens(query) {
     .map(stripQueryNoise)
     .filter((item) => item.length >= 2);
   return [...new Set([normalized, stripped, ...parts, ...expandDomainSearchTokens(stripped)].filter((item) => item.length >= 2))];
+}
+
+function createExactSearchTokens(query) {
+  const raw = String(query || "");
+  const normalized = stripQueryNoise(normalizeForSearch(raw));
+  const parts = raw
+    .split(/[\s,，。；;、:：()（）]+/)
+    .map(normalizeForSearch)
+    .map(stripQueryNoise)
+    .filter((item) => item.length >= 2);
+  return [...new Set([normalized, ...parts].filter((item) => item.length >= 2))];
 }
 
 function normalizeForSearch(value) {
