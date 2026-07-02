@@ -216,11 +216,6 @@ async function fillField(payload) {
     knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
     materialSnippets: summarizeSnippetsForDebug(materialSnippets),
   };
-  const authoritativeLocation = extractAuthoritativeLocation(promptField, sourceBundle);
-  if (authoritativeLocation) return authoritativeLocation;
-  const authoritativeProjectName = extractAuthoritativeProjectName(promptField, sourceBundle);
-  if (authoritativeProjectName) return authoritativeProjectName;
-
   if (!materialText.trim() && !knowledgeText.trim()) {
     if (isPackageOrSegmentShortField(promptField)) {
       const result = createDefaultPackageOrSegmentResult("未检索到分包/分标段资料，按通用规则默认填写 1。");
@@ -1005,78 +1000,6 @@ function isTemplateOnlyFillEvidence(field, value, evidenceText, externalText) {
   if (!value || !/(模板选区|选区原文|模板原文)/.test(String(evidenceText || ""))) return false;
   const needle = normalizeForSearch(value);
   return needle.length >= 2 && !normalizeForSearch(externalText).includes(needle);
-}
-
-function extractAuthoritativeLocation(field, sourceText) {
-  const fieldText = normalizeForSearch([
-    field?.sourceText,
-    field?.templateContext,
-    field?.category,
-    field?.type,
-    field?.question,
-    field?.aiInstruction,
-  ].filter(Boolean).join(" "));
-  if (!/(建设地点|项目地点|工程地点|实施地点|服务地点|地址|地点)/.test(fieldText)) return null;
-
-  const source = String(sourceText || "");
-  const patterns = [
-    /(?:位于|坐落于)\s*([^，。；;\n]{4,60})/,
-    /(?:建设地点|项目地点|工程地点|实施地点|服务地点|地址)\s*(?:为|是|：|:)?\s*([^，。；;\n]{4,60})/,
-  ];
-  for (const pattern of patterns) {
-    const match = source.match(pattern);
-    const value = cleanLocationValue(match?.[1]);
-    if (!value) continue;
-    return {
-      value,
-      status: "待确认",
-      confidence: 94,
-      source: "知识库地点信息",
-      evidence: `资料明确写明项目地点为“${value}”。`,
-    };
-  }
-  return null;
-}
-
-function cleanLocationValue(value) {
-  const text = String(value || "")
-    .replace(/^(本项目|项目|工程)/, "")
-    .replace(/(?:，|。|；|;).*$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!text || /(项目名称|工程名称|统一使用)/.test(text)) return "";
-  return text.length >= 4 ? text : "";
-}
-
-function extractAuthoritativeProjectName(field, sourceText) {
-  const fieldText = normalizeForSearch([
-    field?.sourceText,
-    field?.templateContext,
-    field?.category,
-    field?.type,
-    field?.question,
-    field?.aiInstruction,
-  ].filter(Boolean).join(" "));
-  if (!/(项目名称|工程名称|采购项目名称|项目名|工程名)/.test(fieldText)) return null;
-
-  const source = String(sourceText || "");
-  const patterns = [
-    /(?:项目|工程|采购项目|分包工程)?名称\s*统一使用\s*[“"']([^”"'\n。；;]+)[”"']/,
-    /(?:项目名称|工程名称|采购项目名称)\s*(?:为|是|：|:)\s*[“"']?([^”"'\n。；;]+?)(?:[”"']|。|；|;|\n|$)/,
-  ];
-  for (const pattern of patterns) {
-    const match = source.match(pattern);
-    const value = match?.[1]?.replace(/\s+/g, " ").trim();
-    if (!value || value.length < 4) continue;
-    return {
-      value,
-      status: "待确认",
-      confidence: 96,
-      source: "知识库命名规则",
-      evidence: `资料明确写明名称统一使用“${value}”。`,
-    };
-  }
-  return null;
 }
 
 function extractTemplateOptions(context) {
