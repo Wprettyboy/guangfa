@@ -161,8 +161,6 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - OnlyOffice 内部浮层可能继承编辑器禁选文本/拦截复制的体验；自定义聊天、审查等浮层里有可复用文本时，要显式设置 `user-select:text`，必要时提供复制按钮。
 - 自研聊天回复要简明扼要；溯源不要让 AI 写在回答正文里，应由前端固定挂载 `知识库 / 文件 / 片段` 引用项，点击引用项查看召回原文。
 - 自研聊天回复右上角按钮当前为“写入”，调用 OnlyOffice `asc_enterText`/`EnterText` 把回复正文写入当前光标或选区位置；引用来源只用于查看原文，不随回复写入文档。
-- 知识库引用原文不要用切片拼接。新上传入库资料会把解析后的完整原文保存到 `data/knowledge/sources/*.txt`，文档元数据记录 `sourceTextPath`；引用查看通过 `/api/knowledge-bases/:kbId/documents/:documentId/source` 读取该路径。旧资料没有路径时需要重新上传。
-- 自研聊天引用来源只展示最高相关的一条，按钮文案为 `原文：知识库 / 文件`；不要把 topK 的多个切片都挂到回复下方。
 
 ## 当前建议接手方式
 

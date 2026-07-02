@@ -1,11 +1,10 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { createEmbedding, createEmbeddings, getEmbeddingConfig, isEmbeddingConfigured } from "./embedding.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const metadataFile = path.join(knowledgeDir, "library.json");
-const sourceDir = path.join(knowledgeDir, "sources");
 const zvecDir = path.join(knowledgeDir, "zvec");
 const collectionPath = path.join(zvecDir, "chunks");
 const defaultProjectId = "default-project";
@@ -56,11 +55,6 @@ export function knowledgeBaseMiddleware() {
       if (request.method === "POST" && parts.length === 4 && parts[3] === "documents") {
         const payload = await readJsonBody(request);
         sendJson(response, 200, await addKnowledgeDocument(parts[2], payload || {}));
-        return;
-      }
-
-      if (request.method === "GET" && parts.length === 6 && parts[3] === "documents" && parts[5] === "source") {
-        sendJson(response, 200, await getKnowledgeDocumentSource(parts[2], parts[4]));
         return;
       }
 
@@ -153,8 +147,6 @@ async function addKnowledgeDocument(kbId, payload) {
 
   const now = new Date().toISOString();
   const documentId = `DOC-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const sourceTextPath = `sources/${documentId}.txt`;
-  await writeSourceText(sourceTextPath, payload.sourceText || payload.text || "");
   const rawChunks = chunkText(text);
   const chunkItems = rawChunks.map((chunk, index) => ({
     id: `${documentId}-C${String(index + 1).padStart(4, "0")}`,
@@ -177,7 +169,6 @@ async function addKnowledgeDocument(kbId, payload) {
     status: "索引中",
     indexMode: "keyword",
     chunkCount: chunkItems.length,
-    sourceTextPath,
     createdAt: now,
     updatedAt: now,
     error: "",
@@ -218,32 +209,9 @@ async function addKnowledgeDocument(kbId, payload) {
   };
 }
 
-async function getKnowledgeDocumentSource(kbId, documentId) {
-  const metadata = await readMetadata();
-  const document = metadata.documents.find((item) => item.kbId === kbId && item.id === documentId);
-  if (!document) {
-    const error = new Error("知识库资料不存在");
-    error.statusCode = 404;
-    throw error;
-  }
-  if (!document.sourceTextPath) {
-    const error = new Error("该资料未保存原文路径，请重新上传入库。");
-    error.statusCode = 404;
-    throw error;
-  }
-  return {
-    id: document.id,
-    kbId: document.kbId,
-    name: document.name,
-    sourceTextPath: document.sourceTextPath,
-    text: await readFile(resolveSourceTextPath(document.sourceTextPath), "utf8"),
-  };
-}
-
 async function deleteKnowledgeDocument(kbId, documentId) {
   const metadata = await readMetadata();
   const beforeChunks = metadata.chunks.filter((chunk) => chunk.documentId === documentId && chunk.kbId === kbId);
-  const beforeDocuments = metadata.documents.filter((document) => document.id === documentId && document.kbId === kbId);
   metadata.documents = metadata.documents.filter((document) => !(document.id === documentId && document.kbId === kbId));
   metadata.chunks = metadata.chunks.filter((chunk) => !(chunk.documentId === documentId && chunk.kbId === kbId));
   const kb = metadata.knowledgeBases.find((item) => item.id === kbId);
@@ -257,7 +225,6 @@ async function deleteKnowledgeDocument(kbId, documentId) {
   } catch {
     // Metadata is the source of truth for visibility; zvec cleanup can be retried by reindexing later.
   }
-  await removeSourceTexts(beforeDocuments);
 
   await writeMetadata(metadata);
   return { ok: true, deletedChunks: beforeChunks.length };
@@ -273,7 +240,6 @@ async function deleteKnowledgeBase(kbId) {
   }
 
   const beforeChunks = metadata.chunks.filter((chunk) => chunk.kbId === kbId);
-  const beforeDocuments = metadata.documents.filter((document) => document.kbId === kbId);
   metadata.knowledgeBases = metadata.knowledgeBases.filter((item) => item.id !== kbId);
   metadata.documents = metadata.documents.filter((document) => document.kbId !== kbId);
   metadata.chunks = metadata.chunks.filter((chunk) => chunk.kbId !== kbId);
@@ -286,7 +252,6 @@ async function deleteKnowledgeBase(kbId) {
   } catch {
     // Metadata removal is authoritative; vector cleanup can be repaired by rebuilding the index later.
   }
-  await removeSourceTexts(beforeDocuments);
 
   await writeMetadata(metadata);
   return { ok: true, deletedKnowledgeBaseId: kbId, deletedDocuments: beforeChunks.length ? new Set(beforeChunks.map((chunk) => chunk.documentId)).size : 0, deletedChunks: beforeChunks.length };
@@ -502,28 +467,6 @@ async function readMetadata() {
 async function writeMetadata(metadata) {
   await mkdir(knowledgeDir, { recursive: true });
   await writeFile(metadataFile, JSON.stringify(metadata, null, 2), "utf8");
-}
-
-async function writeSourceText(sourceTextPath, text) {
-  await mkdir(sourceDir, { recursive: true });
-  await writeFile(resolveSourceTextPath(sourceTextPath), String(text || "").trim(), "utf8");
-}
-
-async function removeSourceTexts(documents) {
-  await Promise.all((Array.isArray(documents) ? documents : [])
-    .map((document) => document?.sourceTextPath)
-    .filter(Boolean)
-    .map((sourceTextPath) => rm(resolveSourceTextPath(sourceTextPath), { force: true }).catch(() => {})));
-}
-
-function resolveSourceTextPath(sourceTextPath) {
-  const target = path.resolve(knowledgeDir, String(sourceTextPath || ""));
-  if (!target.startsWith(`${sourceDir}${path.sep}`)) {
-    const error = new Error("原文存储路径非法");
-    error.statusCode = 400;
-    throw error;
-  }
-  return target;
 }
 
 function hydrateKnowledgeBase(kb, metadata) {

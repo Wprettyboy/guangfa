@@ -997,19 +997,20 @@
     return result;
   }
 
-  function getGuangfaAiChatSourceLabel(snippet) {
+  function getGuangfaAiChatSourceLabel(snippet, index) {
     const kbName = snippet?.kbName || (snippet?.scope === "global" ? "全局知识库" : "项目知识库");
     const fileName = snippet?.source || snippet?.documentName || "未命名资料";
-    return `原文：${kbName} / ${fileName}`;
+    const chunk = snippet?.chunkIndex ? `片段${snippet.chunkIndex}` : `片段${index + 1}`;
+    return `${kbName} / ${fileName} / ${chunk}`;
   }
 
-  async function showGuangfaAiChatSource(snippet, index) {
+  function showGuangfaAiChatSource(snippet, index) {
     const panel = document.getElementById("guangfa-ai-chat-panel");
     if (!panel) return;
     panel.querySelector(".gf-ai-chat-source-viewer")?.remove();
     const viewer = document.createElement("div");
     viewer.className = "gf-ai-chat-source-viewer";
-    const title = getGuangfaAiChatSourceLabel(snippet);
+    const title = getGuangfaAiChatSourceLabel(snippet, index);
     viewer.innerHTML = [
       '<div class="gf-ai-chat-source-viewer-header">',
       '<div class="gf-ai-chat-source-viewer-title"></div>',
@@ -1018,26 +1019,15 @@
       '<div class="gf-ai-chat-source-viewer-text"></div>',
     ].join("");
     viewer.querySelector(".gf-ai-chat-source-viewer-title").textContent = title;
-    const textNode = viewer.querySelector(".gf-ai-chat-source-viewer-text");
-    textNode.textContent = "正在加载原文...";
+    viewer.querySelector(".gf-ai-chat-source-viewer-text").textContent = snippet?.text || "未返回原文片段。";
     viewer.querySelector(".gf-ai-chat-source-viewer-close")?.addEventListener("click", function () {
       viewer.remove();
     });
     panel.appendChild(viewer);
-    try {
-      if (!snippet?.kbId || !snippet?.documentId) throw new Error("该引用缺少原文定位信息。");
-      const context = getAiChatKnowledgeContext();
-      const response = await fetch(`${context.apiBase}/api/knowledge-bases/${encodeURIComponent(snippet.kbId)}/documents/${encodeURIComponent(snippet.documentId)}/source`);
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-      textNode.textContent = result.text || "原文为空。";
-    } catch (error) {
-      textNode.textContent = error?.message || "原文加载失败。";
-    }
   }
 
   function appendGuangfaAiChatSources(item, snippets) {
-    const sources = (Array.isArray(snippets) ? snippets : []).filter((snippet) => snippet?.kbId && snippet?.documentId);
+    const sources = (Array.isArray(snippets) ? snippets : []).filter((snippet) => snippet?.text);
     if (!item || sources.length === 0) return;
     const block = document.createElement("div");
     block.className = "gf-ai-chat-sources";
@@ -1049,7 +1039,7 @@
       const button = document.createElement("button");
       button.className = "gf-ai-chat-source";
       button.type = "button";
-      button.textContent = getGuangfaAiChatSourceLabel(snippet);
+      button.textContent = getGuangfaAiChatSourceLabel(snippet, index);
       button.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
