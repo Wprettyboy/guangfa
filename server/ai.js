@@ -186,7 +186,7 @@ async function fillField(payload) {
   const value = normalizeFilledValueForTemplate(promptField, typeof parsed.value === "string" ? parsed.value.trim() : "");
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
   const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
-  const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence, `${knowledgeText}\n${materialText}`);
+  const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) return choiceGuard;
   if (isTemplateOnlyFillEvidence(promptField, value, `${source}\n${evidence}`, `${knowledgeText}\n${materialText}`)) {
     return {
@@ -411,28 +411,23 @@ function normalizeFilledValueForTemplate(field, value) {
   return ranked[0]?.score >= 2 ? ranked[0].option : text;
 }
 
-function sanitizeChoiceFillResult(field, parsed, value, source, evidence, externalText) {
+function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
   if (!isChoiceField(field)) return null;
   const status = String(parsed?.status || "").trim();
   if (status === "需补充资料") return createMissingChoiceResult(source, evidence || "资料不足，选择型字段不写入。");
   if (!String(value || "").trim()) return createMissingChoiceResult(source, "未返回可写入的选择值。");
 
-  const context = getTemplateContextText(field);
   const reasonText = `${source || ""}\n${evidence || ""}`;
-  const isExternallySupported =
-    valueSupportedByExternalText(value, externalText) ||
-    choiceOptionSupportedByExternalText(value, externalText) ||
-    choiceEvidenceSupportsValue(value, reasonText);
 
   if (looksLikeUnfilledChoiceTemplate(value) || looksLikeChoiceProofNote(value)) {
     return createMissingChoiceResult(source, "模型返回的是模板占位或证明材料说明，未作为有效选择写入。");
   }
 
-  if (isTemplateOnlyChoiceValue(value, context, externalText) && !isExternallySupported) {
+  if (/模板候选原文|模板原文|模板选区|通用占位/.test(reasonText)) {
     return createMissingChoiceResult(source, "模型返回的是模板候选原文，但资料未明确支持该选择。");
   }
 
-  if (/(需补充|无法|缺失|不匹配|不能直接|无法直接|保持模板|模板原文|模板选区|通用占位)/.test(reasonText) && !isExternallySupported) {
+  if (/(需补充|无法|缺失|不匹配|不能直接|无法直接|资料不足|未明确|未找到|未检索到)/.test(reasonText)) {
     return createMissingChoiceResult(source, "模型证据显示资料不足，选择型字段不写入。");
   }
 
@@ -451,39 +446,6 @@ function createMissingChoiceResult(source, evidence) {
     source: source && source !== "AI 基于上传资料与知识库生成" ? source : "未找到资料依据",
     evidence,
   };
-}
-
-function getTemplateContextText(field = {}) {
-  return String(field.sourceText || field.templateContext || field.answerFormat || field.question || "").replace(/\s+/g, " ").trim();
-}
-
-function isTemplateOnlyChoiceValue(value, context, externalText) {
-  const normalizedValue = normalizeForSearch(value);
-  if (normalizedValue.length < 4) return false;
-  return normalizeForSearch(context).includes(normalizedValue) && !normalizeForSearch(externalText).includes(normalizedValue);
-}
-
-function valueSupportedByExternalText(value, externalText) {
-  const normalizedValue = normalizeForSearch(value);
-  if (normalizedValue.length < 4) return false;
-  return normalizeForSearch(externalText).includes(normalizedValue);
-}
-
-function choiceOptionSupportedByExternalText(value, externalText) {
-  const normalizedExternal = normalizeForSearch(externalText);
-  return [...String(value || "").matchAll(/[（(]([^（）()]{2,24})[）)]/g)]
-    .map((match) => normalizeForSearch(match[1]))
-    .some((term) => term.length >= 2 && normalizedExternal.includes(term));
-}
-
-function choiceEvidenceSupportsValue(value, evidenceText) {
-  const normalizedValue = normalizeForSearch(value);
-  const normalizedEvidence = normalizeForSearch(evidenceText);
-  if (normalizedValue.length >= 4 && normalizedEvidence.includes(normalizedValue)) return true;
-  if (/^无(?:业绩|人员|资质|资格)?要求[。；;]?$/.test(String(value || "").trim())) {
-    return /无(?:业绩|人员|资质|资格)?要求|不作(?:业绩|人员|资质|资格)?要求|不要求/.test(evidenceText);
-  }
-  return false;
 }
 
 function looksLikeUnfilledChoiceTemplate(value) {
