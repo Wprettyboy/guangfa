@@ -176,20 +176,19 @@ knowledge_helper = r'''
 			if (!lastUser)
 				return;
 
-			let response = await fetch(String(context.apiBase).replace(/\/$/, "") + "/api/knowledge-bases/search", {
+			let response = await fetch(String(context.apiBase).replace(/\/$/, "") + "/api/ai/knowledge-search", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					query: lastUser,
-					projectId: context.projectId || "default-project",
-					kbIds: context.kbIds,
-					topK: context.topK || 8
+					message: lastUser,
+					knowledgeOptions: context
 				})
 			});
 			if (!response.ok)
 				return;
 
-			let chunks = await response.json();
+			let result = await response.json();
+			let chunks = result && Array.isArray(result.snippets) ? result.snippets : [];
 			if (!Array.isArray(chunks) || chunks.length === 0)
 				return;
 
