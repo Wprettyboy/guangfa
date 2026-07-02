@@ -201,16 +201,17 @@ let aiRevisionId = 1000;
 let fillBookmarkId = 50000;
 let fillBookmarkNames = new Set();
 const fillModeOptions = [
-  { value: "short", label: "短值" },
-  { value: "paragraph", label: "段落" },
-  { value: "list", label: "清单" },
+  { value: "short", label: "短文本" },
+  { value: "paragraph", label: "长文本" },
+  { value: "date", label: "日期" },
+  { value: "amount", label: "金额" },
   { value: "choice", label: "选择" },
   { value: "choice-replace", label: "替换+选择" },
   { value: "amount-choice", label: "金额+选择" },
-  { value: "table", label: "表格" },
 ];
 const choiceFillModeOptions = fillModeOptions.filter((item) => ["choice", "choice-replace", "amount-choice"].includes(item.value));
-const fieldCategoryOptions = ["填空", "替换", "单选项", "长文本", "日期", "金额", "表格字段"];
+const blankFillModeOptions = fillModeOptions.filter((item) => ["short", "paragraph", "date", "amount"].includes(item.value));
+const fieldCategoryOptions = ["填空", "单选项"];
 
 function createAnnotatedField(slot, order, typeOverride) {
   const sourceText = getTemplateFieldSourceText(slot);
@@ -278,7 +279,7 @@ function pickTemplateFillContext(field) {
 
 function normalizeTemplateFieldForRuntime(field = {}) {
   const category = normalizeFieldCategory(field.category || field.type);
-  return { ...field, category, type: category, fillMode: normalizeFillMode(field.fillMode, { ...field, category, type: category }) };
+  return { ...field, category, type: category, fillMode: normalizeFillMode(field.fillMode, field) };
 }
 
 function createDynamicSlot(target, order) {
@@ -315,12 +316,12 @@ function getTemplateFieldSourceText(field = {}) {
 
 function normalizeFieldCategory(value) {
   const category = String(value || "").trim();
-  return !category || category === "短文本" ? "填空" : category;
+  return category === "单选项" ? "单选项" : "填空";
 }
 
 function isReplacementField(field = {}) {
   const category = normalizeFieldCategory(field.category || field.type || field.defaultType);
-  return category === "替换" || category === "单选项";
+  return category === "单选项";
 }
 
 function requiresInputPoint(field = {}) {
@@ -338,24 +339,34 @@ function getFieldDisplayText(field = {}) {
 function normalizeFillMode(value, field = {}) {
   const mode = String(value || "").trim();
   const options = getFillModeOptions(field);
+  const legacyMode = getLegacyFillMode(field);
+  if (legacyMode && (!mode || mode === "short" || mode === "list" || mode === "table")) return legacyMode;
   return options.some((item) => item.value === mode) ? mode : inferFillMode(field);
+}
+
+function getLegacyFillMode(field = {}) {
+  const legacyType = String(field.type || field.category || field.defaultType || "").trim();
+  if (legacyType === "日期") return "date";
+  if (legacyType === "金额") return "amount";
+  if (legacyType === "长文本" || legacyType === "表格字段") return "paragraph";
+  return "";
 }
 
 function getFillModeOptions(field = {}) {
   return normalizeFieldCategory(field.category || field.type || field.defaultType) === "单选项"
     ? choiceFillModeOptions
-    : fillModeOptions.filter((item) => item.value !== "choice-replace");
+    : blankFillModeOptions;
 }
 
 function inferFillMode(field = {}) {
   const category = normalizeFieldCategory(field.category || field.type || field.defaultType);
+  const legacyType = String(field.type || field.category || field.defaultType || "").trim();
   const text = getTemplateFieldSourceText(field) || field.label || field.name || "";
   const context = `${text} ${field.question || ""} ${field.answerFormat || ""}`.replace(/\s+/g, " ");
-  if (isAmountChoiceContext(context)) return "amount-choice";
-  if (category === "单选项" || /□|☐|○|〇|▢|☑|✓|✔|单选|多选|是否|有无/.test(context)) return "choice";
-  if (category === "表格字段" || /表格|清单表|明细表|报价表|分项表/.test(context)) return "table";
-  if (/包括但不限于|包括|包含|不限于|清单|配置|分项|主要施工内容|工作内容|采购范围|实施范围|服务范围/.test(context)) return "list";
-  if (/内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
+  if (category === "单选项") return isAmountChoiceContext(context) ? "amount-choice" : "choice";
+  if (legacyType === "日期" || /日期|年月日|编制时间/.test(context)) return "date";
+  if (legacyType === "金额" || /金额|限价|报价|费用|预算|元|万元/.test(context)) return "amount";
+  if (legacyType === "长文本" || legacyType === "表格字段" || /包括但不限于|包括|包含|不限于|清单|配置|分项|表格|主要施工内容|工作内容|采购范围|实施范围|服务范围|内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
   return "short";
 }
 
@@ -365,7 +376,7 @@ function isAmountChoiceContext(context) {
 }
 
 function getFillModeLabel(value) {
-  return fillModeOptions.find((item) => item.value === value)?.label || "短值";
+  return fillModeOptions.find((item) => item.value === value)?.label || "短文本";
 }
 
 const initialTemplateFile = null;
@@ -4834,7 +4845,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
       </div>
       <div className="field-context input-point-context">
         <span>填写输入点</span>
-        <p>{hasInput ? `已设置，第 ${field.inputPoint?.page || field.page || 1} 页` : isReplacementField(field) ? "替换字段将使用标注选区作为写入范围" : "未设置，请把光标放到实际填写位置后点击添加输入点"}</p>
+        <p>{hasInput ? `已设置，第 ${field.inputPoint?.page || field.page || 1} 页` : isReplacementField(field) ? "单选项将使用标注选区作为写入范围" : "未设置，请把光标放到实际填写位置后点击添加输入点"}</p>
       </div>
       <label>
         <span>自动填充类别</span>
@@ -7982,7 +7993,7 @@ function padDatePart(value) {
 }
 
 function isDateField(field) {
-  return field?.type === "日期" || /日期|年月日|编制时间/.test(`${field?.name || ""} ${field?.answerFormat || ""} ${field?.question || ""}`);
+  return normalizeFillMode(field?.fillMode, field) === "date" || field?.type === "日期" || /日期|年月日|编制时间/.test(`${field?.name || ""} ${field?.answerFormat || ""} ${field?.question || ""}`);
 }
 
 function collectTextNodes(root) {

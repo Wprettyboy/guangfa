@@ -429,18 +429,28 @@ function normalizeFillMode(field = {}) {
   const mode = String(field.fillMode || "").trim();
   const allowed = normalizeFieldCategory(field.category || field.type) === "单选项"
     ? ["choice", "choice-replace", "amount-choice"]
-    : ["short", "paragraph", "list", "choice", "table", "amount-choice"];
+    : ["short", "paragraph", "date", "amount"];
+  const legacyMode = getLegacyFillMode(field);
+  if (legacyMode && (!mode || mode === "short" || mode === "list" || mode === "table")) return legacyMode;
   return allowed.includes(mode) ? mode : inferFillMode(field);
+}
+
+function getLegacyFillMode(field = {}) {
+  const legacyType = String(field.type || field.category || "").trim();
+  if (legacyType === "日期") return "date";
+  if (legacyType === "金额") return "amount";
+  if (legacyType === "长文本" || legacyType === "表格字段") return "paragraph";
+  return "";
 }
 
 function normalizeFieldCategory(value) {
   const category = String(value || "").trim();
-  return !category || category === "短文本" ? "填空" : category;
+  return category === "单选项" ? "单选项" : "填空";
 }
 
 function describeFieldContract(field = {}, fillMode = normalizeFillMode(field)) {
   const category = normalizeFieldCategory(field.category || field.type);
-  const writeMode = field.writeMode || (category === "替换" || category === "单选项" ? "replace-selection" : "insert-at-input-point");
+  const writeMode = field.writeMode || (category === "单选项" ? "replace-selection" : "insert-at-input-point");
   const writeLabel = writeMode === "replace-selection"
     ? "替换标注选区"
     : field.hasInputPoint || field.inputPoint?.bookmarkName
@@ -451,6 +461,7 @@ function describeFieldContract(field = {}, fillMode = normalizeFillMode(field)) 
 
 function inferFillMode(field = {}) {
   const category = normalizeFieldCategory(field.category || field.type);
+  const legacyType = String(field.type || field.category || "").trim();
   const context = [
     field.sourceText,
     field.templateContext,
@@ -459,34 +470,33 @@ function inferFillMode(field = {}) {
     field.aiInstruction,
     field.name,
   ].filter(Boolean).join(" ");
-  if (isAmountChoiceContext(context)) return "amount-choice";
-  if (category === "单选项" || /□|☐|○|〇|▢|☑|✓|✔|单选|多选|是否|有无/.test(context)) return "choice";
-  if (category === "表格字段" || /表格|清单表|明细表|报价表|分项表/.test(context)) return "table";
-  if (/包括但不限于|包括|包含|不限于|清单|配置|分项|主要施工内容|工作内容|采购范围|实施范围|服务范围/.test(context)) return "list";
-  if (/内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
+  if (category === "单选项") return isAmountChoiceContext(context) ? "amount-choice" : "choice";
+  if (legacyType === "日期" || /日期|年月日|编制时间/.test(context)) return "date";
+  if (legacyType === "金额" || /金额|限价|报价|费用|预算|元|万元/.test(context)) return "amount";
+  if (legacyType === "长文本" || legacyType === "表格字段" || /包括但不限于|包括|包含|不限于|清单|配置|分项|表格|主要施工内容|工作内容|采购范围|实施范围|服务范围|内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
   return "short";
 }
 
 function getFillModeLabel(mode) {
   return {
-    short: "短值填空",
-    paragraph: "段落填空",
-    list: "清单填空",
+    short: "短文本填空",
+    paragraph: "长文本填空",
+    date: "日期填空",
+    amount: "金额填空",
     choice: "选择填空",
     "choice-replace": "替换选择填空",
-    table: "表格填空",
     "amount-choice": "金额选择填空",
-  }[mode] || "短值填空";
+  }[mode] || "短文本填空";
 }
 
 function getFillModePromptRule(mode) {
-  if (mode === "paragraph") return "段落填空应输出资料中的完整描述，可为多句或一段；不要为了追求简短而删掉建设规模、范围边界、数量、地点、对象等关键信息。不得输出字段标签和序号。";
-  if (mode === "list") return "清单填空应完整覆盖资料中的分项内容，保留“包括但不限于”对应的范围、分项或施工内容；可使用顿号、分号或原资料序号，不要压缩成一个短名词。不得输出字段标签和序号。";
+  if (mode === "paragraph") return "长文本填空应输出资料中的完整描述，可为多句或一段；不要为了追求简短而删掉建设规模、范围边界、数量、地点、对象等关键信息。不得输出字段标签和序号。";
+  if (mode === "date") return "日期填空只输出资料明确支持的日期，优先使用模板要求的中文年月日或指定格式；不得输出字段标签、解释或无依据日期。";
+  if (mode === "amount") return "金额填空只输出资料明确支持的金额，保留模板需要的单位；不得输出字段标签、解释或无依据金额。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
   if (mode === "choice-replace") return "替换选择填空先判断资料是否给出明确要求：有明确要求时输出可替换选区的正文；无明确要求时只输出模板中的“无xx要求”选项文本。";
   if (mode === "amount-choice") return "金额选择填空必须同时判断金额和候选项：amountValue 输出按模板单位换算后的金额纯数字，choiceValue 输出应勾选的模板选项文本；不要输出整段原文。";
-  if (mode === "table") return "表格填空按当前单元格需要输出，保持简洁，但不得省略资料中该单元格必需的信息。";
-  return "短值填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
+  return "短文本填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
 }
 
 function getFillOutputJsonPrompt(mode) {
@@ -874,8 +884,8 @@ function expandDomainSearchTokens(value) {
   const add = (...items) => tokens.push(...items.map(normalizeForSearch));
 
   if (/项目名称|工程名称|项目名|工程名|采购项目/.test(value)) add("项目名称", "工程名称");
-  if (/项目概况|工程概况|建设规模|工程建设规模|建筑面积|建设内容|段落填空/.test(value)) add("项目概况", "工程概况", "工程建设规模", "总建筑面积", "建设内容", "服务内容", "技术要求", "商务要求");
-  if (/采购范围|实施范围|服务范围|主要施工内容|工作内容|包括但不限于|清单填空/.test(value)) add("采购范围", "实施范围", "服务范围", "主要施工内容", "施工图范围内", "工作内容", "包括但不限于", "分项内容");
+  if (/项目概况|工程概况|建设规模|工程建设规模|建筑面积|建设内容|长文本填空/.test(value)) add("项目概况", "工程概况", "工程建设规模", "总建筑面积", "建设内容", "服务内容", "技术要求", "商务要求");
+  if (/采购范围|实施范围|服务范围|主要施工内容|工作内容|包括但不限于|长文本填空/.test(value)) add("采购范围", "实施范围", "服务范围", "主要施工内容", "施工图范围内", "工作内容", "包括但不限于", "分项内容");
   if (/评审办法|评标办法|综合评分|综合评估|最低投标价/.test(value)) add("评审办法", "评标办法", "综合评分法", "综合评估法", "最低投标价法");
   if (/业绩|类似项目|合同金额|发票/.test(value)) add("业绩要求", "类似项目业绩", "合同金额");
   if (/人员|技术负责人|安全员|项目负责人|专职安全/.test(value)) add("人员要求", "技术负责人", "专职安全生产管理人员");
