@@ -127,7 +127,7 @@ async function fillField(payload) {
   const materials = Array.isArray(payload?.materials) ? payload.materials : [];
   const retrievalQuery = buildFieldRetrievalQuery(promptField);
   const knowledgeOptions = { ...(payload?.knowledgeOptions || {}) };
-  if (fillMode === "paragraph" || fillMode === "list") knowledgeOptions.topK = Math.max(Number(knowledgeOptions.topK || 0), 10);
+  if (fillMode === "paragraph") knowledgeOptions.topK = Math.max(Number(knowledgeOptions.topK || 0), 10);
   const knowledgeSnippets = await searchKnowledgeForField(promptField, knowledgeOptions, retrievalQuery);
   const materialSnippets = selectMaterialSnippets(materials, retrievalQuery, knowledgeSnippets.length > 0 ? 4 : 8);
   const materialText = formatMaterialSnippets(materialSnippets).slice(0, maxMaterialChars);
@@ -139,6 +139,7 @@ async function fillField(payload) {
   if (authoritativeProjectName) return authoritativeProjectName;
 
   if (!materialText.trim() && !knowledgeText.trim()) {
+    if (isPackageOrSegmentShortField(promptField)) return createDefaultPackageOrSegmentResult("未检索到分包/分标段资料，按通用规则默认填写 1。");
     return {
       value: "",
       status: "需补充资料",
@@ -186,6 +187,12 @@ async function fillField(payload) {
     ...(fillMode === "date" ? [
       "12. 当前字段是日期填空，常见模板只有两类：选区为“ 年 月 日”这类日期空位时输出完整日期；选区为“日期：”这类标签时只输出日期值，不要重复“日期：”。",
     ] : []),
+    ...(fillMode === "paragraph" ? [
+      "12. 当前字段是长文本填空：AI 只负责通过语义理解定位应复制的知识库/资料原文，value 必须逐字复制召回片段中的连续原文；不得总结、改写、扩写、压缩或自行组织语言；不要复制“知识库1/临时资料1/相关度”等片段包装前缀。",
+    ] : []),
+    ...(fillMode === "short" && isPackageOrSegmentShortField(promptField) ? [
+      "12. 当前字段是分包/分标段短文本：知识库/资料有对应分包、标段数量或编号时按原值填写；没有对应内容时填写 1。",
+    ] : []),
     ...(fillMode === "choice-replace" ? [
       "14. 当前字段是“替换+选择”：如果资料明确写有该项要求，value 输出可直接替换模板选区的要求正文；如果资料没有明确要求，value 输出模板中的“无xx要求”选项文本，用于只勾选对应选项。",
     ] : []),
@@ -204,11 +211,16 @@ async function fillField(payload) {
     knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
     materialSnippets: summarizeSnippetsForDebug(materialSnippets),
   };
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" || fillMode === "list" ? 1536 : 768, {
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" ? 1536 : 768, {
     debugFileName: "ai-fill-last.json",
     debugContext,
   });
   const rawValue = typeof parsed.value === "string" ? parsed.value.trim() : "";
+  if (fillMode === "short" && isPackageOrSegmentShortField(promptField) && (!rawValue || parsed.status === "需补充资料")) {
+    const result = createDefaultPackageOrSegmentResult("未在知识库/上传资料中检索到明确分包/分标段值，按通用规则默认填写 1。");
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "package-segment-default-one");
+    return result;
+  }
   if (fillMode === "choice-replace" && (!rawValue || parsed.status === "需补充资料")) {
     const result = createNoRequirementChoiceResult(promptField, sourceBundle);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-default-none");
@@ -240,6 +252,17 @@ async function fillField(payload) {
   }
 
   const value = normalizeFilledValueForTemplate(promptField, rawValue);
+  if (fillMode === "paragraph" && value && !isCopiedFromSource(value, sourceBundle)) {
+    const result = {
+      value: "",
+      status: "需补充资料",
+      confidence: 0,
+      source: "未找到可复制原文",
+      evidence: "模型返回内容未能在知识库/上传资料召回片段中逐字定位，长文本填空不做语义改写。",
+    };
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-not-copied");
+    return result;
+  }
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
     await writeFillFinalDebugLog(runtime, debugContext, parsed, choiceGuard, "choice-guard");
@@ -522,6 +545,7 @@ function normalizeFilledValueForTemplate(field, value) {
   if (!text) return "";
   if (normalizeFillMode(field) === "date") return stripFillValueLabel(text, "日期|时间|编制日期");
   if (normalizeFillMode(field) === "amount") return normalizeAmountFillValue(field, text);
+  if (normalizeFillMode(field) === "short" && isPackageOrSegmentShortField(field)) return stripFillValueLabel(text, "分包|分标段|标段划分|标段");
   if (field.type !== "单选项") return text;
 
   const context = String(field.templateContext || field.answerFormat || field.question || "").replace(/\s+/g, " ").trim();
@@ -553,6 +577,35 @@ function normalizeAmountFillValue(field, value) {
 
 function stripFillValueLabel(value, labelPattern) {
   return String(value || "").replace(new RegExp(`^(?:${labelPattern})\\s*[：:]\\s*`), "").trim();
+}
+
+function isPackageOrSegmentShortField(field = {}) {
+  if (normalizeFillMode(field) !== "short") return false;
+  const context = [
+    field.name,
+    field.sourceText,
+    field.templateContext,
+    field.answerFormat,
+    field.question,
+    field.aiInstruction,
+  ].filter(Boolean).join(" ");
+  return /分包|分标段|标段划分/.test(context);
+}
+
+function createDefaultPackageOrSegmentResult(evidence) {
+  return {
+    value: "1",
+    status: "待确认",
+    confidence: 80,
+    source: "分包/分标段默认规则",
+    evidence,
+  };
+}
+
+function isCopiedFromSource(value, sourceText) {
+  const needle = normalizeForSearch(value);
+  if (!needle) return false;
+  return normalizeForSearch(sourceText).includes(needle);
 }
 
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
@@ -911,6 +964,7 @@ function expandDomainSearchTokens(value) {
   if (/财务|无亏损|亏损/.test(value)) add("财务要求", "无财务要求", "无亏损", "近三年", "近3年", "财务报表");
   if (/工期|合同工期|日历天|进场通知/.test(value)) add("工期", "合同工期", "日历天");
   if (/付款|支付|进度款|结算款|质保金|缺陷责任/.test(value)) add("付款方式", "进度款", "结算款", "质保金");
+  if (/分包|分标段|标段划分/.test(value)) add("分包", "分标段", "标段划分", "分包数量", "标段数量");
   if (/金额选择|含税|不含税|最高限价|控制价|预算金额|报价|费用/.test(value)) add("最高限价", "控制价", "预算金额", "含税", "不含税", "万元", "元");
 
   return tokens;
