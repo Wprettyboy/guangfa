@@ -148,7 +148,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 页面刷新后高亮/填充丢失，优先考虑调用 OnlyOffice 下载接口回传保存，而不是只保存前端字段 JSON。
 - 删除字段、刷新页面、切换工作台时不要重载旧模板文件，否则预览会回到旧文档。
 - `scripts/start-onlyoffice.ps1` 会重启容器并重新打补丁，调试 OnlyOffice 注入脚本后要跑它或手动 `docker cp`。
-- `.js` 和 `.js.gz` 缓存都可能影响 OnlyOffice 前端脚本，但当前补丁主要由 `scripts/patch-onlyoffice.py` 处理。
+- `.js` 和 `.js.gz` 缓存都可能影响 OnlyOffice 前端脚本。调试 `guangfa-outline-probe.js` 后要确认容器内 `.js.gz` 解压内容和 `.js` 哈希一致，并 bump `index.html` 里脚本的 `?gf=` 缓存号；否则浏览器可能继续加载旧桥接脚本，表现为“代码改了但 OnlyOffice 仍按旧逻辑写入”。
 
 ## 当前建议接手方式
 
