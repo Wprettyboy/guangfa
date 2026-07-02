@@ -9,6 +9,8 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { auditDocxFormat } from "./lib/docx/formatAudit";
 import { reviseDocxFormat } from "./lib/docx/formatRevise";
 import SystemSettings from "./pages/SystemSettings.jsx";
+import StatusPill from "./components/StatusPill.jsx";
+import SidebarItem from "./components/SidebarItem.jsx";
 import {
   Archive,
   BookOpenText,
@@ -470,16 +472,6 @@ const initialFillFields = [
     evidence: "现有资料中未检索到投标保证金金额的明确描述，需要补充商务文件或招标须知原件。",
   },
 ];
-
-const statusMeta = {
-  未填充: { tone: "muted", icon: Info },
-  生成中: { tone: "blue", icon: Loader2 },
-  待确认: { tone: "amber", icon: CircleAlert },
-  已确认: { tone: "green", icon: Check },
-  需补充资料: { tone: "red", icon: CircleAlert },
-  人工填写: { tone: "purple", icon: PenLine },
-  已标注: { tone: "green", icon: ShieldCheck },
-};
 
 export default function App() {
   const [activeModule, setActiveModule] = useState("workspace");
@@ -1697,16 +1689,6 @@ export default function App() {
         </section>
       </main>
     </div>
-  );
-}
-
-function SidebarItem({ icon: Icon, label, active, expanded, hasChildren, onClick }) {
-  return (
-    <button className={active ? "sidebar-item active" : "sidebar-item"} onClick={onClick}>
-      <Icon size={18} />
-      <span>{label}</span>
-      {hasChildren ? expanded ? <ChevronDown size={15} className="item-chevron" /> : <ChevronRight size={15} className="item-chevron" /> : null}
-    </button>
   );
 }
 
@@ -5026,93 +5008,6 @@ function formatChineseDateFromInput(value) {
   const parts = parseDateParts(value);
   if (!parts) return "";
   return `${parts.year}年${padDatePart(parts.month)}月${padDatePart(parts.day)}日`;
-}
-
-function StatusPill({ status }) {
-  const meta = statusMeta[status] ?? statusMeta["未填充"];
-  const Icon = meta.icon;
-  return (
-    <span className={`status-pill ${meta.tone}`}>
-      <Icon size={14} className={status === "生成中" ? "spin" : ""} />
-      {status}
-    </span>
-  );
-}
-
-function CitationDrawer({ field, onClose }) {
-  const drawerRef = useRef(null);
-
-  useGSAP(
-    () => {
-      gsap.fromTo(
-        drawerRef.current,
-        { x: 22, autoAlpha: 0 },
-        { x: 0, autoAlpha: 1, duration: 0.32, ease: "power3.out" },
-      );
-    },
-    { dependencies: [field.id], scope: drawerRef },
-  );
-
-  return (
-    <section className="citation-drawer" data-testid="citation-drawer" ref={drawerRef}>
-      <div className="drawer-head">
-        <div>
-          <h2>溯源信息</h2>
-          <p>{field.name}</p>
-        </div>
-        <button className="icon-button quiet" onClick={onClose} aria-label="关闭溯源">
-          <X size={18} />
-        </button>
-      </div>
-      <dl className="citation-meta">
-        <div>
-          <dt>填充内容</dt>
-          <dd>{field.value || "暂未生成"}</dd>
-        </div>
-        <div>
-          <dt>来源</dt>
-          <dd>{field.source}</dd>
-        </div>
-        <div>
-          <dt>匹配置信度</dt>
-          <dd>{field.confidence || 0}%</dd>
-        </div>
-      </dl>
-      <div className="confidence-bar">
-        <span style={{ width: `${Math.max(field.confidence, 8)}%` }} />
-      </div>
-      <div className="evidence-box">
-        <strong>引用片段</strong>
-        <p>{field.sourceSnippetText || "暂无系统引用片段。"}</p>
-      </div>
-      <button className="wide-button">
-        <Sparkles size={16} />
-        查看完整来源
-      </button>
-    </section>
-  );
-}
-
-function SaveStateNotice({ state, fieldCount, invalidCount }) {
-  const copy = {
-    idle: "待上传模板",
-    uploaded: "已上传，待标注",
-    dirty: "有未保存修改",
-    saving: "正在保存模板",
-    saved: "模板已保存",
-    incomplete: fieldCount === 0 ? "请先标注字段" : invalidCount > 0 ? `${invalidCount} 项属性未完善` : "有字段待确认",
-    "no-file": "请先上传模板",
-    unsupported: "仅支持DOCX预览",
-    "storage-error": "模板存储失败",
-  };
-  const tone =
-    state === "saved"
-      ? "green"
-      : state === "incomplete" || state === "no-file" || state === "unsupported" || state === "storage-error"
-        ? "amber"
-        : "blue";
-
-  return <div className={`save-state ${tone}`}>{copy[state] ?? copy.idle}</div>;
 }
 
 function getNextFieldNumber(fields) {
