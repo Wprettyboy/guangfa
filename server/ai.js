@@ -180,8 +180,8 @@ async function fillField(payload) {
       `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；模板单位为万元则 amountValue 为 300；模板单位为十万元/十万则 amountValue 为 30。`,
       "13. choiceValue 只能输出模板候选项中的“含税”或“不含税”。金额或含税状态任一项没有资料依据时，status 必须为需补充资料。",
     ] : []),
-    ...(isFinancialRequirementChoiceField(promptField) ? [
-      "14. 当前字段是财务要求选择，本条优先于选择填空通用规则：如果资料明确写有财务要求，value 输出可直接替换模板选区的财务要求正文；如果资料没有明确财务要求，value 输出“无财务要求”，用于只勾选“无财务要求”。",
+    ...(fillMode === "choice-replace" ? [
+      "14. 当前字段是“替换+选择”：如果资料明确写有该项要求，value 输出可直接替换模板选区的要求正文；如果资料没有明确要求，value 输出模板中的“无xx要求”选项文本，用于只勾选对应选项。",
     ] : []),
     "",
     knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未启用或未检索到相关片段。",
@@ -203,9 +203,9 @@ async function fillField(payload) {
     debugContext,
   });
   const rawValue = typeof parsed.value === "string" ? parsed.value.trim() : "";
-  if (isFinancialRequirementChoiceField(promptField) && (!rawValue || parsed.status === "需补充资料")) {
-    const result = createNoFinancialRequirementResult(sourceBundle);
-    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "financial-default-none");
+  if (fillMode === "choice-replace" && (!rawValue || parsed.status === "需补充资料")) {
+    const result = createNoRequirementChoiceResult(promptField, sourceBundle);
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-default-none");
     return result;
   }
 
@@ -427,7 +427,10 @@ function buildFieldRetrievalQuery(field) {
 
 function normalizeFillMode(field = {}) {
   const mode = String(field.fillMode || "").trim();
-  return ["short", "paragraph", "list", "choice", "table", "amount-choice"].includes(mode) ? mode : inferFillMode(field);
+  const allowed = normalizeFieldCategory(field.category || field.type) === "单选项"
+    ? ["choice", "choice-replace", "amount-choice"]
+    : ["short", "paragraph", "list", "choice", "table", "amount-choice"];
+  return allowed.includes(mode) ? mode : inferFillMode(field);
 }
 
 function normalizeFieldCategory(value) {
@@ -470,6 +473,7 @@ function getFillModeLabel(mode) {
     paragraph: "段落填空",
     list: "清单填空",
     choice: "选择填空",
+    "choice-replace": "替换选择填空",
     table: "表格填空",
     "amount-choice": "金额选择填空",
   }[mode] || "短值填空";
@@ -479,6 +483,7 @@ function getFillModePromptRule(mode) {
   if (mode === "paragraph") return "段落填空应输出资料中的完整描述，可为多句或一段；不要为了追求简短而删掉建设规模、范围边界、数量、地点、对象等关键信息。不得输出字段标签和序号。";
   if (mode === "list") return "清单填空应完整覆盖资料中的分项内容，保留“包括但不限于”对应的范围、分项或施工内容；可使用顿号、分号或原资料序号，不要压缩成一个短名词。不得输出字段标签和序号。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
+  if (mode === "choice-replace") return "替换选择填空先判断资料是否给出明确要求：有明确要求时输出可替换选区的正文；无明确要求时只输出模板中的“无xx要求”选项文本。";
   if (mode === "amount-choice") return "金额选择填空必须同时判断金额和候选项：amountValue 输出按模板单位换算后的金额纯数字，choiceValue 输出应勾选的模板选项文本；不要输出整段原文。";
   if (mode === "table") return "表格填空按当前单元格需要输出，保持简洁，但不得省略资料中该单元格必需的信息。";
   return "短值填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
@@ -502,8 +507,9 @@ function normalizeFilledValueForTemplate(field, value) {
   if (field.type !== "单选项") return text;
 
   const context = String(field.templateContext || field.answerFormat || field.question || "").replace(/\s+/g, " ").trim();
-  if (/财务要求/.test(`${field.name || ""} ${context}`)) {
-    return normalizeForSearch(text).startsWith("无财务要求") ? "无财务要求" : text;
+  if (field.fillMode === "choice-replace") {
+    const noRequirementOption = extractNoRequirementOption(field);
+    return noRequirementOption && normalizeForSearch(text).startsWith(normalizeForSearch(noRequirementOption)) ? noRequirementOption : text;
   }
   if (!/(业绩|人员|资质|资格)/.test(`${field.name || ""} ${context}`)) return text;
 
@@ -624,7 +630,7 @@ function formatAmountNumber(value) {
 }
 
 function isChoiceField(field = {}) {
-  return normalizeFieldCategory(field.category || field.type) === "单选项" || normalizeFillMode(field) === "choice";
+  return normalizeFieldCategory(field.category || field.type) === "单选项" || ["choice", "choice-replace", "amount-choice"].includes(normalizeFillMode(field));
 }
 
 function createMissingChoiceResult(source, evidence) {
@@ -637,28 +643,22 @@ function createMissingChoiceResult(source, evidence) {
   };
 }
 
-function isFinancialRequirementChoiceField(field = {}) {
-  return isChoiceField(field) && /财务要求/.test([
-    field.name,
-    field.sourceText,
-    field.templateContext,
-    field.answerFormat,
-    field.question,
-  ].filter(Boolean).join(" "));
-}
-
-function createNoFinancialRequirementResult(sourceBundle) {
+function createNoRequirementChoiceResult(field, sourceBundle) {
+  const value = extractNoRequirementOption(field);
+  if (!value) return createMissingChoiceResult("未找到资料依据", "资料未提供明确要求，且模板中未识别到“无xx要求”选项。");
   return {
-    value: "无财务要求",
+    value,
     status: "待确认",
-    confidence: sourceBundle && /财务要求|无亏损/.test(sourceBundle) ? 86 : 78,
-    source: "知识库未提供明确财务要求",
-    evidence: "未在知识库/上传资料中检索到明确财务要求，按财务要求选择规则勾选“无财务要求”。",
+    confidence: sourceBundle && /要求/.test(sourceBundle) ? 86 : 78,
+    source: "知识库未提供明确要求",
+    evidence: `未在知识库/上传资料中检索到明确要求，按替换选择规则勾选“${value}”。`,
   };
 }
 
 function isNoRequirementChoiceValue(field = {}, value = "") {
   const normalized = normalizeForSearch(value);
+  const option = extractNoRequirementOption(field);
+  if (option && normalized.startsWith(normalizeForSearch(option))) return true;
   const context = normalizeForSearch([
     field.name,
     field.sourceText,
@@ -666,7 +666,18 @@ function isNoRequirementChoiceValue(field = {}, value = "") {
     field.answerFormat,
     field.question,
   ].filter(Boolean).join(" "));
-  return normalized.startsWith("无财务要求") && context.includes("财务要求");
+  return /^无.{0,12}要求/.test(normalized) && context.includes(normalized);
+}
+
+function extractNoRequirementOption(field = {}) {
+  const context = [
+    field.sourceText,
+    field.templateContext,
+    field.answerFormat,
+    field.question,
+    field.name,
+  ].filter(Boolean).join(" ");
+  return context.match(/无[^□☐○〇▢☑✓✔；;。，,、\s]{0,12}要求/)?.[0] || "";
 }
 
 function looksLikeUnfilledChoiceTemplate(value) {

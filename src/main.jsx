@@ -205,9 +205,11 @@ const fillModeOptions = [
   { value: "paragraph", label: "段落" },
   { value: "list", label: "清单" },
   { value: "choice", label: "选择" },
+  { value: "choice-replace", label: "替换+选择" },
   { value: "amount-choice", label: "金额+选择" },
   { value: "table", label: "表格" },
 ];
+const choiceFillModeOptions = fillModeOptions.filter((item) => ["choice", "choice-replace", "amount-choice"].includes(item.value));
 const fieldCategoryOptions = ["填空", "替换", "单选项", "长文本", "日期", "金额", "表格字段"];
 
 function createAnnotatedField(slot, order, typeOverride) {
@@ -335,7 +337,14 @@ function getFieldDisplayText(field = {}) {
 
 function normalizeFillMode(value, field = {}) {
   const mode = String(value || "").trim();
-  return fillModeOptions.some((item) => item.value === mode) ? mode : inferFillMode(field);
+  const options = getFillModeOptions(field);
+  return options.some((item) => item.value === mode) ? mode : inferFillMode(field);
+}
+
+function getFillModeOptions(field = {}) {
+  return normalizeFieldCategory(field.category || field.type || field.defaultType) === "单选项"
+    ? choiceFillModeOptions
+    : fillModeOptions.filter((item) => item.value !== "choice-replace");
 }
 
 function inferFillMode(field = {}) {
@@ -4813,6 +4822,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
   const sourceText = getTemplateFieldSourceText(field);
   const category = normalizeFieldCategory(field.category || field.type);
   const fillMode = normalizeFillMode(field.fillMode, field);
+  const modeOptions = getFillModeOptions({ ...field, category, type: category });
   const hasInput = hasInputPoint(field);
 
   return (
@@ -4834,7 +4844,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
       <label>
         <span>填空类型</span>
         <select value={fillMode} onChange={(event) => updateFillMode(event.target.value)}>
-          {fillModeOptions.map((option) => (
+          {modeOptions.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
@@ -7144,11 +7154,7 @@ function isNextSectionLead(text, sectionLabel) {
 function isSectionNoRequirementOption(text, sectionLabel) {
   const normalizedText = normalizeChoiceText(text);
   const normalizedLabel = normalizeChoiceText(sectionLabel);
-  if (normalizedLabel.includes("业绩要求")) return normalizedText.startsWith("无业绩要求");
-  if (normalizedLabel.includes("人员要求")) return normalizedText.startsWith("无人员要求");
-  if (normalizedLabel.includes("资质要求")) return normalizedText.startsWith("无资质要求");
-  if (normalizedLabel.includes("财务要求")) return normalizedText.startsWith("无财务要求");
-  return false;
+  return /^无.{0,12}要求/.test(normalizedText) && normalizedLabel.includes("要求");
 }
 
 function isSectionTemplateOptionParagraph(text, sectionLabel) {
@@ -7157,7 +7163,7 @@ function isSectionTemplateOptionParagraph(text, sectionLabel) {
 }
 
 function isSectionReplacementChoiceField(field) {
-  return field.type === "单选项" && Boolean(resolveSectionLeadLabel(field)) && shouldReplaceSectionWithAnswer(field);
+  return field.type === "单选项" && normalizeFillMode(field.fillMode, field) === "choice-replace" && Boolean(resolveSectionLeadLabel(field)) && shouldReplaceSectionWithAnswer(field);
 }
 
 function getSectionAnswerValue(field, sectionLabel) {
@@ -7168,8 +7174,8 @@ function getSectionAnswerValue(field, sectionLabel) {
 
 function shouldReplaceSectionWithAnswer(field) {
   const value = String(field.value || "").replace(/\s+/g, " ").trim();
-  if (/^无(?:业绩|人员|资质|资格|财务)?要求/.test(normalizeChoiceText(value))) return false;
-  if (isFinancialRequirementField(field)) return true;
+  if (/^无.{0,12}要求/.test(normalizeChoiceText(value))) return false;
+  if (normalizeFillMode(field.fillMode, field) === "choice-replace") return true;
   if (value.length < 60) return false;
   return /[。；;，,]/.test(value) || value.length >= 90;
 }
@@ -7557,22 +7563,16 @@ function removeSectionTemplateOptionParagraphs(paragraphs, startIndex, sectionLa
 }
 
 function resolveSectionLeadLabel(field) {
-  const normalizedName = normalizeChoiceText(field.name);
-  if (normalizedName.includes("财务要求")) return "2.财务要求";
-  if (normalizedName.includes("业绩要求")) return "2.业绩要求";
-  if (normalizedName.includes("人员要求")) return "3.人员要求";
-  if (normalizedName.includes("资质要求") || normalizedName.includes("资格要求")) return "1.资质要求";
+  const source = getTemplateFieldSourceText(field) || field.name || "";
+  const match = source.match(/^\s*(\d+[.、]\s*)?[□☐○〇▢☑✓✔]?\s*([^：:；;。]{2,24}要求)\s*[：:]/);
+  if (match) return `${(match[1] || "").replace(/\s+/g, "")}${match[2].replace(/\s+/g, "")}`;
   return "";
 }
 
 function isSectionLeadParagraph(text, sectionLabel) {
   const normalizedText = normalizeChoiceText(text);
   const normalizedLabel = normalizeChoiceText(sectionLabel);
-  return normalizedText.startsWith(normalizedLabel) && (normalizedText.length <= normalizedLabel.length + 8 || normalizedLabel.includes("财务要求"));
-}
-
-function isFinancialRequirementField(field = {}) {
-  return /财务要求/.test(`${field.name || ""} ${field.sourceText || ""} ${field.answerFormat || ""} ${field.question || ""}`);
+  return normalizedText.startsWith(normalizedLabel) && (normalizedText.length <= normalizedLabel.length + 8 || normalizedLabel.includes("要求"));
 }
 
 function applyLabelFillToDocxXml(paragraphs, field) {

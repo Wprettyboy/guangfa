@@ -326,20 +326,21 @@
   }
 
   function shouldReplaceChoiceSelectionWithAnswer(field) {
-    const context = normalizeChoiceText([field?.name, field?.sourceText, field?.marker?.text].filter(Boolean).join(" "));
     const value = normalizeChoiceText(field?.value || field?.fillText);
-    return context.includes("财务要求") && value && !value.startsWith("无财务要求");
+    return field?.fillMode === "choice-replace" && value && !/^无.{0,12}要求/.test(value);
   }
 
   function buildChoiceSelectionReplacementText(field) {
     const value = String(field?.value || field?.fillText || "").replace(/\s+/g, " ").trim();
     const compactValue = value.replace(/\s+/g, "").replace(/^[□☐○〇▢☑✓✔]/, "");
-    if (!value || /^(?:\d+[.、]?)?财务要求[：:]?/.test(compactValue)) return value.replace(/[□☐○〇▢☑✓✔]\s*/, "");
     const source = String(field?.marker?.text || field?.sourceText || "");
-    const label = source.match(/^\s*(\d+[.、]\s*)?[□☐○〇▢☑✓✔]?\s*财务要求\s*[：:]/)?.[0]
+    const label = source.match(/^\s*(\d+[.、]\s*)?[□☐○〇▢☑✓✔]?\s*([^：:；;。]{2,24}要求)\s*[：:]/)?.[0]
       ?.replace(/[□☐○〇▢☑✓✔]\s*/, "")
-      ?.replace(/\s+/g, "") || "财务要求：";
-    return label + value;
+      ?.replace(/\s+/g, "");
+    const labelText = label?.replace(/[：:]$/, "");
+    const bareLabelText = labelText?.replace(/^\d+[.、]?/, "");
+    if (!value || (labelText && (compactValue.startsWith(labelText) || compactValue.startsWith(bareLabelText)))) return value.replace(/[□☐○〇▢☑✓✔]\s*/, "");
+    return (label || "") + value;
   }
 
   function checkChoiceMarker(field) {
