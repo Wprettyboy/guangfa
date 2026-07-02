@@ -297,22 +297,56 @@
   function removeSelectedTextForReplacement() {
     const logicDocument = getLogicDocument();
     if (!logicDocument) return { ok: false, error: "文档对象不可用，无法删除原选区" };
+    const before = getSelectionSnapshotForDebug(logicDocument);
     try {
       if (typeof logicDocument.IsSelectionEmpty === "function" && logicDocument.IsSelectionEmpty(true)) {
-        return { ok: false, error: "字段书签选区为空，请重新标注并保存模板" };
+        return { ok: false, selectionBefore: before, error: "字段书签选区为空，请重新标注并保存模板" };
       }
-      if (typeof logicDocument.RemoveBeforePaste === "function") {
-        logicDocument.RemoveBeforePaste();
-        return { ok: true, source: "remove-before-paste" };
-      }
-      if (typeof logicDocument.Remove === "function") {
-        logicDocument.Remove(1, true, true, true);
-        return { ok: true, source: "logic-remove" };
-      }
+      const removed = withLocalTrackRevisionsDisabled(logicDocument, function () {
+        if (typeof logicDocument.RemoveBeforePaste === "function") {
+          logicDocument.RemoveBeforePaste();
+          return { ok: true, source: "remove-before-paste" };
+        }
+        if (typeof logicDocument.Remove === "function") {
+          logicDocument.Remove(1, true, true, true);
+          return { ok: true, source: "logic-remove" };
+        }
+        return { ok: false, error: "删除选区接口不可用" };
+      });
+      return { ...removed.result, selectionBefore: before, selectionAfter: getSelectionSnapshotForDebug(logicDocument), trackRevisions: removed.trackRevisions };
     } catch (error) {
-      return { ok: false, error: error?.message || "删除原选区失败" };
+      return { ok: false, selectionBefore: before, error: error?.message || "删除原选区失败" };
     }
     return { ok: false, error: "删除选区接口不可用" };
+  }
+
+  function withLocalTrackRevisionsDisabled(logicDocument, callback) {
+    const canToggle = Boolean(
+      logicDocument
+      && typeof logicDocument.IsTrackRevisions === "function"
+      && typeof logicDocument.GetLocalTrackRevisions === "function"
+      && typeof logicDocument.SetLocalTrackRevisions === "function"
+      && logicDocument.IsTrackRevisions()
+    );
+    const previous = canToggle ? logicDocument.GetLocalTrackRevisions() : undefined;
+    try {
+      if (canToggle) logicDocument.SetLocalTrackRevisions(false);
+      return { result: callback(), trackRevisions: { suppressed: canToggle, previous: canToggle ? previous : null } };
+    } finally {
+      if (canToggle) logicDocument.SetLocalTrackRevisions(previous);
+    }
+  }
+
+  function getSelectionSnapshotForDebug(logicDocument) {
+    if (!logicDocument) return { empty: true, text: "" };
+    let empty = null;
+    try {
+      empty = typeof logicDocument.IsSelectionEmpty === "function" ? logicDocument.IsSelectionEmpty(true) : null;
+    } catch {}
+    return {
+      empty,
+      text: readSelectedText(logicDocument).slice(0, 260),
+    };
   }
 
   function replaceSelectedText(text) {
