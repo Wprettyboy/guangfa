@@ -76,7 +76,7 @@ export async function searchKnowledgeBase(payload = {}) {
   const query = String(payload.query || "").trim();
   if (!query) return [];
 
-  const topK = clampNumber(Number(payload.topK || 6), 1, 20);
+  const topK = clampNumber(Number(payload.topK || 8), 1, 20);
   const projectId = payload.projectId || defaultProjectId;
   const includeGlobal = payload.includeGlobal !== false;
   const selectedKbIds = new Set(Array.isArray(payload.kbIds) ? payload.kbIds.filter(Boolean) : []);

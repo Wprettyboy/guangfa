@@ -10,6 +10,13 @@ def rewrite_gzip(path: Path):
     Path(str(path) + ".gz").chmod(0o444)
 
 
+def write_patched(path: Path, text: str):
+    path.chmod(0o644)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o444)
+    rewrite_gzip(path)
+
+
 css = Path("/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/resources/css/app.css")
 patch = "\n/* guangfa: hide local OnlyOffice branding/about entry */\n#header-logo,#left-btn-about,#about-menu-panel{display:none!important;}\n"
 text = css.read_text(encoding="utf-8")
@@ -30,17 +37,14 @@ unregister = '+function unregisterOnlyOfficeServiceWorker(){if("serviceWorker"in
 html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister, html)
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=49"></script>\n</body>')
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=50"></script>\n</body>')
 html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=6"', html)
 if 'urlArgs: "gf=6"' not in html:
     html = html.replace(
         "var require = {\n            waitSeconds: 30,",
         'var require = {\n            waitSeconds: 30,\n            urlArgs: "gf=6",',
     )
-index.chmod(0o644)
-index.write_text(html, encoding="utf-8")
-index.chmod(0o444)
-rewrite_gzip(index)
+write_patched(index, html)
 
 probe = Path("/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/guangfa-outline-probe.js")
 if probe.exists():
@@ -89,7 +93,134 @@ elif anchor in toolbar_text:
 else:
     next_toolbar_text = toolbar_text
 if next_toolbar_text != toolbar_text:
-    toolbar.chmod(0o644)
-    toolbar.write_text(next_toolbar_text, encoding="utf-8")
-    toolbar.chmod(0o444)
-rewrite_gzip(toolbar)
+    write_patched(toolbar, next_toolbar_text)
+else:
+    rewrite_gzip(toolbar)
+
+ai_plugin = Path("/var/www/onlyoffice/documentserver/sdkjs-plugins/{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}")
+plugin_index = ai_plugin / "index.html"
+if plugin_index.exists():
+    plugin_index_text = plugin_index.read_text(encoding="utf-8")
+    plugin_index_next = re.sub(r'src="scripts/engine/register\.js(?:\?gf=\d+)?"', 'src="scripts/engine/register.js?gf=2"', plugin_index_text)
+    if plugin_index_next != plugin_index_text:
+        write_patched(plugin_index, plugin_index_next)
+    else:
+        rewrite_gzip(plugin_index)
+
+chat_html = ai_plugin / "chat.html"
+if chat_html.exists():
+    chat_html_text = chat_html.read_text(encoding="utf-8")
+    chat_html_next = re.sub(r'<div id="welcome_text">.*?</div>\s*<div id="welcome_buttons_list"></div>', '<div id="welcome_text"></div>\n\t\t\t\t\t<div id="welcome_buttons_list"></div>', chat_html_text, flags=re.S)
+    chat_html_next = re.sub(r'src="scripts/chat\.js(?:\?gf=\d+)?"', 'src="scripts/chat.js?gf=2"', chat_html_next)
+    if chat_html_next != chat_html_text:
+        write_patched(chat_html, chat_html_next)
+    else:
+        rewrite_gzip(chat_html)
+
+chat_js = ai_plugin / "scripts/chat.js"
+if chat_js.exists():
+    chat_text = chat_js.read_text(encoding="utf-8")
+    chat_next = re.sub(r"\n\tlet welcomeButtons = \[\n.*?\n\t\];", "\n\tlet welcomeButtons = [];", chat_text, flags=re.S)
+    chat_next = re.sub(
+        r"\n\tfunction updateStartPanel\(\) \{\n.*?\n\t\};",
+        "\n\tfunction updateStartPanel() {\n\t\t$('#welcome_text').empty();\n\t\t$('#welcome_buttons_list').empty();\n\t};",
+        chat_next,
+        count=1,
+        flags=re.S,
+    )
+    if chat_next != chat_text:
+        write_patched(chat_js, chat_next)
+    else:
+        rewrite_gzip(chat_js)
+
+register_js = ai_plugin / "scripts/engine/register.js"
+knowledge_helper = r'''
+
+	async function guangfaAttachKnowledgeToChatRequest(requestData) {
+		try {
+			let context = window.__guangfaAiKnowledgeContext || null;
+			if (!context) {
+				try { context = JSON.parse(window.localStorage.getItem("guangfa_ai_knowledge_context") || "null"); } catch {}
+			}
+			if (!context || !context.enabled || !context.apiBase || !Array.isArray(context.kbIds) || context.kbIds.length === 0)
+				return;
+
+			let messages = Array.isArray(requestData && requestData.messages) ? requestData.messages : [];
+			let lastUser = "";
+			for (let index = messages.length - 1; index >= 0; index--) {
+				if (messages[index] && messages[index].role === "user") {
+					lastUser = guangfaMessageText(messages[index].content);
+					if (lastUser)
+						break;
+				}
+			}
+			if (!lastUser)
+				return;
+
+			let response = await fetch(String(context.apiBase).replace(/\/$/, "") + "/api/knowledge-bases/search", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					query: lastUser,
+					projectId: context.projectId || "default-project",
+					kbIds: context.kbIds,
+					topK: context.topK || 8
+				})
+			});
+			if (!response.ok)
+				return;
+
+			let chunks = await response.json();
+			if (!Array.isArray(chunks) || chunks.length === 0)
+				return;
+
+			let baseNames = Array.isArray(context.bases) ? context.bases.map(function(item) { return item && item.name; }).filter(Boolean).join("、") : "";
+			let knowledgeText = chunks.map(function(chunk, index) {
+				return "[" + (index + 1) + "] " + (chunk.documentName || "知识库资料") + (chunk.chunkIndex ? " #" + chunk.chunkIndex : "") + "\n" + chunk.text;
+			}).join("\n\n");
+			guangfaUpsertSystemMessage(messages,
+				"【广发知识库上下文】\n" +
+				"当前聊天已挂载知识库：" + (baseNames || context.kbIds.join("、")) + "。\n" +
+				"回答招标文件制作相关问题时，优先依据以下召回片段；资料不足时说明缺少依据，不要编造。\n\n" +
+				knowledgeText
+			);
+		} catch (error) {
+			console.warn("[guangfa-ai-chat-knowledge-error]", error && (error.message || error));
+		}
+	}
+
+	function guangfaMessageText(content) {
+		if (Array.isArray(content))
+			return content.map(guangfaMessageText).join("\n").trim();
+		if (content && typeof content === "object")
+			return guangfaMessageText(content.text || content.content || "");
+		return String(content || "").trim();
+	}
+
+	function guangfaUpsertSystemMessage(messages, content) {
+		let marker = "【广发知识库上下文】";
+		let index = messages.findIndex(function(message) {
+			return message && message.role === "system" && String(message.content || "").includes(marker);
+		});
+		if (index >= 0) {
+			messages[index] = { role: "system", content: content };
+			return;
+		}
+		if (messages.length > 0 && messages[0].role === "system") {
+			messages[0].content = String(messages[0].content || "") + "\n\n" + content;
+			return;
+		}
+		messages.unshift({ role: "system", content: content });
+	}
+'''
+if register_js.exists():
+    register_text = register_js.read_text(encoding="utf-8")
+    register_next = register_text
+    if "guangfaAttachKnowledgeToChatRequest" not in register_next:
+        register_next = register_next.replace("\n\twindow.chatWindowShow = chatWindowShow;\n", "\n\twindow.chatWindowShow = chatWindowShow;\n" + knowledge_helper + "\n")
+    if "await guangfaAttachKnowledgeToChatRequest(requestData);" not in register_next:
+        register_next = register_next.replace("\n\t\t\t// LOOP\n", "\n\t\t\tawait guangfaAttachKnowledgeToChatRequest(requestData);\n\n\t\t\t// LOOP\n")
+    if register_next != register_text:
+        write_patched(register_js, register_next)
+    else:
+        rewrite_gzip(register_js)

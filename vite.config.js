@@ -19,6 +19,21 @@ export default defineConfig(({ mode }) => {
       {
         name: "local-ai-fill-api",
         configureServer(server) {
+          server.middlewares.use((request, response, next) => {
+            if (!request.url?.startsWith("/api/")) {
+              next();
+              return;
+            }
+            response.setHeader("Access-Control-Allow-Origin", "*");
+            response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+            response.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+            if (request.method === "OPTIONS") {
+              response.statusCode = 204;
+              response.end();
+              return;
+            }
+            next();
+          });
           server.middlewares.use(draftMiddleware());
           server.middlewares.use(templateLibraryMiddleware());
           server.middlewares.use(knowledgeBaseMiddleware());

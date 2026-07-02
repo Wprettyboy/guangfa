@@ -511,7 +511,7 @@ function App() {
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [selectedProjectKnowledgeBaseIds, setSelectedProjectKnowledgeBaseIds] = useState([]);
   const [selectedGlobalKnowledgeBaseIds, setSelectedGlobalKnowledgeBaseIds] = useState([]);
-  const [knowledgeTopK, setKnowledgeTopK] = useState(6);
+  const [knowledgeTopK, setKnowledgeTopK] = useState(8);
   const appRef = useRef(null);
   const annotatedTemplateBufferRef = useRef(null);
   const filledTemplateBufferRef = useRef(null);
@@ -581,6 +581,19 @@ function App() {
             : activeWorkspace === "audit"
               ? "格式审核工作台"
               : "填充确认工作台";
+  const onlyOfficeAiKnowledgeContext = useMemo(() => {
+    const kbIds = [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds];
+    return {
+      enabled: selectedProjectKnowledgeBaseIds.length > 0 && kbIds.length > 0,
+      apiBase: window.location.origin,
+      projectId: currentProjectId,
+      kbIds,
+      topK: knowledgeTopK,
+      bases: knowledgeBases
+        .filter((base) => kbIds.includes(base.id))
+        .map((base) => ({ id: base.id, name: base.name, scope: base.scope })),
+    };
+  }, [currentProjectId, knowledgeBases, knowledgeTopK, selectedGlobalKnowledgeBaseIds, selectedProjectKnowledgeBaseIds]);
 
   useEffect(() => {
     if (selectedTemplateField && (selectedTemplateField.page || 1) !== annotatePreviewPage) {
@@ -1665,6 +1678,7 @@ function App() {
                 selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
                 selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
                 knowledgeTopK={knowledgeTopK}
+                aiKnowledgeContext={onlyOfficeAiKnowledgeContext}
                 onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
                 onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
                 onKnowledgeTopKChange={setKnowledgeTopK}
@@ -3332,6 +3346,7 @@ function FillWorkspace({
   selectedProjectKnowledgeBaseIds,
   selectedGlobalKnowledgeBaseIds,
   knowledgeTopK,
+  aiKnowledgeContext,
   onSelectedProjectKnowledgeBaseChange,
   onSelectedGlobalKnowledgeBaseChange,
   onKnowledgeTopKChange,
@@ -3423,6 +3438,7 @@ function FillWorkspace({
           onPageChange={onPreviewPageChange}
           onFieldPagesChange={onFieldPagesChange}
           onOfficeDocumentReady={onOfficeDocumentReady}
+          aiKnowledgeContext={aiKnowledgeContext}
         />
       </section>
 
@@ -3460,7 +3476,7 @@ function FillWorkspace({
                 aria-label="知识库召回数量"
               >
                 <option value={3}>召回3段</option>
-                <option value={6}>召回6段</option>
+                <option value={8}>召回8段</option>
                 <option value={10}>召回10段</option>
               </select>
             </div>
@@ -3610,6 +3626,7 @@ function DocumentFrame({
   onUploadClick,
   onInputPointCaptured,
   onOfficeDocumentReady,
+  aiKnowledgeContext,
 }) {
   const title = templateFile?.name ?? "未加载模板";
   const bodyRef = useRef(null);
@@ -4122,6 +4139,7 @@ function DocumentFrame({
             config={activeOfficePreview.config}
             annotationFields={annotationFields}
             fillFields={fillFields}
+            aiKnowledgeContext={aiKnowledgeContext}
             mode={mode}
             serverUrl={activeOfficePreview.serverUrl}
             onReady={() => setRenderState("ready")}
@@ -4360,11 +4378,12 @@ function DocumentFrame({
   );
 }
 
-function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], mode, serverUrl, onReady, onError }) {
+function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, mode, serverUrl, onReady, onError }) {
   const containerRef = useRef(null);
   const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
   const annotationFieldPayloadRef = useRef([]);
   const fillFieldPayloadRef = useRef([]);
+  const aiKnowledgeContextRef = useRef(aiKnowledgeContext);
 
   useEffect(() => {
     annotationFieldPayloadRef.current = buildOnlyOfficeAnnotationFieldPayload(annotationFields);
@@ -4380,6 +4399,17 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], mod
       }, 2);
     }
   }, [fillFields, mode]);
+
+  useEffect(() => {
+    aiKnowledgeContextRef.current = aiKnowledgeContext;
+    if (mode === "fill") {
+      postOnlyOfficeCommand(containerRef.current, {
+        source: "guangfa-parent",
+        action: "sync-ai-knowledge-context",
+        context: aiKnowledgeContext,
+      }, 2);
+    }
+  }, [aiKnowledgeContext, mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4413,6 +4443,11 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], mod
                     source: "guangfa-parent",
                     action: "sync-fill-fields",
                     fields: fillFieldPayloadRef.current,
+                  });
+                  postOnlyOfficeCommand(container, {
+                    source: "guangfa-parent",
+                    action: "sync-ai-knowledge-context",
+                    context: aiKnowledgeContextRef.current,
                   });
                 }, 350);
               }

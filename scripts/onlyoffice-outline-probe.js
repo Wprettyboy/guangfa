@@ -858,6 +858,7 @@
   }
 
   let fillFields = [];
+  let aiKnowledgeContext = null;
   let lastFieldPageSignature = "";
   let annotationRestoreRunning = false;
   let lastAnnotationRestoreSignature = "";
@@ -865,6 +866,15 @@
   function setFillFields(fields) {
     fillFields = Array.isArray(fields) ? fields.slice(0, 300) : [];
     postFieldPages("set-fields");
+  }
+
+  function setAiKnowledgeContext(context) {
+    aiKnowledgeContext = context && typeof context === "object" ? context : null;
+    window.__guangfaAiKnowledgeContext = aiKnowledgeContext;
+    try {
+      if (aiKnowledgeContext) window.localStorage.setItem("guangfa_ai_knowledge_context", JSON.stringify(aiKnowledgeContext));
+      else window.localStorage.removeItem("guangfa_ai_knowledge_context");
+    } catch {}
   }
 
   function extractFieldPages() {
@@ -1028,6 +1038,7 @@
   window.guangfaPostFieldPages = function () {
     return postFieldPages("manual");
   };
+  window.guangfaSetAiKnowledgeContext = setAiKnowledgeContext;
   window.guangfaOpenOnlyOfficeAiChat = openOnlyOfficeAiChat;
   window.guangfaEnsureAiChatQuickButton = ensureAiChatQuickButton;
 
@@ -1056,6 +1067,9 @@
     }
     if (data.source === "guangfa-parent" && data.action === "sync-fill-fields") {
       setFillFields(data.fields);
+    }
+    if (data.source === "guangfa-parent" && data.action === "sync-ai-knowledge-context") {
+      setAiKnowledgeContext(data.context);
     }
   });
 
