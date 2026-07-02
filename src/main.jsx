@@ -325,11 +325,35 @@ function isReplacementField(field = {}) {
 }
 
 function requiresInputPoint(field = {}) {
-  return !isReplacementField(field);
+  return !isReplacementField(field) && !canUseMarkedSelectionAsFillTarget(field);
+}
+
+function getFieldWriteMode(field = {}) {
+  if (isReplacementField(field)) return "replace-selection";
+  return hasInputPoint(field) ? "insert-at-input-point" : "fill-marked-selection";
 }
 
 function hasInputPoint(field = {}) {
   return Boolean(field.inputPoint?.bookmarkName);
+}
+
+function canUseMarkedSelectionAsFillTarget(field = {}) {
+  if (isReplacementField(field) || !hasMarkedSelection(field)) return false;
+  const source = getTemplateFieldSourceText(field);
+  return Boolean(
+    source &&
+      (
+        hasFillBlank(source) ||
+        /[“"]\s+[”"]/.test(source) ||
+        /[：:][^。；;，,）)]*\s+[。；;，,）)]/.test(source) ||
+        /[：:]\s*$/.test(source) ||
+        /年\s*月\s*日/.test(source)
+      ),
+  );
+}
+
+function hasMarkedSelection(field = {}) {
+  return Boolean(field.marker?.kind || field.marker?.text || String(field.path || "").includes("选区"));
 }
 
 function getFieldDisplayText(field = {}) {
@@ -1304,7 +1328,7 @@ function App() {
             category: aiCategory,
             type: aiCategory,
             fillMode: aiFillMode,
-            writeMode: isReplacementField(contractField) ? "replace-selection" : "insert-at-input-point",
+            writeMode: getFieldWriteMode(contractField),
             hasInputPoint: hasInputPoint(contractField),
             inputPoint: templateField?.inputPoint || targetField.inputPoint || null,
             answerFormat: templateField?.answerFormat,
@@ -4536,6 +4560,10 @@ function buildOnlyOfficeLiveFillText(field = {}) {
   if (!source) return value;
   if (/[□☐○〇▢☑✓✔]/.test(source)) return buildOnlyOfficeChoiceFillText(source, getFieldChoiceValue(field) || value);
   if (/[_＿—-]{2,}|\s{2,}/.test(source)) return source.replace(/_{2,}|＿+|—+|-{2,}|\s{2,}/, value);
+  const quoteBlank = source.match(/^(.*?[“"])\s+([”"].*)$/);
+  if (quoteBlank) return `${quoteBlank[1]}${value}${quoteBlank[2]}`;
+  const punctBlank = source.match(/^(.*?[：:][^。；;，,）)]*?)\s+([。；;，,）)].*)$/);
+  if (punctBlank) return `${punctBlank[1]}${value}${punctBlank[2]}`;
   const colonBlank = source.match(/^(.*?[：:])\s+(.*)$/);
   if (colonBlank) return `${colonBlank[1]}${value}${colonBlank[2]}`;
   if (/[：:]\s*$/.test(source)) return `${source}${value}`;
@@ -4836,6 +4864,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
   const modeOptions = getFillModeOptions({ ...field, category, type: category });
   const modeLabel = category === "单选项" ? "单选细分" : "填空类型";
   const hasInput = hasInputPoint(field);
+  const usesMarkedSelectionTarget = !hasInput && canUseMarkedSelectionAsFillTarget(field);
 
   return (
     <div className="field-form">
@@ -4845,7 +4874,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
       </div>
       <div className="field-context input-point-context">
         <span>填写输入点</span>
-        <p>{hasInput ? `已设置，第 ${field.inputPoint?.page || field.page || 1} 页` : isReplacementField(field) ? "单选项将使用标注选区作为写入范围" : "未设置，请把光标放到实际填写位置后点击添加输入点"}</p>
+        <p>{hasInput ? `已设置，第 ${field.inputPoint?.page || field.page || 1} 页` : isReplacementField(field) ? "单选项将使用标注选区作为写入范围" : usesMarkedSelectionTarget ? "将使用标注选区作为填写范围" : "未设置，请把光标放到实际填写位置后点击添加输入点"}</p>
       </div>
       <label>
         <span>自动填充类别</span>

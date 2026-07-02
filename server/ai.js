@@ -133,23 +133,43 @@ async function fillField(payload) {
   const materialText = formatMaterialSnippets(materialSnippets).slice(0, maxMaterialChars);
   const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets).slice(0, maxKnowledgeChars);
   const sourceBundle = `${knowledgeText}\n${materialText}`;
+  const runtime = getAiRuntimeConfig();
+  const debugContext = {
+    field: summarizeFieldForDebug(promptField),
+    fillMode,
+    retrievalQuery,
+    knowledgeCount: knowledgeSnippets.length,
+    materialCount: materialSnippets.length,
+    knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
+    materialSnippets: summarizeSnippetsForDebug(materialSnippets),
+  };
   const authoritativeLocation = extractAuthoritativeLocation(promptField, sourceBundle);
   if (authoritativeLocation) return authoritativeLocation;
   const authoritativeProjectName = extractAuthoritativeProjectName(promptField, sourceBundle);
   if (authoritativeProjectName) return authoritativeProjectName;
 
   if (!materialText.trim() && !knowledgeText.trim()) {
-    if (isPackageOrSegmentShortField(promptField)) return createDefaultPackageOrSegmentResult("未检索到分包/分标段资料，按通用规则默认填写 1。");
-    return {
+    if (isPackageOrSegmentShortField(promptField)) {
+      const result = createDefaultPackageOrSegmentResult("未检索到分包/分标段资料，按通用规则默认填写 1。");
+      await writeFillFinalDebugLog(runtime, debugContext, {}, result, "package-segment-default-one-no-source");
+      return result;
+    }
+    if (fillMode === "choice-replace") {
+      const result = createNoRequirementChoiceResult(promptField, sourceBundle);
+      await writeFillFinalDebugLog(runtime, debugContext, {}, result, "choice-replace-default-none-no-source");
+      return result;
+    }
+    const result = {
       value: "",
       status: "需补充资料",
       confidence: 0,
       source: "未上传资料",
       evidence: "当前没有可用于填充的资料文本，也没有检索到知识库片段，请先上传资料或维护知识库。",
     };
+    await writeFillFinalDebugLog(runtime, debugContext, {}, result, "no-source");
+    return result;
   }
 
-  const runtime = getAiRuntimeConfig();
   const systemPrompt =
     "你是中文招投标文件自动填充助手。用户正在基于知识库/上传资料编制当前招标或采购文件。只根据知识库/上传资料回答，不要编造。不要输出思考过程。必须输出严格 JSON，不要 Markdown。模板选区原文只是待填写位置的上下文，不是资料来源。";
   const userPrompt = [
@@ -169,7 +189,7 @@ async function fillField(payload) {
     "1. 模板选区原文只用于判断要填哪个空、替换哪段话或选择哪个选项；不得把模板占位符、证明材料说明、未填写的候选项直接作为 value。",
     "2. 找不到明确依据时，value 必须为空字符串，status 为需补充资料，confidence 为 0。",
     `3. ${getFillModePromptRule(fillMode)}`,
-    "4. value 只输出将被写入输入点或替换选区的内容，不要附带模板字段标签、固定前后缀或解释。",
+    "4. value 只输出将被写入输入点、标注选区空白或替换选区的内容，不要附带模板字段标签、固定前后缀或解释。",
     "5. 必须先判断字段语义再填值：名称字段填名称，地点/地址字段填地点或地址，工期字段填期限，金额字段填金额，范围字段填范围；不要把资料中其他明确但语义不匹配的信息填入当前字段。",
     "6. 对业绩要求、人员要求、资质要求、财务要求等选择型字段：只能返回资料能明确支持的选项或完整替换段；不得复制模板中的空白占位、证明材料、社保/证书附件说明；资料不足时 value 为空。",
     "7. 不要输出解释性短语，例如“类似项目是指...”，除非这句话本身就是模板原文或资料原文。",
@@ -202,15 +222,6 @@ async function fillField(payload) {
     materialText ? `【本次上传资料】\n${materialText}` : "【本次上传资料】\n未上传临时资料。",
   ].join("\n");
 
-  const debugContext = {
-    field: summarizeFieldForDebug(promptField),
-    fillMode,
-    retrievalQuery,
-    knowledgeCount: knowledgeSnippets.length,
-    materialCount: materialSnippets.length,
-    knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
-    materialSnippets: summarizeSnippetsForDebug(materialSnippets),
-  };
   const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" ? 1536 : 768, {
     debugFileName: "ai-fill-last.json",
     debugContext,
@@ -482,7 +493,9 @@ function describeFieldContract(field = {}, fillMode = normalizeFillMode(field)) 
   const writeMode = field.writeMode || (category === "单选项" ? "replace-selection" : "insert-at-input-point");
   const writeLabel = writeMode === "replace-selection"
     ? "替换标注选区"
-    : field.hasInputPoint || field.inputPoint?.bookmarkName
+    : writeMode === "fill-marked-selection"
+      ? "填写标注选区中的空白或标签"
+      : field.hasInputPoint || field.inputPoint?.bookmarkName
       ? "写入已标记输入点"
       : "需要输入点，缺失时不得猜测位置";
   return `类别=${category}；输出=${getFillModeLabel(fillMode)}；写入=${writeLabel}`;
