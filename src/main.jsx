@@ -4535,8 +4535,19 @@ function buildOnlyOfficeChoiceFillText(source, value) {
   const cleanValue = normalizeChoiceText(value);
   const base = source.replace(/[☑✓✔]/g, "□");
   const match = [...base.matchAll(/[□☐○〇▢]\s*([^□☐○〇▢☑✓✔]{1,80})/g)]
-    .find((item) => cleanValue.includes(normalizeChoiceText(item[1])) || normalizeChoiceText(item[1]).includes(cleanValue));
+    .map((item) => ({ item, score: scoreChoiceOptionMatch(item[1], cleanValue) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || normalizeChoiceText(b.item[1]).length - normalizeChoiceText(a.item[1]).length)[0]?.item;
   return match ? `${base.slice(0, match.index)}☑${base.slice(match.index + 1)}` : value;
+}
+
+function scoreChoiceOptionMatch(optionText, normalizedValue) {
+  const option = normalizeChoiceText(optionText);
+  if (!option || !normalizedValue) return 0;
+  if (option === normalizedValue) return 100;
+  if (option.includes(normalizedValue)) return 90;
+  if (normalizedValue.includes(option)) return 70;
+  return 0;
 }
 
 function readOnlyOfficePageNumber(payload) {

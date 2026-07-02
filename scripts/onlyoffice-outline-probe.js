@@ -368,7 +368,7 @@
   }
 
   function getAmountBlankDescriptor(source) {
-    const match = String(source || "").match(/(?:_{2,}|＿+|—+|-{2,}|\s{2,})(?=\s*(?:万元|元))/);
+    const match = String(source || "").match(/(?:_{2,}|＿+|—+|-{2,}|(?<=[：:])\s+|\s{2,})(?=\s*(?:万元|元))/);
     if (!match) return null;
     const prefix = source.slice(0, match.index).replace(/\s+/g, " ").trim().slice(-24);
     return prefix.length >= 2 ? { prefix, blankLength: match[0].length } : null;
@@ -389,10 +389,21 @@
   function findChoiceOption(options, field) {
     const checked = parseChoiceOptions(field?.value).find(function (option) { return /[☑✓✔]/.test(option.marker); });
     const value = normalizeChoiceText(field?.choiceValue || checked?.text || field?.value || field?.fillText);
-    return options.find(function (option) {
-      const text = normalizeChoiceText(option.text);
-      return value && (text.includes(value) || value.includes(text));
-    }) || null;
+    return options
+      .map(function (option) { return { option, score: scoreChoiceOptionMatch(option.text, value) }; })
+      .filter(function (item) { return item.score > 0; })
+      .sort(function (a, b) {
+        return b.score - a.score || normalizeChoiceText(b.option.text).length - normalizeChoiceText(a.option.text).length;
+      })[0]?.option || null;
+  }
+
+  function scoreChoiceOptionMatch(optionText, normalizedValue) {
+    const option = normalizeChoiceText(optionText);
+    if (!option || !normalizedValue) return 0;
+    if (option === normalizedValue) return 100;
+    if (option.includes(normalizedValue)) return 90;
+    if (normalizedValue.includes(option)) return 70;
+    return 0;
   }
 
   function normalizeChoiceText(value) {
@@ -800,7 +811,14 @@
   window.guangfaChoiceMarkerSelfTest = function () {
     const options = parseChoiceOptions("□第五章 评审办法（经评审的最低投标价法） □第五章 评审办法（综合评估法）");
     const target = findChoiceOption(options, { value: "综合评估法" });
-    return { ok: options.length === 2 && /综合评估法/.test(target?.text || ""), count: options.length, target: target?.text || "" };
+    const taxOptions = parseChoiceOptions("□含税 □不含税");
+    const taxTarget = findChoiceOption(taxOptions, { value: "9832553", choiceValue: "不含税" });
+    return {
+      ok: options.length === 2 && /综合评估法/.test(target?.text || "") && /不含税/.test(taxTarget?.text || ""),
+      count: options.length,
+      target: target?.text || "",
+      taxTarget: taxTarget?.text || "",
+    };
   };
   window.guangfaPostFieldPages = function () {
     return postFieldPages("manual");
