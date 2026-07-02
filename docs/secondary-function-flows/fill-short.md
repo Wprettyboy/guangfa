@@ -1,0 +1,102 @@
+# 填空-短文本 业务流程知识地图
+
+流程图：![填空-短文本](images/fill-short.png)
+
+## 1. 路由与业务定义
+
+| 项 | 内容 |
+| --- | --- |
+| 一级类别 | 填空 |
+| 二级类别 | 短文本 |
+| 代码值 | `fillMode=short` |
+| 执行原则 | 只写入短值，不改写模板固定文本。模板选区只用于判断写入位置，不作为答案来源。 |
+| 当前特例 | 选区或字段上下文为分包、分标段、标段划分时，资料有对应值按资料填写；资料无明确值时默认填写 `1`。 |
+
+## 2. 泳道一：模板标注工作台
+
+| 步骤 | 用户动作或业务判断 | 责任说明 |
+| --- | --- | --- |
+| 1 | 用户在 OnlyOffice 中框选短文本位置 | 选区应覆盖要填写的短文本位置，例如冒号后空白、引号内空白、下划线空位。 |
+| 2 | 点击定制组件中的“标注字段” | 入口由 `scripts/patch-onlyoffice.py` 注入到 OnlyOffice 工具栏。 |
+| 3 | 选择一级类别“填空”、二级类别“短文本” | 前端保存 `category=填空`、`fillMode=short`，后续 AI 和回写都按该二级类型执行。 |
+| 4 | 判断是否需要输入点 | `src/main.jsx` 的 `canUseMarkedSelectionAsFillTarget()` 会判断标注选区能否直接作为填写范围；不能直接写时再要求添加输入点。 |
+| 5 | 可选：添加输入点 | `addInputPointForTemplateField()` 发送 `add-input-point`，OnlyOffice 写入 `GF_INPUT_xxx`。 |
+
+## 3. 泳道二：前端主文件 `src/main.jsx`
+
+| 节点 | 代码/接口 | 中文职责说明 |
+| --- | --- | --- |
+| 字段类型定义 | `fillModeOptions` | 定义 `short`、`paragraph`、`date`、`amount`、`choice`、`choice-replace`、`amount-choice` 七个二级类型。 |
+| 接收选区 | `annotate-selection` 消息监听 | 接收 OnlyOffice 回传的选区文本、页码、`selectionState`。 |
+| 创建字段 | `markSlot()`、`createAnnotatedField()` | 生成字段 id，保存 `sourceText`、`category`、`fillMode=short`、页码和书签标记。 |
+| 写字段书签 | `requestOnlyOfficeAddFieldBookmark()` | 发送 `postMessage: add-field-bookmark`，要求 OnlyOffice 给当前选区写入 `GF_FIELD_xxx`。 |
+| 写输入点书签 | `requestOnlyOfficeAddInputPoint()` | 发送 `postMessage: add-input-point`，要求 OnlyOffice 给光标位置写入 `GF_INPUT_xxx`。 |
+| 发起 AI 填充 | `fillFieldWithAI()` | 合并模板字段和填充字段，携带 `sourceText`、`fillMode`、`writeMode`、资料和知识库配置调用 `/api/ai/fill-field`。 |
+| 生成现场写入文本 | `buildOnlyOfficeLiveFillText()` | 将短值写入空白、冒号后、引号内等位置，保留模板固定前后缀。 |
+| 发送回写 | `requestOnlyOfficeFillField()` | 发送 `postMessage: fill-field-value`，把 `value`、`fillText`、书签名和 `fillMode` 发给 OnlyOffice。 |
+| 同步 DOCX | `queueFilledOfficeDocumentSync()` | 回写后调用 OnlyOffice `downloadAs("docx")` 或保存回调，把现场修改后的 DOCX 同步到前端状态。 |
+
+## 4. 泳道三：OnlyOffice 定制与注入脚本
+
+| 节点 | 脚本/消息 | 中文职责说明 |
+| --- | --- | --- |
+| 启动部署 | `scripts/start-onlyoffice.ps1` | 启动或复用 `guangfa-onlyoffice` 容器，复制桥接脚本，执行补丁脚本，写入本地 AI 配置。 |
+| 注入入口 | `scripts/patch-onlyoffice.py` | 注入“定制组件”和“标注字段”按钮；挂载 `guangfa-outline-probe.js`；重写 `.js.gz` 与缓存号。 |
+| 读取选区 | `scripts/onlyoffice-outline-probe.js` / `extractOnlyOfficeSelection()` | 在 OnlyOffice iframe 内读取真实选区文本、页码、`selectionState`。 |
+| 回传选区 | `postMessage: annotate-selection` | OnlyOffice → React，传回选区信息。 |
+| 写字段书签 | `addBookmarkToCurrentSelection()` | 恢复 `selectionState`，写入 `GF_FIELD_xxx`，并触发 `saveOnlyOfficeDocument("field-bookmark")`。 |
+| 写输入点 | `addInputPointBookmark()` | 在当前光标位置写入 `GF_INPUT_xxx`，用于不能直接用选区写入的短文本。 |
+| 现场回写 | `fillBookmarkedField()` | 接收 `fill-field-value` 后选择书签。`GF_FIELD_xxx` 走替换选区，`GF_INPUT_xxx` 走插入输入点。 |
+| 写入接口 | `replaceSelectedText()`、`enterTextAtSelection()` | 前者先删除字段选区再输入；后者在光标或输入点插入短值。 |
+
+## 5. 泳道四：服务端 AI 与知识库
+
+| 节点 | 文件/函数 | 中文职责说明 |
+| --- | --- | --- |
+| AI 接口 | `POST /api/ai/fill-field` | 短文本 AI 填充接口，由前端 `fillFieldWithAI()` 调用。 |
+| 主入口 | `server/ai.js` / `fillField()` | 归一化 `fillMode`，构造检索 query，组合知识库片段和上传资料，调用模型。 |
+| 检索 query | `buildFieldRetrievalQuery()` | 根据字段名、选区原文、字段说明生成检索关键词。 |
+| 知识库检索 | `searchKnowledgeForField()` → `server/knowledge-base.js` / `searchKnowledgeBase()` | 从项目知识库和全局知识库召回相关片段。 |
+| 知识库文件 | `data/knowledge/library.json`、`data/knowledge/zvec/chunks` | 存储知识库元数据、文本切片和向量索引。 |
+| 短文本提示词 | `getFillModePromptRule("short")` | 要求只输出纯值，不带标签、冒号、序号、句号或解释。 |
+| 分包判断 | `isPackageOrSegmentShortField()` | 只在 `fillMode=short` 且上下文含分包、分标段、标段划分时启用默认规则。 |
+| 默认值 | `createDefaultPackageOrSegmentResult()` | 未检索到明确分包/分标段值时返回 `value="1"`。 |
+| 模型调用 | `callJsonModel()` | 调本地 OpenAI 兼容模型，要求严格 JSON 输出。 |
+
+## 6. 关键条件分支
+
+| 条件 | 是 | 否 |
+| --- | --- | --- |
+| 标注选区能否直接作为填写范围 | 使用 `GF_FIELD_xxx`，由 `replaceSelectedText(fillText)` 替换空白或选区。 | 要求添加输入点，使用 `GF_INPUT_xxx` 插入短值。 |
+| 是否为分包/分标段/标段划分短文本 | 检查资料是否有对应值；无值时默认 `1`。 | 按普通短文本规则，只输出资料支持的纯值。 |
+| 是否检索到资料或知识库片段 | 调模型生成短值，并做最终日志记录。 | 普通短文本返回需补充资料；分包/分标段特例返回 `1`。 |
+| OnlyOffice 回写目标是 `GF_INPUT` 还是 `GF_FIELD` | `GF_INPUT`：`enterTextAtSelection()` 插入。 | `GF_FIELD`：`replaceSelectedText()` 删除选区后输入。 |
+
+## 7. 泳道五：文件、保存、日志
+
+| 节点 | 文件/接口 | 中文职责说明 |
+| --- | --- | --- |
+| Office 文档接口 | `server/office.js` / `/api/office/documents` | 上传 DOCX 给 OnlyOffice，返回编辑器配置。 |
+| Office 下载 | `server/office.js` / `/api/office/download-url` | 代理下载 OnlyOffice `downloadAs` 产生的 DOCX。 |
+| Office 回调 | `server/office.js` / `/api/office/callback/:id` | OnlyOffice 保存时把最新 DOCX 写回服务端临时目录。 |
+| 草稿保存 | `server/draft.js` / `/api/draft` | 保存当前模板、字段、资料、知识库选择和填充结果到 `data/drafts/current.json`。 |
+| 模板库 | `server/templates.js` / `/api/templates` | 保存模板字段定义到 `data/templates/library.json`。 |
+| 模型原始日志 | `logs/ai-fill-last.json` | 保存 prompt、召回片段、模型原始 JSON 和解析结果。 |
+| 最终结果日志 | `logs/ai-fill-last-final.json` | 保存业务守卫后的结果、`status`、`source`、`evidence`、`finalReason`。 |
+
+## 8. 泳道六：质量验证节点
+
+| 验证项 | 命令或检查点 | 验证内容 |
+| --- | --- | --- |
+| 前端构建 | `npm run build` | 验证主前端和打包链路。 |
+| AI 服务语法 | `node --check server/ai.js` | 验证 AI 路由、提示词和守卫代码语法。 |
+| OnlyOffice 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 验证选区、书签、输入、回写脚本语法。 |
+| 日志复核 | 查看 `logs/ai-fill-last.json` | 确认模型输入、召回片段和原始输出。 |
+| 最终复核 | 查看 `logs/ai-fill-last-final.json` | 确认 `value/status/source/evidence/finalReason`。 |
+| 现场验证 | 浏览器控制台 `field-fill` 结果 | 确认 OnlyOffice 回写返回 ok，且短文本写入目标正确。 |
+
+## 9. 当前注意点
+
+- 短文本默认 `1` 只适用于分包、分标段、标段划分，不应扩散到普通短文本。
+- 模板选区原文不能作为答案来源。
+- 调试 OnlyOffice 注入脚本后，必须确认容器内 `.js` 与 `.js.gz` 都已更新，否则页面可能继续跑旧逻辑。
