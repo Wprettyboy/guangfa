@@ -955,8 +955,8 @@
   }
 
   function ensureGuangfaAiChatStyle() {
-    if (document.getElementById("guangfa-ai-chat-panel-style")) return;
-    const style = document.createElement("style");
+    let style = document.getElementById("guangfa-ai-chat-panel-style");
+    if (!style) style = document.createElement("style");
     style.id = "guangfa-ai-chat-panel-style";
     style.textContent = [
       "#guangfa-ai-chat-panel{position:fixed;right:42px;top:64px;width:var(--gf-ai-chat-width,360px);min-width:320px;max-width:760px;height:calc(100vh - 82px);max-height:680px;min-height:360px;z-index:1000000;background:#fff;border:1px solid #d9dee8;box-shadow:0 12px 32px rgba(15,23,42,.18);display:flex;flex-direction:column;font-family:Arial,'Microsoft YaHei',sans-serif;color:#1f2937}",
@@ -967,8 +967,8 @@
       ".gf-ai-chat-close{width:26px;height:26px;border:0;background:transparent;font-size:18px;line-height:24px;cursor:pointer;color:#64748b}",
       "#guangfa-ai-chat-panel,#guangfa-ai-chat-panel *{user-select:text!important;-webkit-user-select:text!important}",
       ".gf-ai-chat-header,.gf-ai-chat-header *{user-select:none!important;-webkit-user-select:none!important}",
-      ".gf-ai-chat-resize{position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:ew-resize;z-index:4;user-select:none!important;-webkit-user-select:none!important}",
-      ".gf-ai-chat-resize::after{content:'';position:absolute;left:4px;top:50%;width:3px;height:42px;transform:translateY(-50%);border-left:1px solid #cbd5e1;border-right:1px solid #cbd5e1}",
+      ".gf-ai-chat-resize{position:absolute;left:-8px;top:0;bottom:0;width:16px;cursor:ew-resize;z-index:4;touch-action:none;user-select:none!important;-webkit-user-select:none!important}",
+      ".gf-ai-chat-resize::after{content:'';position:absolute;left:7px;top:50%;width:3px;height:42px;transform:translateY(-50%);border-left:1px solid #cbd5e1;border-right:1px solid #cbd5e1}",
       ".gf-ai-chat-messages{flex:1;overflow:auto;padding:12px;background:#fff}",
       ".gf-ai-chat-message{position:relative;max-width:92%;margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}",
       ".gf-ai-chat-message.user{margin-left:auto;background:#e8f1ff;color:#0f172a}",
@@ -989,7 +989,7 @@
       ".gf-ai-chat-send{width:56px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:#fff;font-size:13px;cursor:pointer}",
       ".gf-ai-chat-send:disabled{opacity:.55;cursor:not-allowed}",
     ].join("");
-    document.head.appendChild(style);
+    if (!style.parentNode) document.head.appendChild(style);
   }
 
   function writeGuangfaAiChatText(text, button) {
@@ -1007,6 +1007,7 @@
     handle.addEventListener("pointerdown", function (event) {
       event.preventDefault();
       event.stopPropagation();
+      handle.setPointerCapture?.(event.pointerId);
       const rect = panel.getBoundingClientRect();
       panel.style.left = `${Math.round(rect.left)}px`;
       panel.style.top = `${Math.round(rect.top)}px`;
@@ -1021,11 +1022,14 @@
         panel.style.setProperty("--gf-ai-chat-width", `${Math.round(width)}px`);
       }
       function onUp() {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
+        handle.releasePointerCapture?.(event.pointerId);
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
       }
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
     });
   }
 
@@ -1036,6 +1040,7 @@
     header.addEventListener("pointerdown", function (event) {
       if (event.target?.closest?.("button")) return;
       event.preventDefault();
+      header.setPointerCapture?.(event.pointerId);
       const rect = panel.getBoundingClientRect();
       panel.style.left = `${Math.round(rect.left)}px`;
       panel.style.top = `${Math.round(rect.top)}px`;
@@ -1052,12 +1057,21 @@
         panel.style.top = `${Math.round(Math.max(0, Math.min(maxTop, startTop + moveEvent.clientY - startY)))}px`;
       }
       function onUp() {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
+        header.releasePointerCapture?.(event.pointerId);
+        header.removeEventListener("pointermove", onMove);
+        header.removeEventListener("pointerup", onUp);
+        header.removeEventListener("pointercancel", onUp);
       }
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
+      header.addEventListener("pointermove", onMove);
+      header.addEventListener("pointerup", onUp);
+      header.addEventListener("pointercancel", onUp);
     });
+  }
+
+  function ensureGuangfaAiChatResizeHandle(panel) {
+    if (panel && !panel.querySelector(".gf-ai-chat-resize")) {
+      panel.insertAdjacentHTML("afterbegin", '<div class="gf-ai-chat-resize" title="拖动调整宽度"></div>');
+    }
   }
 
   function getGuangfaAiChatSourceLabel(snippet, index) {
@@ -1195,6 +1209,7 @@
     ensureGuangfaAiChatStyle();
     let panel = document.getElementById("guangfa-ai-chat-panel");
     if (panel) {
+      ensureGuangfaAiChatResizeHandle(panel);
       bindGuangfaAiChatResize(panel);
       bindGuangfaAiChatMove(panel);
       return panel;
@@ -1216,6 +1231,7 @@
       "</form>",
     ].join("");
     document.body.appendChild(panel);
+    ensureGuangfaAiChatResizeHandle(panel);
     bindGuangfaAiChatResize(panel);
     bindGuangfaAiChatMove(panel);
     panel.querySelector(".gf-ai-chat-close")?.addEventListener("click", function () {
