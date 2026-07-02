@@ -5036,10 +5036,70 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
       role="button"
       tabIndex={0}
     >
+      <div className="field-row-toolbar">
+        <div className="row-actions" onClick={(event) => event.stopPropagation()}>
+          <StatusPill status={field.status} />
+          {editing ? (
+            <>
+              <button
+                className="mini-button blue"
+                onClick={() => {
+                  onUpdateValue(draftValue);
+                  setEditing(false);
+                }}
+              >
+                <Save size={15} />
+                保存
+              </button>
+              <button
+                className="mini-button"
+                onClick={() => {
+                  setDraftValue(field.value || "");
+                  setEditing(false);
+                }}
+              >
+                <X size={15} />
+                取消
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="mini-button blue"
+                data-testid={`generate-${field.id}`}
+                onClick={onGenerate}
+                disabled={generateDisabled || field.status === "生成中"}
+              >
+                {field.status === "生成中" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
+                AI填充
+              </button>
+              <button
+                className="mini-button"
+                onClick={() => {
+                  setDraftValue(field.value || "");
+                  setEditing(true);
+                }}
+                disabled={field.status === "生成中"}
+              >
+                <PenLine size={15} />
+                编辑
+              </button>
+              <button
+                className="mini-button"
+                data-testid={`confirm-${field.id}`}
+                onClick={onConfirm}
+                disabled={field.status === "已确认" || !field.value}
+              >
+                <Check size={15} />
+                确认
+              </button>
+            </>
+          )}
+        </div>
+      </div>
       <div className="field-card-head">
         <span className="row-index">{index + 1}</span>
         <strong title={getFieldDisplayText(field)}>{getFieldDisplayText(field)}</strong>
-        <StatusPill status={field.status} />
       </div>
       {editing ? (
         isChoiceEditing ? (
@@ -5095,7 +5155,7 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
           />
         )
       ) : (
-        <div className={field.value ? "field-value rich" : supplementReason ? "field-value supplement" : "field-value empty"}>
+        <div className={field.value ? "field-value rich" : supplementReason ? "field-reason" : "field-value empty"}>
           {field.value || supplementReason || "暂未生成"}
         </div>
       )}
@@ -5116,64 +5176,6 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
           {sourceExpanded && sourceSnippetText ? <p>{sourceSnippetText}</p> : null}
         </div>
       ) : null}
-      <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-        {editing ? (
-          <>
-            <button
-              className="mini-button blue"
-              onClick={() => {
-                onUpdateValue(draftValue);
-                setEditing(false);
-              }}
-            >
-              <Save size={15} />
-              保存
-            </button>
-            <button
-              className="mini-button"
-              onClick={() => {
-                setDraftValue(field.value || "");
-                setEditing(false);
-              }}
-            >
-              <X size={15} />
-              取消
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              className="mini-button blue"
-              data-testid={`generate-${field.id}`}
-              onClick={onGenerate}
-              disabled={generateDisabled || field.status === "生成中"}
-            >
-              {field.status === "生成中" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
-              AI填充
-            </button>
-            <button
-              className="mini-button"
-              onClick={() => {
-                setDraftValue(field.value || "");
-                setEditing(true);
-              }}
-              disabled={field.status === "生成中"}
-            >
-              <PenLine size={15} />
-              编辑
-            </button>
-            <button
-              className="mini-button"
-              data-testid={`confirm-${field.id}`}
-              onClick={onConfirm}
-              disabled={field.status === "已确认" || !field.value}
-            >
-              <Check size={15} />
-              确认
-            </button>
-          </>
-        )}
-      </div>
     </div>
   );
 }
