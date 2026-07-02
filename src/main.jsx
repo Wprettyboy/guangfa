@@ -1285,13 +1285,26 @@ function App() {
     return created;
   }
 
-  async function fillFieldWithAI(fieldId, fieldsSnapshot = enrichedFillFields) {
+  async function fillFieldWithAI(fieldId, fieldsSnapshot = enrichedFillFields, options = {}) {
+    const syncDocument = options.syncDocument !== false;
     const targetField = fieldsSnapshot.find((field) => field.id === fieldId);
     const templateField = templateFields.find((field) => field.id === fieldId);
-    if (!targetField) return;
+    if (!targetField) return fieldsSnapshot;
     const contractField = { ...targetField, ...templateField };
 
     if (requiresInputPoint(contractField) && !hasInputPoint(contractField)) {
+      const nextFieldsSnapshot = fieldsSnapshot.map((field) =>
+        field.id === fieldId
+          ? {
+              ...field,
+              status: "需补充资料",
+              confidence: 0,
+              source: "缺少输入点",
+              evidence: "该字段是填空写入字段，请先在模板标注工作台把光标放到实际填写位置并添加输入点。",
+            }
+          : field,
+      );
+      enrichedFillFieldsRef.current = nextFieldsSnapshot;
       setSelectedFieldId(fieldId);
       setFillFields((fields) =>
         fields.map((field) =>
@@ -1306,7 +1319,7 @@ function App() {
             : field,
         ),
       );
-      return;
+      return nextFieldsSnapshot;
     }
 
     setSelectedFieldId(fieldId);
@@ -1360,6 +1373,7 @@ function App() {
         evidence: result.evidence || "AI 未返回明确证据。",
       };
       const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? appliedField : field));
+      enrichedFillFieldsRef.current = nextFieldsSnapshot;
       setFillFields((fields) =>
         fields.map((field) =>
           field.id === fieldId
@@ -1368,21 +1382,26 @@ function App() {
         ),
       );
       requestOnlyOfficeFillField(appliedField);
-      queueFilledOfficeDocumentSync(nextFieldsSnapshot);
+      if (syncDocument) queueFilledOfficeDocumentSync(nextFieldsSnapshot);
+      return nextFieldsSnapshot;
     } catch (error) {
+      const errorField = {
+        ...targetField,
+        status: "需补充资料",
+        confidence: 0,
+        source: "AI 填充失败",
+        evidence: error.message || "请检查模型配置、网络或上传资料。",
+      };
+      const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? errorField : field));
+      enrichedFillFieldsRef.current = nextFieldsSnapshot;
       setFillFields((fields) =>
         fields.map((field) =>
           field.id === fieldId
-            ? {
-                ...field,
-                status: "需补充资料",
-                confidence: 0,
-                source: "AI 填充失败",
-                evidence: error.message || "请检查模型配置、网络或上传资料。",
-              }
+            ? errorField
             : field,
         ),
       );
+      return nextFieldsSnapshot;
     }
   }
 
@@ -1396,10 +1415,13 @@ function App() {
 
     setGeneratingAll(true);
     setShowCitations(false);
+    window.clearTimeout(fillSyncTimerRef.current);
+    let fieldsSnapshot = enrichedFillFields;
     try {
       for (const field of pendingFields) {
-        await fillFieldWithAI(field.id, enrichedFillFields);
+        fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, { syncDocument: false }) || fieldsSnapshot;
       }
+      queueFilledOfficeDocumentSync(fieldsSnapshot);
     } finally {
       setGeneratingAll(false);
     }
