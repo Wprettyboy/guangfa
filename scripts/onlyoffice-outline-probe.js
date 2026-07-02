@@ -294,6 +294,34 @@
     return { ok: false, error: "文本输入接口不可用" };
   }
 
+  function removeSelectedTextForReplacement() {
+    const logicDocument = getLogicDocument();
+    if (!logicDocument) return { ok: false, error: "文档对象不可用，无法删除原选区" };
+    try {
+      if (typeof logicDocument.IsSelectionEmpty === "function" && logicDocument.IsSelectionEmpty(true)) {
+        return { ok: false, error: "字段书签选区为空，请重新标注并保存模板" };
+      }
+      if (typeof logicDocument.RemoveBeforePaste === "function") {
+        logicDocument.RemoveBeforePaste();
+        return { ok: true, source: "remove-before-paste" };
+      }
+      if (typeof logicDocument.Remove === "function") {
+        logicDocument.Remove(1, true, true, true);
+        return { ok: true, source: "logic-remove" };
+      }
+    } catch (error) {
+      return { ok: false, error: error?.message || "删除原选区失败" };
+    }
+    return { ok: false, error: "删除选区接口不可用" };
+  }
+
+  function replaceSelectedText(text) {
+    const removed = removeSelectedTextForReplacement();
+    if (!removed.ok) return removed;
+    const entered = enterTextAtSelection(text);
+    return { ...entered, removeResult: removed };
+  }
+
   function fillBookmarkedField(field) {
     const fillText = String(field?.fillText || field?.value || "");
     if (!fillText) return { ok: false, id: field?.id, error: "字段填充值为空" };
@@ -302,7 +330,7 @@
         if (!selectFieldBookmark(field)) {
           return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
         }
-        const result = enterTextAtSelection(buildChoiceSelectionReplacementText(field));
+        const result = replaceSelectedText(buildChoiceSelectionReplacementText(field));
         postFieldPages("fill-choice-replacement");
         return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field), source: "choice-selection-replacement" };
       }
@@ -314,9 +342,10 @@
     if (!selectFieldBookmark(field)) {
       return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
     }
-    const result = enterTextAtSelection(fillText);
+    const bookmarkName = getFieldBookmarkName(field);
+    const result = /^GF_FIELD_/.test(bookmarkName) ? replaceSelectedText(fillText) : enterTextAtSelection(fillText);
     postFieldPages("fill-field");
-    return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
+    return { ...result, id: field?.id, bookmarkName };
   }
 
   function isChoiceMarkerField(field) {
