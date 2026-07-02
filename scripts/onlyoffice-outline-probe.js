@@ -997,11 +997,10 @@
     return result;
   }
 
-  function getGuangfaAiChatSourceLabel(snippet, index) {
+  function getGuangfaAiChatSourceLabel(snippet) {
     const kbName = snippet?.kbName || (snippet?.scope === "global" ? "全局知识库" : "项目知识库");
     const fileName = snippet?.source || snippet?.documentName || "未命名资料";
-    const chunk = snippet?.chunkIndex ? `片段${snippet.chunkIndex}` : `片段${index + 1}`;
-    return `${kbName} / ${fileName} / ${chunk}`;
+    return `原文：${kbName} / ${fileName}`;
   }
 
   async function showGuangfaAiChatSource(snippet, index) {
@@ -1010,7 +1009,7 @@
     panel.querySelector(".gf-ai-chat-source-viewer")?.remove();
     const viewer = document.createElement("div");
     viewer.className = "gf-ai-chat-source-viewer";
-    const title = getGuangfaAiChatSourceLabel(snippet, index);
+    const title = getGuangfaAiChatSourceLabel(snippet);
     viewer.innerHTML = [
       '<div class="gf-ai-chat-source-viewer-header">',
       '<div class="gf-ai-chat-source-viewer-title"></div>',
@@ -1050,7 +1049,7 @@
       const button = document.createElement("button");
       button.className = "gf-ai-chat-source";
       button.type = "button";
-      button.textContent = getGuangfaAiChatSourceLabel(snippet, index);
+      button.textContent = getGuangfaAiChatSourceLabel(snippet);
       button.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
