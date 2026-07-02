@@ -54,6 +54,7 @@ async function createKnowledgeChat(payload) {
   const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets).slice(0, maxKnowledgeChars);
   const history = normalizeChatHistory(payload?.history);
   const runtime = getAiRuntimeConfig();
+  const sourceSnippets = formatChatSourceSnippets(knowledgeSnippets, knowledgeOptions.bases);
   const baseNames = Array.isArray(knowledgeOptions.bases)
     ? knowledgeOptions.bases.map((item) => item?.name).filter(Boolean).join("、")
     : "";
@@ -61,6 +62,8 @@ async function createKnowledgeChat(payload) {
     "你是中文招标文件制作助手，只用自然语言回答。",
     "禁止调用或输出 OnlyOffice 宏、writeMacro、functionCalling、工具调用、代码块或内部 API。",
     "优先依据已挂载知识库召回片段回答；资料不足时明确说明缺少依据，不要编造。",
+    "回答必须简明扼要，优先一句话，最多两条要点。",
+    "不要写“根据知识库召回片段”“此外”“引用来源”等溯源说明，来源由系统在回复下方展示。",
   ].join("\n");
   const userPrompt = [
     `当前挂载知识库：${baseNames || (kbIds.length ? kbIds.join("、") : "未挂载")}`,
@@ -85,14 +88,14 @@ async function createKnowledgeChat(payload) {
         bases: knowledgeOptions.bases || [],
       },
       knowledgeCount: knowledgeSnippets.length,
-      knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
+      knowledgeSnippets: sourceSnippets,
     },
   }));
 
   return {
     reply,
     knowledgeCount: knowledgeSnippets.length,
-    snippets: summarizeSnippetsForDebug(knowledgeSnippets),
+    snippets: sourceSnippets,
   };
 }
 
@@ -545,12 +548,23 @@ function summarizeFieldForDebug(field = {}) {
 function summarizeSnippetsForDebug(snippets = []) {
   return snippets.map((item, index) => ({
     index: index + 1,
+    id: item.id,
+    kbId: item.kbId,
+    documentId: item.documentId,
     source: item.documentName || item.name || "未命名资料",
     scope: item.scope,
     chunkIndex: item.chunkIndex,
     page: item.page || "",
     score: item.score,
     text: String(item.text || "").slice(0, 1200),
+  }));
+}
+
+function formatChatSourceSnippets(snippets = [], bases = []) {
+  const baseNames = new Map((Array.isArray(bases) ? bases : []).map((base) => [base?.id, base?.name]).filter(([id, name]) => id && name));
+  return summarizeSnippetsForDebug(snippets).map((item) => ({
+    ...item,
+    kbName: baseNames.get(item.kbId) || (item.scope === "global" ? "全局知识库" : "项目知识库"),
   }));
 }
 

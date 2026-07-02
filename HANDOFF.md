@@ -159,6 +159,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `.js` 和 `.js.gz` 缓存都可能影响 OnlyOffice 前端脚本。调试 `guangfa-outline-probe.js` 后要确认容器内 `.js.gz` 解压内容和 `.js` 哈希一致，并 bump `index.html` 里脚本的 `?gf=` 缓存号；否则浏览器可能继续加载旧桥接脚本，表现为“代码改了但 OnlyOffice 仍按旧逻辑写入”。
 - OnlyOffice 右侧“聊天机器人”快捷入口不能再调用原生 `window.chatWindowShow()` 或点击原生 AI 插件 Chatbot。原生 AI Chat 会进入 OnlyOffice 宏/工具代理链路，表现为“运行宏、格式化文本、重写文本”等工具调用，并且知识库上下文不稳定；应打开自研 `guangfa-ai-chat-panel`，通过 `/api/ai/chat` 使用当前选择的知识库。
 - OnlyOffice 内部浮层可能继承编辑器禁选文本/拦截复制的体验；自定义聊天、审查等浮层里有可复用文本时，要显式设置 `user-select:text`，必要时提供复制按钮。
+- 自研聊天回复要简明扼要；溯源不要让 AI 写在回答正文里，应由前端固定挂载 `知识库 / 文件 / 片段` 引用项，点击引用项查看召回原文。
 
 ## 当前建议接手方式
 
