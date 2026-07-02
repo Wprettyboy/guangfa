@@ -350,17 +350,39 @@
     const amount = String(field?.amountValue || field?.value || "").trim();
     const descriptor = getAmountBlankDescriptor(String(field?.marker?.text || field?.sourceText || ""));
     if (!amount || !descriptor) return { ok: false, skipped: true, reason: "amount-blank-descriptor-missing" };
+    if (descriptor.suffix && selectSearchText(descriptor.suffix, field)) {
+      return replaceBlankBeforeSelection(descriptor.blankLength, amount);
+    }
     if (!selectSearchText(descriptor.prefix, field)) return { ok: false, error: "未定位到金额空白前的标签" };
+    return replaceBlankAfterSelection(descriptor.blankLength, amount);
+  }
 
+  function replaceBlankBeforeSelection(blankLength, amount) {
+    const logicDocument = getLogicDocument();
+    if (!logicDocument || typeof logicDocument.MoveCursorLeft !== "function") return { ok: false, error: "光标移动接口不可用" };
+    try {
+      logicDocument.MoveCursorLeft(false, false);
+      for (let index = 0; index < blankLength; index += 1) {
+        logicDocument.MoveCursorLeft(true, false);
+      }
+      const selected = readSelectedText(logicDocument);
+      if (selected && !/^[\s_＿—-]+$/.test(selected)) return { ok: false, selected, error: "金额空白选区不匹配" };
+      return enterTextAtSelection(amount);
+    } catch (error) {
+      return { ok: false, error: error?.message || "金额空白写入失败" };
+    }
+  }
+
+  function replaceBlankAfterSelection(blankLength, amount) {
     const logicDocument = getLogicDocument();
     if (!logicDocument || typeof logicDocument.MoveCursorRight !== "function") return { ok: false, error: "光标移动接口不可用" };
     try {
       logicDocument.MoveCursorRight(false, false);
-      for (let index = 0; index < descriptor.blankLength; index += 1) {
+      for (let index = 0; index < blankLength; index += 1) {
         logicDocument.MoveCursorRight(true, false);
       }
       const selected = readSelectedText(logicDocument);
-      if (!/^[\s_＿—-]+$/.test(selected || "")) return { ok: false, selected, error: "金额空白选区不匹配" };
+      if (selected && !/^[\s_＿—-]+$/.test(selected)) return { ok: false, selected, error: "金额空白选区不匹配" };
       return enterTextAtSelection(amount);
     } catch (error) {
       return { ok: false, error: error?.message || "金额空白写入失败" };
@@ -371,7 +393,8 @@
     const match = String(source || "").match(/(?:_{2,}|＿+|—+|-{2,}|(?<=[：:])\s+|\s{2,})(?=\s*(?:万元|元))/);
     if (!match) return null;
     const prefix = source.slice(0, match.index).replace(/\s+/g, " ").trim().slice(-24);
-    return prefix.length >= 2 ? { prefix, blankLength: match[0].length } : null;
+    const suffix = (source.slice(match.index + match[0].length).match(/^\s*((?:万元|元)[（(]?)/)?.[1] || "").trim();
+    return prefix.length >= 2 ? { prefix, suffix, blankLength: match[0].length } : null;
   }
 
   function parseChoiceOptions(source) {
@@ -813,11 +836,13 @@
     const target = findChoiceOption(options, { value: "综合评估法" });
     const taxOptions = parseChoiceOptions("□含税 □不含税");
     const taxTarget = findChoiceOption(taxOptions, { value: "9832553", choiceValue: "不含税" });
+    const amountDescriptor = getAmountBlankDescriptor("三、最高限价： 元（□含税 □不含税）");
     return {
-      ok: options.length === 2 && /综合评估法/.test(target?.text || "") && /不含税/.test(taxTarget?.text || ""),
+      ok: options.length === 2 && /综合评估法/.test(target?.text || "") && /不含税/.test(taxTarget?.text || "") && amountDescriptor?.suffix === "元（",
       count: options.length,
       target: target?.text || "",
       taxTarget: taxTarget?.text || "",
+      amountDescriptor,
     };
   };
   window.guangfaPostFieldPages = function () {
