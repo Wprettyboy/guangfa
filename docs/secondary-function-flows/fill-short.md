@@ -10,6 +10,7 @@
 | 二级类别 | 短文本 |
 | 代码值 | `fillMode=short` |
 | 执行原则 | 只写入短值，不改写模板固定文本。模板选区只用于判断写入位置，不作为答案来源。 |
+| 当前约束 | 普通短文本必须走 `/api/ai/fill-field` 的模型 JSON 输出；不得在模型调用前用“项目名称/地点”等正则捷径直接返回结果。 |
 | 当前特例 | 选区或字段上下文为分包、分标段、标段划分时，资料有对应值按资料填写；资料无明确值时默认填写 `1`。 |
 
 ## 2. 泳道一：模板标注工作台
@@ -56,9 +57,10 @@
 | AI 接口 | `POST /api/ai/fill-field` | 短文本 AI 填充接口，由前端 `fillFieldWithAI()` 调用。 |
 | 主入口 | `server/ai.js` / `fillField()` | 归一化 `fillMode`，构造检索 query，组合知识库片段和上传资料，调用模型。 |
 | 检索 query | `buildFieldRetrievalQuery()` | 根据字段名、选区原文、字段说明生成检索关键词。 |
-| 知识库检索 | `searchKnowledgeForField()` → `server/knowledge-base.js` / `searchKnowledgeBase()` | 从项目知识库和全局知识库召回相关片段。 |
+| 知识库检索 | `searchKnowledgeForField()` → `server/knowledge-base.js` / `searchKnowledgeBase()` | 从项目知识库和全局知识库召回相关原始切片；召回阶段不做 AI 改写、不替用户判断最终复制范围。 |
 | 知识库文件 | `data/knowledge/library.json`、`data/knowledge/zvec/chunks` | 存储知识库元数据、文本切片和向量索引。 |
 | 短文本提示词 | `getFillModePromptRule("short")` | 要求只输出纯值，不带标签、冒号、序号、句号或解释。 |
+| 禁止前置捷径 | `fillField()` 模型调用前 | 普通短文本不得用项目名称、工程地点、地址等正则分支直接返回；这些字段也必须由 AI 依据召回片段输出 JSON。 |
 | 分包判断 | `isPackageOrSegmentShortField()` | 只在 `fillMode=short` 且上下文含分包、分标段、标段划分时启用默认规则。 |
 | 默认值 | `createDefaultPackageOrSegmentResult()` | 未检索到明确分包/分标段值时返回 `value="1"`。 |
 | 模型调用 | `callJsonModel()` | 调本地 OpenAI 兼容模型，要求严格 JSON 输出。 |
@@ -69,7 +71,8 @@
 | --- | --- | --- |
 | 标注选区能否直接作为填写范围 | 使用 `GF_FIELD_xxx`，由 `replaceSelectedText(fillText)` 替换空白或选区。 | 要求添加输入点，使用 `GF_INPUT_xxx` 插入短值。 |
 | 是否为分包/分标段/标段划分短文本 | 检查资料是否有对应值；无值时默认 `1`。 | 按普通短文本规则，只输出资料支持的纯值。 |
-| 是否检索到资料或知识库片段 | 调模型生成短值，并做最终日志记录。 | 普通短文本返回需补充资料；分包/分标段特例返回 `1`。 |
+| 是否检索到资料或知识库片段 | 调模型生成短值，并做最终日志记录；项目名称、工程名称、地点、地址等也走该路径。 | 普通短文本返回需补充资料；分包/分标段特例返回 `1`。 |
+| 模型返回是否只包含目标短值 | 进入后置结果，供前端回写。 | 后置校验拦截模板原文依据、空值或资料不足结果，写入 `logs/ai-fill-last-final.json`。 |
 | OnlyOffice 回写目标是 `GF_INPUT` 还是 `GF_FIELD` | `GF_INPUT`：`enterTextAtSelection()` 插入。 | `GF_FIELD`：`replaceSelectedText()` 删除选区后输入。 |
 
 ## 7. 泳道五：文件、保存、日志
@@ -92,11 +95,20 @@
 | AI 服务语法 | `node --check server/ai.js` | 验证 AI 路由、提示词和守卫代码语法。 |
 | OnlyOffice 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 验证选区、书签、输入、回写脚本语法。 |
 | 日志复核 | 查看 `logs/ai-fill-last.json` | 确认模型输入、召回片段和原始输出。 |
-| 最终复核 | 查看 `logs/ai-fill-last-final.json` | 确认 `value/status/source/evidence/finalReason`。 |
+| 最终复核 | 查看 `logs/ai-fill-last-final.json` | 确认 `value/status/source/evidence/finalReason`，并确认有 `modelParsed`，证明结果经过 AI 判断而不是前置规则直出。 |
+| 短文本冒烟 | 调 `/api/ai/fill-field`，字段设为 `项目名称：` | 应返回纯项目名，例如只返回“中共四川省委组织部内网综合办公平台建设项目”，不能带“竞争性磋商文件、采购人、目录、TOC”等后续正文。 |
 | 现场验证 | 浏览器控制台 `field-fill` 结果 | 确认 OnlyOffice 回写返回 ok，且短文本写入目标正确。 |
 
 ## 9. 当前注意点
 
 - 短文本默认 `1` 只适用于分包、分标段、标段划分，不应扩散到普通短文本。
 - 模板选区原文不能作为答案来源。
+- 召回片段只是资料候选，不是最终填充值；普通短文本的复制/截取范围必须由 AI 在 `/api/ai/fill-field` 模型调用中判断。
+- 不要再为“项目名称/地点/地址”等普通短文本加模型前置正则捷径，否则会绕过 AI，并可能把目录、采购人、TOC 等连续文本截入 value。
 - 调试 OnlyOffice 注入脚本后，必须确认容器内 `.js` 与 `.js.gz` 都已更新，否则页面可能继续跑旧逻辑。
+
+## 10. 修订记录
+
+| 日期 | 修订内容 |
+| --- | --- |
+| 2026-07-02 | 删除普通短文本“项目名称/地点”模型前置正则捷径后的流程同步：召回只提供原始切片，短文本统一走 AI JSON 判断，日志需确认 `modelParsed`。 |
