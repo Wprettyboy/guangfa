@@ -249,7 +249,7 @@ async function fillField(payload) {
     knowledgeSnippets: summarizeSnippetsForDebug(knowledgeSnippets),
     materialSnippets: summarizeSnippetsForDebug(materialSnippets),
   };
-  const systemCitation = buildFillSourceCitation(knowledgeSnippets, materialSnippets);
+  const systemCitation = buildFillSourceCitation(knowledgeSnippets, materialSnippets, retrievalQuery);
   if (!materialText.trim() && !knowledgeText.trim()) {
     if (isPackageOrSegmentShortField(promptField)) {
       const result = createDefaultPackageOrSegmentResult("未检索到分包/分标段资料，按通用规则默认填写 1。");
@@ -343,13 +343,16 @@ async function fillField(payload) {
   const amountChoice = fillMode === "amount-choice";
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
   const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
+  const contextualCitation = findModelReferencedCitation(knowledgeSnippets, materialSnippets, `${source}\n${evidence}`)
+    || buildFillSourceCitation(knowledgeSnippets, materialSnippets, `${retrievalQuery} ${source} ${evidence}`);
   if (amountChoice) {
     const amountValue = normalizeTemplateAmountValue(promptField, parsed.amountValue ?? parsed.value ?? "");
     const choiceValue = normalizeTaxChoiceValue(parsed.choiceValue ?? parsed.value ?? "");
     const guard = sanitizeAmountChoiceFillResult(parsed, amountValue, choiceValue, source, evidence);
     if (guard) {
-      await writeFillFinalDebugLog(runtime, debugContext, parsed, guard, "amount-choice-guard");
-      return guard;
+      const result = attachSupplementCitation(guard, contextualCitation || systemCitation);
+      await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "amount-choice-guard");
+      return result;
     }
     const result = {
       value: amountValue,
@@ -360,50 +363,33 @@ async function fillField(payload) {
       source,
       evidence,
     };
-    const citedResult = applySystemCitation(result, systemCitation);
+    const citedResult = applySystemCitation(result, contextualCitation || systemCitation);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, citedResult, "ok");
     return citedResult;
   }
 
   let value = normalizeFilledValueForTemplate(promptField, rawValue);
   if (fillMode === "paragraph" && value && !isCopiedFromSource(value, sourceBundle)) {
-    const result = {
-      value: "",
-      status: "需补充资料",
-      confidence: 0,
-      source: "未找到可复制原文",
-      evidence: "模型返回内容未能在知识库/上传资料召回片段中逐字定位，长文本填空不做语义改写。",
-    };
+    const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，长文本填空不做语义改写。", contextualCitation || systemCitation);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-not-copied");
     return result;
   }
   if (fillMode === "choice-replace" && value && !isNoRequirementChoiceValue(promptField, value)) {
     if (!isCopiedFromSource(value, sourceBundle)) value = extractChoiceReplacementSourceText(promptField, parsed, sourceBundle) || value;
     if (!isCopiedFromSource(value, sourceBundle)) {
-      const result = {
-        value: "",
-        status: "需补充资料",
-        confidence: 0,
-        source: "未找到可复制原文",
-        evidence: "模型返回内容未能在知识库/上传资料召回片段中逐字定位，替换+选择有资料分支必须复制资料原文。",
-      };
+      const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，替换+选择有资料分支必须复制资料原文。", contextualCitation || systemCitation);
       await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-not-copied");
       return result;
     }
   }
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
-    await writeFillFinalDebugLog(runtime, debugContext, parsed, choiceGuard, "choice-guard");
-    return choiceGuard;
+    const result = attachSupplementCitation(choiceGuard, contextualCitation || systemCitation);
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-guard");
+    return result;
   }
   if (isTemplateOnlyFillEvidence(promptField, value, `${source}\n${evidence}`, `${knowledgeText}\n${materialText}`)) {
-    const result = {
-      value: "",
-      status: "需补充资料",
-      confidence: 0,
-      source: "未找到资料依据",
-      evidence: "模型仅引用模板选区原文，未在知识库或上传资料中找到可填依据。",
-    };
+    const result = createSupplementResult("模型仅引用模板选区原文，未在知识库或上传资料中找到可填依据。", contextualCitation || systemCitation);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "template-only-evidence");
     return result;
   }
@@ -414,7 +400,7 @@ async function fillField(payload) {
     source,
     evidence,
   };
-  const citedResult = applySystemCitation(result, systemCitation);
+  const citedResult = applySystemCitation(result, contextualCitation || systemCitation);
   await writeFillFinalDebugLog(runtime, debugContext, parsed, citedResult, "ok");
   return citedResult;
 }
@@ -592,15 +578,18 @@ function summarizeSnippetsForDebug(snippets = []) {
   }));
 }
 
-function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = []) {
+function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = [], query = "") {
+  const tokens = createSearchTokens(query);
   const knowledge = knowledgeSnippets.map((item, index) => {
     const scopeName = item.scope === "global" ? "全局库" : "项目库";
     const location = item.page ? `第${item.page}页` : `片段${item.chunkIndex || index + 1}`;
+    const text = String(item.text || "").trim();
     return {
       rank: index,
       score: Number(item.score || 0),
       source: `知识库${index + 1}（${scopeName}｜${item.documentName || "未命名资料"} ${location}）`,
-      text: String(item.text || "").trim(),
+      text,
+      tokenScore: scoreText(text, tokens),
     };
   });
   const materials = materialSnippets.map((item, index) => ({
@@ -608,10 +597,28 @@ function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = []) 
     score: Number(item.score || 0),
     source: `临时资料${index + 1}（${item.name || "未命名资料"}｜片段${item.chunkIndex || index + 1}）`,
     text: String(item.text || "").trim(),
+    tokenScore: scoreText(item.text, tokens),
   }));
   return [...knowledge, ...materials]
     .filter((item) => item.text)
-    .sort((a, b) => b.score - a.score || a.rank - b.rank)[0] || null;
+    .sort((a, b) => b.tokenScore - a.tokenScore || b.score - a.score || a.rank - b.rank)[0] || null;
+}
+
+function findModelReferencedCitation(knowledgeSnippets = [], materialSnippets = [], reference = "") {
+  const text = String(reference || "");
+  const knowledgeIndex = text.match(/知识库\s*(\d+)(?=[（(:：\s中提])/);
+  if (knowledgeIndex) {
+    const index = Number(knowledgeIndex[1]) - 1;
+    const item = knowledgeSnippets[index];
+    if (item) return buildFillSourceCitation([item], [], "");
+  }
+  const materialIndex = text.match(/(?:临时资料|上传资料)\s*(\d+)(?=[（(:：\s中提])/);
+  if (materialIndex) {
+    const index = Number(materialIndex[1]) - 1;
+    const item = materialSnippets[index];
+    if (item) return buildFillSourceCitation([], [item], "");
+  }
+  return null;
 }
 
 function applySystemCitation(result, citation) {
@@ -628,6 +635,35 @@ function applySystemCitation(result, citation) {
     ...result,
     source: citation.source,
     evidence: text,
+    sourceSnippetText: text,
+  };
+}
+
+function createSupplementResult(reason, citation) {
+  return attachSupplementCitation({
+    value: "",
+    status: "需补充资料",
+    confidence: 0,
+    source: "未找到可直接写入原文",
+    evidence: reason,
+  }, citation);
+}
+
+function attachSupplementCitation(result, citation) {
+  if (result?.status !== "需补充资料" || result?.sourceSnippetText) return result;
+  if (!citation) {
+    return {
+      ...result,
+      source: result.source || "未找到可参考来源片段",
+      sourceSnippetText: "",
+    };
+  }
+  const text = citation.text.slice(0, 2000);
+  const preview = text.slice(0, 500);
+  return {
+    ...result,
+    source: `未找到可直接写入原文；可参考 ${citation.source}`,
+    evidence: `${result.evidence || "资料不足，无法直接写入。"}\n可参考相近原文：${preview}`,
     sourceSnippetText: text,
   };
 }
@@ -1289,6 +1325,7 @@ function expandDomainSearchTokens(value) {
   if (/采购范围|实施范围|服务范围|主要施工内容|工作内容|包括但不限于|长文本填空/.test(value)) add("采购范围", "实施范围", "服务范围", "主要施工内容", "施工图范围内", "工作内容", "包括但不限于", "分项内容");
   if (/评审办法|评标办法|综合评分|综合评估|最低投标价/.test(value)) add("评审办法", "评标办法", "综合评分法", "综合评估法", "最低投标价法");
   if (/业绩|类似项目|合同金额|发票/.test(value)) add("业绩要求", "类似项目业绩", "合同金额");
+  if (/评分|加分|加\d+分|履约能力/.test(value)) add("履约能力", "加2分", "最多加");
   if (/人员|技术负责人|安全员|项目负责人|专职安全/.test(value)) add("人员要求", "技术负责人", "专职安全生产管理人员");
   if (/资质|资格|安全生产许可证|劳务资质/.test(value)) add("资质要求", "施工劳务资质", "安全生产许可证");
   if (/财务|无亏损|亏损/.test(value)) add("财务要求", "无财务要求", "无亏损", "近三年", "近3年", "财务报表");
