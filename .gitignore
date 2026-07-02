@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+logs/
+tmp/
+*.log
+__pycache__/
+*.pyc
+.venv-embedding/
+.env
+.env.local
