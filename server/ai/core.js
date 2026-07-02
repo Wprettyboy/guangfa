@@ -1,12 +1,5 @@
 import { searchKnowledgeBase } from "../knowledge-base.js";
 
-const defaultBaseUrl = "https://api.deepseek.com";
-const defaultModel = "deepseek-v4-flash";
-const maxKnowledgeChars = 9000;
-const maxMaterialChars = 5000;
-const materialChunkSize = 1000;
-const materialChunkOverlap = 120;
-
 export async function createKnowledgeChat(payload) {
   const message = String(payload?.message || "").trim().slice(0, 4000);
   if (!message) {
@@ -546,29 +539,6 @@ function sanitizeChatReply(reply) {
     return "当前聊天机器人已禁用 OnlyOffice 宏和工具调用。请直接用自然语言提问，我会优先依据已挂载知识库回答。";
   }
   return text;
-}
-
-function getAiRuntimeConfig() {
-  const provider = process.env.AI_PROVIDER === "cloud" ? "cloud" : process.env.AI_PROVIDER === "local" ? "local" : "";
-  if (provider === "local") {
-    return {
-      baseUrl: process.env.LOCAL_LLM_BASE_URL || process.env.AI_BASE_URL || defaultBaseUrl,
-      model: process.env.LOCAL_LLM_MODEL || process.env.AI_MODEL || defaultModel,
-      apiKey: process.env.LOCAL_LLM_API_KEY || "",
-    };
-  }
-  if (provider === "cloud") {
-    return {
-      baseUrl: process.env.AI_BASE_URL || process.env.DEEPSEEK_BASE_URL || defaultBaseUrl,
-      model: process.env.AI_MODEL || process.env.DEEPSEEK_MODEL || defaultModel,
-      apiKey: process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "",
-    };
-  }
-  return {
-    baseUrl: process.env.LOCAL_LLM_BASE_URL || process.env.AI_BASE_URL || process.env.DEEPSEEK_BASE_URL || defaultBaseUrl,
-    model: process.env.LOCAL_LLM_MODEL || process.env.AI_MODEL || process.env.DEEPSEEK_MODEL || defaultModel,
-    apiKey: process.env.LOCAL_LLM_API_KEY || process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || "",
-  };
 }
 
 async function searchKnowledgeForAi(runtime, { rawQuery = "", field = {}, message = "", knowledgeOptions = {}, debugFileName = "ai-knowledge-query-last.json" } = {}) {
