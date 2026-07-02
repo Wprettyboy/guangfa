@@ -952,16 +952,19 @@
   }
 
   function ensureAiChatQuickButton() {
-    const holder = document.querySelector("#slot-right-menu-more") || document.querySelector("#view-right-menu .tool-menu-btns");
+    const holder = document.querySelector("#view-right-menu .tool-menu-btns");
     if (!holder) return false;
     if (!document.getElementById("guangfa-ai-chat-quick-style")) {
       const style = document.createElement("style");
       style.id = "guangfa-ai-chat-quick-style";
-      style.textContent = "#id-right-menu-guangfa-ai-chat{display:inline-flex!important}#id-right-menu-guangfa-ai-chat .guangfa-ai-chat-icon{width:16px;height:16px;background:url('/sdkjs-plugins/{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}/resources/icons/light/ask-ai.png') center/16px 16px no-repeat!important}";
+      style.textContent = "#id-right-menu-guangfa-ai-chat{display:flex!important;align-items:center!important;justify-content:center!important;width:28px!important;height:28px!important;min-width:28px!important;padding:0!important}#id-right-menu-guangfa-ai-chat .guangfa-ai-chat-icon{display:block!important;width:16px!important;height:16px!important;object-fit:contain!important;opacity:.85!important;pointer-events:none!important}";
       document.head.appendChild(style);
     }
-    if (document.getElementById("id-right-menu-guangfa-ai-chat")) return true;
-    const button = document.createElement("button");
+    const slot = document.querySelector("#slot-right-menu-more");
+    const anchor = slot || document.querySelector("#id-right-menu-filling-status");
+    const button = document.getElementById("id-right-menu-guangfa-ai-chat") || document.createElement("button");
+    if (anchor && button.parentNode !== holder) holder.insertBefore(button, anchor);
+    else if (button.parentNode !== holder) holder.appendChild(button);
     button.id = "id-right-menu-guangfa-ai-chat";
     button.type = "button";
     button.className = "btn btn-category arrow-left";
@@ -970,13 +973,15 @@
     button.setAttribute("data-hint", "0");
     button.setAttribute("data-hint-direction", "left");
     button.setAttribute("data-hint-offset", "big");
-    button.innerHTML = '<i class="icon toolbar__icon guangfa-ai-chat-icon">&nbsp;</i>';
-    button.addEventListener("click", function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      openOnlyOfficeAiChat();
-    });
-    holder.appendChild(button);
+    button.innerHTML = '<img class="guangfa-ai-chat-icon" src="/sdkjs-plugins/{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}/resources/icons/light/ask-ai.png" alt="">';
+    if (!button.__guangfaAiChatClickBound) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openOnlyOfficeAiChat();
+      });
+      button.__guangfaAiChatClickBound = true;
+    }
     return true;
   }
 
