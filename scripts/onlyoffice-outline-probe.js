@@ -299,8 +299,9 @@
     if (!fillText) return { ok: false, id: field?.id, error: "字段填充值为空" };
     if (isChoiceMarkerField(field)) {
       const result = checkChoiceMarker(field);
+      const amountResult = result.ok && (field?.amountValue || field?.fillMode === "amount-choice") ? fillAmountBlank(field) : null;
       postFieldPages("fill-choice-field");
-      return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
+      return { ...result, amountResult, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
     }
     if (!selectFieldBookmark(field)) {
       return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
@@ -345,6 +346,34 @@
     return { ok: false, source: "choice-marker", changed, error: "未在文档中定位到选项前的方框" };
   }
 
+  function fillAmountBlank(field) {
+    const amount = String(field?.amountValue || field?.value || "").trim();
+    const descriptor = getAmountBlankDescriptor(String(field?.marker?.text || field?.sourceText || ""));
+    if (!amount || !descriptor) return { ok: false, skipped: true, reason: "amount-blank-descriptor-missing" };
+    if (!selectSearchText(descriptor.prefix, field)) return { ok: false, error: "未定位到金额空白前的标签" };
+
+    const logicDocument = getLogicDocument();
+    if (!logicDocument || typeof logicDocument.MoveCursorRight !== "function") return { ok: false, error: "光标移动接口不可用" };
+    try {
+      logicDocument.MoveCursorRight(false, false);
+      for (let index = 0; index < descriptor.blankLength; index += 1) {
+        logicDocument.MoveCursorRight(true, false);
+      }
+      const selected = readSelectedText(logicDocument);
+      if (!/^[\s_＿—-]+$/.test(selected || "")) return { ok: false, selected, error: "金额空白选区不匹配" };
+      return enterTextAtSelection(amount);
+    } catch (error) {
+      return { ok: false, error: error?.message || "金额空白写入失败" };
+    }
+  }
+
+  function getAmountBlankDescriptor(source) {
+    const match = String(source || "").match(/(?:_{2,}|＿+|—+|-{2,}|\s{2,})(?=\s*(?:万元|元))/);
+    if (!match) return null;
+    const prefix = source.slice(0, match.index).replace(/\s+/g, " ").trim().slice(-24);
+    return prefix.length >= 2 ? { prefix, blankLength: match[0].length } : null;
+  }
+
   function parseChoiceOptions(source) {
     return [...String(source || "").matchAll(/([□☐○〇▢☑✓✔])(\s*[^□☐○〇▢☑✓✔]{1,80})/g)]
       .map(function (match) {
@@ -359,7 +388,7 @@
 
   function findChoiceOption(options, field) {
     const checked = parseChoiceOptions(field?.value).find(function (option) { return /[☑✓✔]/.test(option.marker); });
-    const value = normalizeChoiceText(checked?.text || field?.value || field?.fillText);
+    const value = normalizeChoiceText(field?.choiceValue || checked?.text || field?.value || field?.fillText);
     return options.find(function (option) {
       const text = normalizeChoiceText(option.text);
       return value && (text.includes(value) || value.includes(text));
@@ -403,6 +432,33 @@
         const page = currentSelectionPage();
         const pageOk = !expectedPage || !page || page === expectedPage;
         if (pageOk && normalizeChoiceText(selectedText) === normalizeChoiceText(option.text)) {
+          return true;
+        }
+        if (index < max - 1) api.asc_findText(settings, true);
+      }
+    } catch {
+      return false;
+    } finally {
+      try { if (typeof api.asc_endFindText === "function") api.asc_endFindText(); } catch {}
+    }
+    return false;
+  }
+
+  function selectSearchText(text, field) {
+    const api = getEditorApi();
+    const settings = createSearchSettings(text);
+    if (!api || !settings) return false;
+    const expectedPage = Number(field?.page || 0);
+    try {
+      if (typeof api.asc_endFindText === "function") api.asc_endFindText();
+      moveSearchCursorToStart();
+      const count = Number(api.asc_findText(settings, true)) || 0;
+      const max = Math.min(Math.max(count, 1), 80);
+      for (let index = 0; index < max; index += 1) {
+        const selectedText = readSelectedText(getLogicDocument()) || readSelectedText(api);
+        const page = currentSelectionPage();
+        const pageOk = !expectedPage || !page || page === expectedPage;
+        if (pageOk && normalizeSelectionText(selectedText).includes(normalizeSelectionText(text))) {
           return true;
         }
         if (index < max - 1) api.asc_findText(settings, true);

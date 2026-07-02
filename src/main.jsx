@@ -205,6 +205,7 @@ const fillModeOptions = [
   { value: "paragraph", label: "段落" },
   { value: "list", label: "清单" },
   { value: "choice", label: "选择" },
+  { value: "amount-choice", label: "金额+选择" },
   { value: "table", label: "表格" },
 ];
 const fieldCategoryOptions = ["填空", "替换", "单选项", "长文本", "日期", "金额", "表格字段"];
@@ -341,11 +342,17 @@ function inferFillMode(field = {}) {
   const category = normalizeFieldCategory(field.category || field.type || field.defaultType);
   const text = getTemplateFieldSourceText(field) || field.label || field.name || "";
   const context = `${text} ${field.question || ""} ${field.answerFormat || ""}`.replace(/\s+/g, " ");
+  if (isAmountChoiceContext(context)) return "amount-choice";
   if (category === "单选项" || /□|☐|○|〇|▢|☑|✓|✔|单选|多选|是否|有无/.test(context)) return "choice";
   if (category === "表格字段" || /表格|清单表|明细表|报价表|分项表/.test(context)) return "table";
   if (/包括但不限于|包括|包含|不限于|清单|配置|分项|主要施工内容|工作内容|采购范围|实施范围|服务范围/.test(context)) return "list";
   if (/内容|规模|范围|概况|要求|服务内容|建设内容|实施内容|技术要求|商务要求|项目详细要求/.test(context)) return "paragraph";
   return "short";
+}
+
+function isAmountChoiceContext(context) {
+  const text = String(context || "");
+  return /[□☐○〇▢☑✓✔]/.test(text) && /含税|不含税/.test(text) && /金额|限价|报价|费用|预算/.test(text) && /元|万元/.test(text);
 }
 
 function getFillModeLabel(value) {
@@ -473,7 +480,7 @@ function App() {
   );
   const enrichedFillFieldsRef = useRef(enrichedFillFields);
   const fillValueSignature = useMemo(
-    () => enrichedFillFields.map((field) => `${field.id}:${field.value || ""}:${field.source || ""}`).join("|"),
+    () => enrichedFillFields.map((field) => `${field.id}:${field.value || ""}:${field.amountValue || ""}:${field.choiceValue || ""}:${field.source || ""}`).join("|"),
     [enrichedFillFields],
   );
   const fillPreviewFile = filledTemplateFile || templateFile;
@@ -1301,6 +1308,8 @@ function App() {
       const appliedField = {
         ...targetField,
         value: result.value || "",
+        amountValue: result.amountValue || "",
+        choiceValue: result.choiceValue || "",
         status: result.status || (result.value ? "待确认" : "需补充资料"),
         confidence: result.confidence || 0,
         source: result.source || "AI 基于上传资料生成",
@@ -4373,6 +4382,8 @@ function buildOnlyOfficeFillFieldPayload(fields = []) {
     answerFormat: field.answerFormat,
     question: field.question,
     value: field.value || "",
+    amountValue: field.amountValue || "",
+    choiceValue: field.choiceValue || "",
     fillMode: normalizeFillMode(field.fillMode, field),
     fillText: buildOnlyOfficeLiveFillText(field),
   }));
@@ -4423,7 +4434,7 @@ function requestOnlyOfficeAddInputPoint(field) {
 }
 
 function requestOnlyOfficeFillField(field) {
-  if (!field?.value) return;
+  if (!field?.value && !field?.choiceValue) return;
   if (requiresInputPoint(field) && !hasInputPoint(field)) {
     console.warn("[fill] skip write without input point", { id: field.id, sourceText: getTemplateFieldSourceText(field) });
     return;
@@ -4440,6 +4451,8 @@ function requestOnlyOfficeFillField(field) {
       category: normalizeFieldCategory(field.category || field.type),
       sourceText: getTemplateFieldSourceText(field),
       value: field.value,
+      amountValue: field.amountValue || "",
+      choiceValue: field.choiceValue || "",
       fillMode: normalizeFillMode(field.fillMode, field),
       fillText: buildOnlyOfficeLiveFillText(field),
     },
@@ -4496,17 +4509,26 @@ async function fetchOnlyOfficeDownloadAsBuffer(url) {
 }
 
 function buildOnlyOfficeLiveFillText(field = {}) {
-  const value = String(field.value || "").trim();
+  const value = getFieldAmountValue(field);
   if (!value) return "";
   if (hasInputPoint(field) && !isReplacementField(field)) return value;
   const source = getTemplateFieldSourceText(field);
   if (!source) return value;
-  if (/[□☐○〇▢☑✓✔]/.test(source)) return buildOnlyOfficeChoiceFillText(source, value);
+  if (/[□☐○〇▢☑✓✔]/.test(source)) return buildOnlyOfficeChoiceFillText(source, getFieldChoiceValue(field) || value);
   if (/[_＿—-]{2,}|\s{2,}/.test(source)) return source.replace(/_{2,}|＿+|—+|-{2,}|\s{2,}/, value);
   const colonBlank = source.match(/^(.*?[：:])\s+(.*)$/);
   if (colonBlank) return `${colonBlank[1]}${value}${colonBlank[2]}`;
   if (/[：:]\s*$/.test(source)) return `${source}${value}`;
   return value;
+}
+
+function getFieldAmountValue(field = {}) {
+  return String(field.amountValue || field.value || "").trim();
+}
+
+function getFieldChoiceValue(field = {}) {
+  if (normalizeFillMode(field.fillMode, field) === "amount-choice") return String(field.choiceValue || "").trim();
+  return String(field.choiceValue || field.value || "").trim();
 }
 
 function buildOnlyOfficeChoiceFillText(source, value) {
@@ -4988,7 +5010,7 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
 }
 
 function getChoiceEditOptions(field) {
-  const context = [field.answerFormat, field.question, field.value]
+  const context = [field.answerFormat, field.question, getFieldChoiceValue(field)]
     .map((item) => String(item || "").replace(/^模板上下文[：:]/, "").trim())
     .filter(Boolean)
     .join("\n");
@@ -5009,7 +5031,7 @@ function getChoiceEditOptions(field) {
   if (options.length === 0) {
     collectChoiceKeywordsFromText(normalizeChoiceText(context), options);
   }
-  if (field.value) options.push(String(field.value).trim());
+  if (getFieldChoiceValue(field)) options.push(getFieldChoiceValue(field));
 
   return [...new Map(options
     .map((option) => cleanChoiceOptionText(option))
@@ -6701,7 +6723,7 @@ function scoreDateSegmentCandidate(text, field) {
 
 function applyAmountUnitFillValue(container, field) {
   const context = `${field.name || ""} ${field.answerFormat || ""} ${field.question || ""}`;
-  if (!expectsAmountBlank(context, field.value)) return false;
+  if (!expectsAmountBlank(context, getFieldAmountValue(field))) return false;
 
   const scope = getPreviewPageElement(container, field.page || 1) || container;
   const candidates = getScopedCandidateNodes(scope, "td, p, li, div")
@@ -6767,7 +6789,7 @@ function applyMarkerFillValue(container, field) {
 
 function shouldContinueFillAfterChoice(field) {
   const context = `${field.answerFormat || ""} ${field.question || ""}`;
-  const value = String(field.value || "");
+  const value = getFieldAmountValue(field);
   return hasFillBlank(context) || /金额|限价|费用|报价|%|％|元|万元/.test(context) || /[0-9]/.test(value);
 }
 
@@ -6810,7 +6832,7 @@ function applyTemplateContextBlankFillValue(container, field) {
 
 function isBlankCandidateCompatible(text, field) {
   const context = `${field.name || ""} ${field.answerFormat || ""} ${field.question || ""}`;
-  if (expectsAmountBlank(context, field.value)) {
+  if (expectsAmountBlank(context, getFieldAmountValue(field))) {
     return /(?:金额|限价|报价|费用)[^。；;]{0,30}[：:]\s*(?:元|万元)/.test(text);
   }
   return true;
@@ -6888,7 +6910,7 @@ function isUsefulFillBlank(text, match) {
 function chooseBestBlankMatch(text, matches, field) {
   const compatibleMatches = filterCompatibleBlankMatches(text, matches, field);
   if (compatibleMatches.length === 0) return null;
-  if (expectsAmountBlank(`${field.name || ""} ${field.answerFormat || ""} ${field.question || ""}`, field.value)) {
+  if (expectsAmountBlank(`${field.name || ""} ${field.answerFormat || ""} ${field.question || ""}`, getFieldAmountValue(field))) {
     return compatibleMatches[0];
   }
   const tokens = getFieldNameTokens(field.name);
@@ -6914,7 +6936,7 @@ function chooseBestBlankMatch(text, matches, field) {
 
 function filterCompatibleBlankMatches(text, matches, field) {
   const context = `${field.name || ""} ${field.answerFormat || ""} ${field.question || ""}`;
-  if (!expectsAmountBlank(context, field.value)) return matches;
+  if (!expectsAmountBlank(context, getFieldAmountValue(field))) return matches;
 
   return matches.filter((item) => {
     const index = item.match.index ?? 0;
@@ -6967,7 +6989,7 @@ function replaceBlankMatchWithValue(target, item, field) {
 }
 
 function getBlankPreviewValue(field, fullText, blankIndex) {
-  const value = String(field.value || "").trim();
+  const value = getFieldAmountValue(field);
   const before = fullText.slice(Math.max(0, blankIndex - 42), blankIndex);
   const label = before.match(/([\u4e00-\u9fa5A-Za-z0-9（）()]+)\s*[：:]?\s*$/)?.[1] || "";
   if (!label || !value) return value;
@@ -7409,7 +7431,7 @@ function applyDateSegmentFillToDocxXml(paragraphs, field) {
 }
 
 function applyChoiceToDocxXml(paragraphs, field) {
-  const keywords = getChoiceKeywords(field.value, `${field.name || ""} ${field.question || ""} ${field.answerFormat || ""}`);
+  const keywords = getChoiceKeywords(getFieldChoiceValue(field), `${field.name || ""} ${field.question || ""} ${field.answerFormat || ""}`);
   if (keywords.length === 0) return false;
 
   const paragraph = findBestXmlParagraphForField(paragraphs, field, (text) => {
@@ -7747,7 +7769,7 @@ function getExportStatusText(state) {
 }
 
 function findChoiceTarget(container, field) {
-  const value = typeof field === "string" ? field : field?.value;
+  const value = typeof field === "string" ? field : getFieldChoiceValue(field);
   const context = typeof field === "string" ? "" : `${field?.name || ""} ${field?.question || ""} ${field?.answerFormat || ""}`;
   const keywords = getChoiceKeywords(value, context);
   if (keywords.length === 0) return null;

@@ -162,7 +162,7 @@ async function fillField(payload) {
     `字段所在页：${field.page || ""}`,
     "",
     "输出 JSON 格式：",
-    '{"value":"字段填充值","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"一句可溯源证据"}',
+    getFillOutputJsonPrompt(fillMode),
     "",
     "规则：",
     "1. 模板选区原文只用于判断要填哪个空、替换哪段话或选择哪个选项；不得把模板占位符、证明材料说明、未填写的候选项直接作为 value。",
@@ -176,6 +176,10 @@ async function fillField(payload) {
     "9. 知识库片段与临时资料都可作为依据；如果二者冲突，优先采用字段上下文匹配度更高、证据更明确的内容。",
     "10. 知识库片段是当前招标/采购文件的编制依据，可能来自技术文件、项目资料、上游审批、历史招采说明或命名规则；不要因为片段出现“后续”“分包”“统一使用”等上下文词就排除它。",
     "11. 对项目名称/工程名称字段，若资料写有“名称统一使用……”“项目名称为……”“工程名称为……”，应视为当前模板的权威命名依据，直接提取引号或冒号后的完整名称。",
+    ...(fillMode === "amount-choice" ? [
+      `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；资料为 3000000 元且模板单位为万元，则 amountValue 为 300。`,
+      "13. choiceValue 只能输出模板候选项中的“含税”或“不含税”。金额或含税状态任一项没有资料依据时，status 必须为需补充资料。",
+    ] : []),
     "",
     knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未启用或未检索到相关片段。",
     "",
@@ -195,9 +199,31 @@ async function fillField(payload) {
     debugFileName: "ai-fill-last.json",
     debugContext,
   });
-  const value = normalizeFilledValueForTemplate(promptField, typeof parsed.value === "string" ? parsed.value.trim() : "");
+  const amountChoice = fillMode === "amount-choice";
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
   const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
+  if (amountChoice) {
+    const amountValue = normalizeTemplateAmountValue(promptField, parsed.amountValue ?? parsed.value ?? "");
+    const choiceValue = normalizeTaxChoiceValue(parsed.choiceValue ?? parsed.value ?? "");
+    const guard = sanitizeAmountChoiceFillResult(parsed, amountValue, choiceValue, source, evidence);
+    if (guard) {
+      await writeFillFinalDebugLog(runtime, debugContext, parsed, guard, "amount-choice-guard");
+      return guard;
+    }
+    const result = {
+      value: amountValue,
+      amountValue,
+      choiceValue,
+      status: parsed.status === "需补充资料" ? "需补充资料" : "待确认",
+      confidence: clampConfidence(parsed.confidence),
+      source,
+      evidence,
+    };
+    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "ok");
+    return result;
+  }
+
+  const value = normalizeFilledValueForTemplate(promptField, typeof parsed.value === "string" ? parsed.value.trim() : "");
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
     await writeFillFinalDebugLog(runtime, debugContext, parsed, choiceGuard, "choice-guard");
@@ -391,7 +417,7 @@ function buildFieldRetrievalQuery(field) {
 
 function normalizeFillMode(field = {}) {
   const mode = String(field.fillMode || "").trim();
-  return ["short", "paragraph", "list", "choice", "table"].includes(mode) ? mode : inferFillMode(field);
+  return ["short", "paragraph", "list", "choice", "table", "amount-choice"].includes(mode) ? mode : inferFillMode(field);
 }
 
 function normalizeFieldCategory(value) {
@@ -420,6 +446,7 @@ function inferFillMode(field = {}) {
     field.aiInstruction,
     field.name,
   ].filter(Boolean).join(" ");
+  if (isAmountChoiceContext(context)) return "amount-choice";
   if (category === "单选项" || /□|☐|○|〇|▢|☑|✓|✔|单选|多选|是否|有无/.test(context)) return "choice";
   if (category === "表格字段" || /表格|清单表|明细表|报价表|分项表/.test(context)) return "table";
   if (/包括但不限于|包括|包含|不限于|清单|配置|分项|主要施工内容|工作内容|采购范围|实施范围|服务范围/.test(context)) return "list";
@@ -434,6 +461,7 @@ function getFillModeLabel(mode) {
     list: "清单填空",
     choice: "选择填空",
     table: "表格填空",
+    "amount-choice": "金额选择填空",
   }[mode] || "短值填空";
 }
 
@@ -441,8 +469,21 @@ function getFillModePromptRule(mode) {
   if (mode === "paragraph") return "段落填空应输出资料中的完整描述，可为多句或一段；不要为了追求简短而删掉建设规模、范围边界、数量、地点、对象等关键信息。不得输出字段标签和序号。";
   if (mode === "list") return "清单填空应完整覆盖资料中的分项内容，保留“包括但不限于”对应的范围、分项或施工内容；可使用顿号、分号或原资料序号，不要压缩成一个短名词。不得输出字段标签和序号。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
+  if (mode === "amount-choice") return "金额选择填空必须同时判断金额和候选项：amountValue 输出按模板单位换算后的金额纯数字，choiceValue 输出应勾选的模板选项文本；不要输出整段原文。";
   if (mode === "table") return "表格填空按当前单元格需要输出，保持简洁，但不得省略资料中该单元格必需的信息。";
   return "短值填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
+}
+
+function getFillOutputJsonPrompt(mode) {
+  if (mode === "amount-choice") {
+    return '{"value":"金额纯数字","amountValue":"金额纯数字","choiceValue":"含税或不含税","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"金额和含税状态的一句可溯源证据"}';
+  }
+  return '{"value":"字段填充值","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"一句可溯源证据"}';
+}
+
+function isAmountChoiceContext(context) {
+  const text = String(context || "");
+  return /[□☐○〇▢☑✓✔]/.test(text) && /含税|不含税/.test(text) && /金额|限价|报价|费用|预算/.test(text) && /元|万元/.test(text);
 }
 
 function normalizeFilledValueForTemplate(field, value) {
@@ -488,6 +529,58 @@ function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
   }
 
   return null;
+}
+
+function sanitizeAmountChoiceFillResult(parsed, amountValue, choiceValue, source, evidence) {
+  const status = String(parsed?.status || "").trim();
+  if (status === "需补充资料") return createMissingChoiceResult(source, evidence || "资料不足，金额选择字段不写入。");
+  if (!amountValue) return createMissingChoiceResult(source, "未返回可按模板单位写入的金额。");
+  if (!choiceValue) return createMissingChoiceResult(source, "未返回可勾选的含税/不含税选项。");
+  if (/(需补充|无法|缺失|不匹配|资料不足|未明确|未找到|未检索到)/.test(`${source || ""}\n${evidence || ""}`)) {
+    return createMissingChoiceResult(source, "模型证据显示资料不足，金额选择字段不写入。");
+  }
+  return null;
+}
+
+function normalizeTaxChoiceValue(value) {
+  const text = normalizeForSearch(value);
+  if (text.includes("不含税")) return "不含税";
+  if (text.includes("含税")) return "含税";
+  return "";
+}
+
+function normalizeTemplateAmountValue(field, value) {
+  const amount = parseAmountWithUnit(value);
+  if (!amount) return "";
+  const targetUnit = getTemplateAmountUnit(field);
+  let number = amount.number;
+  if (targetUnit === "元" && amount.unit === "万元") number *= 10000;
+  if (targetUnit === "万元" && amount.unit === "元") number /= 10000;
+  return formatAmountNumber(number);
+}
+
+function parseAmountWithUnit(value) {
+  const text = String(value || "").replace(/，/g, ",");
+  const match = text.match(/([0-9][0-9,]*(?:\.[0-9]+)?)/);
+  if (!match) return null;
+  const number = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(number)) return null;
+  const unitText = text.slice(Math.max(0, match.index - 4), match.index + match[0].length + 4);
+  const unit = /万元|万/.test(unitText) ? "万元" : /元/.test(unitText) ? "元" : "";
+  return { number, unit };
+}
+
+function getTemplateAmountUnit(field = {}) {
+  const context = String(field.sourceText || field.templateContext || field.answerFormat || field.question || "");
+  const blankUnit = context.match(/(?:_{2,}|＿+|—+|-{2,}|\s{2,})\s*(万元|元)/);
+  if (blankUnit) return blankUnit[1];
+  const labelUnit = context.match(/(?:金额|限价|报价|费用|预算)[^。；;]{0,40}[：:]\s*(万元|元)/);
+  return labelUnit?.[1] || "";
+}
+
+function formatAmountNumber(value) {
+  if (!Number.isFinite(value)) return "";
+  return String(Number(value.toFixed(6))).replace(/\.0+$/, "");
 }
 
 function isChoiceField(field = {}) {
@@ -706,6 +799,7 @@ function expandDomainSearchTokens(value) {
   if (/资质|资格|安全生产许可证|劳务资质/.test(value)) add("资质要求", "施工劳务资质", "安全生产许可证");
   if (/工期|合同工期|日历天|进场通知/.test(value)) add("工期", "合同工期", "日历天");
   if (/付款|支付|进度款|结算款|质保金|缺陷责任/.test(value)) add("付款方式", "进度款", "结算款", "质保金");
+  if (/金额选择|含税|不含税|最高限价|控制价|预算金额|报价|费用/.test(value)) add("最高限价", "控制价", "预算金额", "含税", "不含税", "万元", "元");
 
   return tokens;
 }
