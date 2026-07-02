@@ -5605,10 +5605,12 @@ async function readMaterialFile(file) {
 async function readKnowledgeDocumentFile(file) {
   const isDocx = /\.docx$/i.test(file.name);
   const text = isDocx ? await readDocxText(file) : await file.text();
+  const sourceText = text.trim().slice(0, 1000000);
   return {
     id: `KDOC-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: file.name,
     size: formatFileSize(file.size),
+    sourceText,
     text: text.replace(/\s+/g, " ").trim().slice(0, 250000),
   };
 }
@@ -8581,6 +8583,7 @@ async function postKnowledgeDocument(kbId, material) {
       name: material.name,
       size: material.size,
       text: material.text,
+      sourceText: material.sourceText,
     }),
   });
   const result = await response.json();

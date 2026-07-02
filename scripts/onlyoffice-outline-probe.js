@@ -1004,7 +1004,7 @@
     return `${kbName} / ${fileName} / ${chunk}`;
   }
 
-  function showGuangfaAiChatSource(snippet, index) {
+  async function showGuangfaAiChatSource(snippet, index) {
     const panel = document.getElementById("guangfa-ai-chat-panel");
     if (!panel) return;
     panel.querySelector(".gf-ai-chat-source-viewer")?.remove();
@@ -1019,15 +1019,26 @@
       '<div class="gf-ai-chat-source-viewer-text"></div>',
     ].join("");
     viewer.querySelector(".gf-ai-chat-source-viewer-title").textContent = title;
-    viewer.querySelector(".gf-ai-chat-source-viewer-text").textContent = snippet?.text || "未返回原文片段。";
+    const textNode = viewer.querySelector(".gf-ai-chat-source-viewer-text");
+    textNode.textContent = "正在加载原文...";
     viewer.querySelector(".gf-ai-chat-source-viewer-close")?.addEventListener("click", function () {
       viewer.remove();
     });
     panel.appendChild(viewer);
+    try {
+      if (!snippet?.kbId || !snippet?.documentId) throw new Error("该引用缺少原文定位信息。");
+      const context = getAiChatKnowledgeContext();
+      const response = await fetch(`${context.apiBase}/api/knowledge-bases/${encodeURIComponent(snippet.kbId)}/documents/${encodeURIComponent(snippet.documentId)}/source`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+      textNode.textContent = result.text || "原文为空。";
+    } catch (error) {
+      textNode.textContent = error?.message || "原文加载失败。";
+    }
   }
 
   function appendGuangfaAiChatSources(item, snippets) {
-    const sources = (Array.isArray(snippets) ? snippets : []).filter((snippet) => snippet?.text);
+    const sources = (Array.isArray(snippets) ? snippets : []).filter((snippet) => snippet?.kbId && snippet?.documentId);
     if (!item || sources.length === 0) return;
     const block = document.createElement("div");
     block.className = "gf-ai-chat-sources";
