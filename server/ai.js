@@ -316,7 +316,7 @@ async function fillField(payload) {
       "12. 当前字段是分包/分标段短文本：知识库/资料有对应分包、标段数量或编号时按原值填写；没有对应内容时填写 1。",
     ] : []),
     ...(fillMode === "choice-replace" ? [
-      "14. 当前字段是“替换+选择”：如果知识库/上传资料中有对应内容，AI 只负责确定复制范围，value 必须逐字复制召回片段中的连续原文，用该原文整体替换标注选区；不得套用模板选项、不得添加勾选符号、不得总结改写、不得只输出局部词句。如果没有命中对应内容，value 输出模板中的“无xx要求”选项文本，用于只勾选对应选项。",
+      "14. 当前字段是“替换+选择”：先根据字段语义判断知识库/上传资料召回片段中是否有对应原文；有则 value 直接摘取资料原文，status 为待确认；没有则 value 输出“未命中”，status 为需补充资料。不得套用模板选项、不得添加勾选符号、不得总结改写；不要输出模板中的“无xx要求”，未命中由系统自动处理。",
     ] : []),
     "",
     knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未启用或未检索到相关片段。",
@@ -334,7 +334,7 @@ async function fillField(payload) {
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "package-segment-default-one");
     return result;
   }
-  if (fillMode === "choice-replace" && (!rawValue || parsed.status === "需补充资料")) {
+  if (fillMode === "choice-replace" && (!rawValue || parsed.status === "需补充资料" || isChoiceReplacementMiss(parsed, rawValue))) {
     const result = createNoRequirementChoiceResult(promptField, sourceBundle);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-default-none");
     return result;
@@ -377,16 +377,13 @@ async function fillField(payload) {
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-not-copied");
     return result;
   }
-  if (fillMode === "choice-replace" && value && !isNoRequirementChoiceValue(promptField, value)) {
-    if (!isCopiedFromSource(value, sourceBundle)) value = extractChoiceReplacementSourceText(promptField, parsed, sourceBundle) || value;
-    if (!isCopiedFromSource(value, sourceBundle)) {
-      const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，替换+选择有资料分支必须复制资料原文。", contextualCitation || systemCitation, evidence);
-      await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-not-copied");
-      return result;
-    }
-  }
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
+    if (fillMode === "choice-replace") {
+      const result = createNoRequirementChoiceResult(promptField, sourceBundle);
+      await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-replace-default-guard");
+      return result;
+    }
     const result = attachSupplementCitation({
       ...choiceGuard,
       evidence: buildSupplementEvidence(choiceGuard.evidence, evidence),
@@ -934,7 +931,7 @@ function getFillModePromptRule(mode) {
   if (mode === "date") return "日期填空只输出资料明确支持的日期或时间，优先使用模板要求的中文年月日/年月日时分格式；模板有时分空位时必须输出到时、分；不得输出字段标签、解释或无依据日期。";
   if (mode === "amount") return "金额填空只输出资料明确支持的金额，保留模板需要的单位；不得输出字段标签、解释或无依据金额。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
-  if (mode === "choice-replace") return "替换选择填空先判断资料是否给出对应内容：有对应内容时 AI 只定位复制范围，value 必须逐字复制知识库/上传资料中的连续原文；没有对应内容时只输出模板中的“无xx要求”选项文本。";
+  if (mode === "choice-replace") return "替换选择填空先按字段语义判断召回片段是否有对应原文：有则摘取资料原文作为 value；没有则 value 输出“未命中”、status 输出“需补充资料”，系统会自动转为模板中的“无xx要求”。";
   if (mode === "amount-choice") return "金额选择填空必须同时判断金额和候选项：amountValue 输出按模板单位换算后的金额纯数字，choiceValue 输出应勾选的模板选项文本；不要输出整段原文。";
   return "短文本填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
 }
@@ -942,6 +939,9 @@ function getFillModePromptRule(mode) {
 function getFillOutputJsonPrompt(mode) {
   if (mode === "amount-choice") {
     return '{"value":"金额纯数字","amountValue":"金额纯数字","choiceValue":"含税或不含税","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"金额和含税状态的一句可溯源证据"}';
+  }
+  if (mode === "choice-replace") {
+    return '{"value":"命中时为摘取的资料原文；未命中时为未命中","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"命中的原文依据或未命中原因"}';
   }
   return '{"value":"字段填充值","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"一句可溯源证据"}';
 }
@@ -1021,40 +1021,9 @@ function isCopiedFromSource(value, sourceText) {
   return normalizeForSearch(sourceText).includes(needle);
 }
 
-function extractChoiceReplacementSourceText(field = {}, parsed = {}, sourceText = "") {
-  const source = String(sourceText || "");
-  const labels = getChoiceReplacementLabels(field);
-  for (const label of labels) {
-    const section = extractRequirementSectionByLabel(source, label);
-    if (section) return section;
-  }
-  const evidence = String(parsed?.evidence || "").replace(/\s+/g, " ").trim();
-  return evidence && isCopiedFromSource(evidence, source) ? evidence : "";
-}
-
-function getChoiceReplacementLabels(field = {}) {
-  const context = [
-    field.name,
-    field.sourceText,
-    field.templateContext,
-    field.answerFormat,
-    field.question,
-  ].filter(Boolean).join(" ");
-  const labels = [...context.matchAll(/([\u4e00-\u9fa5A-Za-z0-9（）()、]{1,24}要求)/g)]
-    .map((match) => match[1].replace(/^(?:\d+[.、]\s*)?[□☐○〇▢☑✓✔]?\s*/, "").trim())
-    .filter((label) => !/^无/.test(label));
-  return [...new Set(labels)];
-}
-
-function extractRequirementSectionByLabel(source, label) {
-  if (!source || !label) return "";
-  const escapedLabel = escapeRegExp(label);
-  const pattern = new RegExp(`(?:^|[\\s。；;])((?:\\d+[.、]\\s*)?${escapedLabel}\\s*[：:]?[\\s\\S]*?)(?=\\s*(?:\\d+[.、]\\s*)?[\\u4e00-\\u9fa5A-Za-z0-9（）()、]{1,30}(?:要求|方式|价格|金额|工期|内容|范围|办法|条件)\\s*[：:]|\\s*\\d+[.、]\\s*[\\u4e00-\\u9fa5A-Za-z0-9（）()、]{1,30}[：:]|$)`);
-  return pattern.exec(source)?.[1]?.replace(/\s+/g, " ").trim() || "";
-}
-
-function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function isChoiceReplacementMiss(parsed = {}, value = "") {
+  const text = normalizeForSearch(value || parsed?.value);
+  return text.length <= 24 && /^(未命中|未找到|未检索到|没有命中|无对应原文|无匹配原文|未发现对应原文)/.test(text);
 }
 
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
