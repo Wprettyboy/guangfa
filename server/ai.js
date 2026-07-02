@@ -54,7 +54,7 @@ async function createKnowledgeChat(payload) {
   const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets).slice(0, maxKnowledgeChars);
   const history = normalizeChatHistory(payload?.history);
   const runtime = getAiRuntimeConfig();
-  const sourceSnippets = formatChatSourceSnippets(knowledgeSnippets, knowledgeOptions.bases);
+  const sourceSnippets = formatChatSourceSnippets(knowledgeSnippets.slice(0, 1), knowledgeOptions.bases);
   const baseNames = Array.isArray(knowledgeOptions.bases)
     ? knowledgeOptions.bases.map((item) => item?.name).filter(Boolean).join("、")
     : "";
@@ -87,14 +87,15 @@ async function createKnowledgeChat(payload) {
         topK: knowledgeOptions.topK || 8,
         bases: knowledgeOptions.bases || [],
       },
-      knowledgeCount: knowledgeSnippets.length,
+      knowledgeCount: sourceSnippets.length,
+      retrievedKnowledgeCount: knowledgeSnippets.length,
       knowledgeSnippets: sourceSnippets,
     },
   }));
 
   return {
     reply,
-    knowledgeCount: knowledgeSnippets.length,
+    knowledgeCount: sourceSnippets.length,
     snippets: sourceSnippets,
   };
 }
