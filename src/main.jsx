@@ -1425,7 +1425,8 @@ function App() {
   }
 
   async function generateField(fieldId) {
-    await fillFieldWithAI(fieldId);
+    window.clearTimeout(fillSyncTimerRef.current);
+    await fillFieldWithAI(fieldId, enrichedFillFields, { syncDocument: false });
   }
 
   async function generateAllFields() {
@@ -4998,6 +4999,7 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
   const isChoiceEditing = field.type === "单选项" && choiceOptions.length > 0;
   const isDateEditing = isDateField(field);
   const sourceSnippetText = String(field.sourceSnippetText || "").trim();
+  const supplementReason = getFillSupplementReason(field);
 
   useEffect(() => {
     if (!editing) setDraftValue(field.value || "");
@@ -5093,8 +5095,8 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
           />
         )
       ) : (
-        <div className={field.value ? "field-value rich" : "field-value empty"}>
-          {field.value || "暂未生成"}
+        <div className={field.value ? "field-value rich" : supplementReason ? "field-value supplement" : "field-value empty"}>
+          {field.value || supplementReason || "暂未生成"}
         </div>
       )}
       {(field.source || sourceSnippetText) && field.status !== "未填充" ? (
@@ -5212,6 +5214,15 @@ function cleanChoiceOptionText(value) {
     .replace(/^[□☐○〇▢☑✓✔]\s*/, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function getFillSupplementReason(field = {}) {
+  if (field.status !== "需补充资料" || field.value) return "";
+  const reason = String(field.evidence || "")
+    .split("可参考相近原文：")[0]
+    .replace(/\s+/g, " ")
+    .trim();
+  return reason ? `召回原因：${reason.slice(0, 180)}` : "";
 }
 
 function toDateInputValue(value) {

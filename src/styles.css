@@ -3341,6 +3341,13 @@ h1 {
   font-size: 14px;
 }
 
+.field-value.supplement {
+  color: #9f1239;
+  background: #fff5f6;
+  border-color: #fecdd3;
+  font-size: 13px;
+}
+
 .field-value-editor {
   grid-column: 1 / -1;
   width: 100%;
