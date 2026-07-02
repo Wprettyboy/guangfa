@@ -959,13 +959,14 @@
     const style = document.createElement("style");
     style.id = "guangfa-ai-chat-panel-style";
     style.textContent = [
-      "#guangfa-ai-chat-panel{position:fixed;right:42px;top:64px;bottom:18px;width:var(--gf-ai-chat-width,360px);min-width:320px;max-width:760px;z-index:1000000;background:#fff;border:1px solid #d9dee8;box-shadow:0 12px 32px rgba(15,23,42,.18);display:flex;flex-direction:column;font-family:Arial,'Microsoft YaHei',sans-serif;color:#1f2937}",
+      "#guangfa-ai-chat-panel{position:fixed;right:42px;top:64px;width:var(--gf-ai-chat-width,360px);min-width:320px;max-width:760px;height:calc(100vh - 82px);max-height:680px;min-height:360px;z-index:1000000;background:#fff;border:1px solid #d9dee8;box-shadow:0 12px 32px rgba(15,23,42,.18);display:flex;flex-direction:column;font-family:Arial,'Microsoft YaHei',sans-serif;color:#1f2937}",
       "#guangfa-ai-chat-panel.gf-hidden{display:none}",
-      ".gf-ai-chat-header{height:42px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #e5e7eb;background:#f8fafc}",
+      ".gf-ai-chat-header{height:42px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #e5e7eb;background:#f8fafc;cursor:move}",
       ".gf-ai-chat-title{font-size:14px;font-weight:600;white-space:nowrap}",
       ".gf-ai-chat-kb{flex:1;min-width:0;font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".gf-ai-chat-close{width:26px;height:26px;border:0;background:transparent;font-size:18px;line-height:24px;cursor:pointer;color:#64748b}",
       "#guangfa-ai-chat-panel,#guangfa-ai-chat-panel *{user-select:text!important;-webkit-user-select:text!important}",
+      ".gf-ai-chat-header,.gf-ai-chat-header *{user-select:none!important;-webkit-user-select:none!important}",
       ".gf-ai-chat-resize{position:absolute;left:-5px;top:0;bottom:0;width:10px;cursor:ew-resize;z-index:4;user-select:none!important;-webkit-user-select:none!important}",
       ".gf-ai-chat-resize::after{content:'';position:absolute;left:4px;top:50%;width:3px;height:42px;transform:translateY(-50%);border-left:1px solid #cbd5e1;border-right:1px solid #cbd5e1}",
       ".gf-ai-chat-messages{flex:1;overflow:auto;padding:12px;background:#fff}",
@@ -1006,12 +1007,49 @@
     handle.addEventListener("pointerdown", function (event) {
       event.preventDefault();
       event.stopPropagation();
-      const startX = event.clientX;
-      const startWidth = panel.getBoundingClientRect().width;
-      const maxWidth = Math.max(320, Math.min(760, window.innerWidth - 72));
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = `${Math.round(rect.left)}px`;
+      panel.style.top = `${Math.round(rect.top)}px`;
+      panel.style.right = "auto";
+      panel.style.height = `${Math.round(rect.height)}px`;
+      const startRight = rect.right;
+      const maxWidth = Math.max(320, Math.min(760, startRight));
+      const minWidth = Math.min(320, maxWidth);
       function onMove(moveEvent) {
-        const width = Math.max(320, Math.min(maxWidth, startWidth + startX - moveEvent.clientX));
+        const width = Math.max(minWidth, Math.min(maxWidth, startRight - moveEvent.clientX));
+        panel.style.left = `${Math.round(startRight - width)}px`;
         panel.style.setProperty("--gf-ai-chat-width", `${Math.round(width)}px`);
+      }
+      function onUp() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      }
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+  }
+
+  function bindGuangfaAiChatMove(panel) {
+    const header = panel?.querySelector?.(".gf-ai-chat-header");
+    if (!panel || !header || header.__gfAiChatMoveBound) return;
+    header.__gfAiChatMoveBound = true;
+    header.addEventListener("pointerdown", function (event) {
+      if (event.target?.closest?.("button")) return;
+      event.preventDefault();
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = `${Math.round(rect.left)}px`;
+      panel.style.top = `${Math.round(rect.top)}px`;
+      panel.style.right = "auto";
+      panel.style.height = `${Math.round(rect.height)}px`;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startLeft = rect.left;
+      const startTop = rect.top;
+      function onMove(moveEvent) {
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        panel.style.left = `${Math.round(Math.max(0, Math.min(maxLeft, startLeft + moveEvent.clientX - startX)))}px`;
+        panel.style.top = `${Math.round(Math.max(0, Math.min(maxTop, startTop + moveEvent.clientY - startY)))}px`;
       }
       function onUp() {
         window.removeEventListener("pointermove", onMove);
@@ -1158,6 +1196,7 @@
     let panel = document.getElementById("guangfa-ai-chat-panel");
     if (panel) {
       bindGuangfaAiChatResize(panel);
+      bindGuangfaAiChatMove(panel);
       return panel;
     }
     panel = document.createElement("aside");
@@ -1178,6 +1217,7 @@
     ].join("");
     document.body.appendChild(panel);
     bindGuangfaAiChatResize(panel);
+    bindGuangfaAiChatMove(panel);
     panel.querySelector(".gf-ai-chat-close")?.addEventListener("click", function () {
       panel.classList.add("gf-hidden");
     });
