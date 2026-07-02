@@ -1,0 +1,155 @@
+:root {
+  font-family:
+    Inter, "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  color: #172033;
+  background: #eef2f7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1180px;
+  min-height: 100vh;
+  background: #eef2f7;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(940px, 1fr);
+  min-height: 100vh;
+  background: #f4f6fa;
+}
+
+.sidebar {
+  background: #ffffff;
+  border-right: 1px solid #dce3ee;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.brand {
+  height: 72px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #e4eaf2;
+}
+
+.brand strong {
+  display: block;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.brand span {
+  display: block;
+  color: #66748a;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.sidebar-nav {
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sidebar-item,
+.child-link {
+  border: 0;
+  background: transparent;
+  color: #344258;
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 7px;
+  text-align: left;
+}
+
+.sidebar-item.active {
+  background: #0f63e9;
+  color: #ffffff;
+}
+
+.item-chevron {
+  margin-left: auto;
+}
+
+.nav-children {
+  padding: 3px 0 7px 34px;
+}
+
+.child-link {
+  min-height: 34px;
+  font-size: 14px;
+}
+
+.child-link.active {
+  color: #0f63e9;
+  font-weight: 700;
+  background: #eef5ff;
+}
+
+.main {
+  min-width: 0;
+}
+
+.topbar {
+  height: 72px;
+  background: #ffffff;
+  border-bottom: 1px solid #dce3ee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.topbar-title,
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar-title span {
+  color: #657389;
+}
+

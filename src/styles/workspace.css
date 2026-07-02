@@ -1,0 +1,127 @@
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-height: 650px;
+}
+
+.fill-grid .right-panel {
+  display: block;
+  padding: 10px;
+  position: relative;
+  overflow: visible;
+  z-index: 3;
+}
+
+.fill-panel .panel-section {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.fill-panel.is-collapsed {
+  padding: 0;
+  border-color: transparent;
+  box-shadow: none;
+  background: transparent;
+}
+
+.fill-panel.is-collapsed .panel-section {
+  display: none;
+}
+
+.fill-panel-collapse-button {
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  z-index: 30;
+  width: 18px;
+  height: 66px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cdd7e6;
+  border-right-color: #ffffff;
+  border-radius: 6px 0 0 6px;
+  background: #ffffff;
+  color: #607086;
+  box-shadow: 0 8px 18px rgba(33, 45, 66, 0.08);
+  cursor: pointer;
+}
+
+.fill-panel-collapse-button:hover {
+  color: #0f63e9;
+  border-color: #a8c8ff;
+}
+
+.fill-title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fill-control-bar {
+  padding: 10px 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.fill-control-bar .material-upload-menu {
+  flex: 0 0 auto;
+}
+
+.fill-panel .knowledge-fill-options {
+  margin: 8px 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+.knowledge-topk-select {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #cdd7e6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #4d5b70;
+  font-size: 12px;
+}
+
+.fill-panel .field-table {
+  min-height: 0;
+  overflow: hidden auto;
+  padding-bottom: 16px;
+  align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
+}
+
+.field-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.field-panel .panel-section {
+  background: #ffffff;
+  min-height: 0;
+}
+
+.field-panel .grow-section {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+

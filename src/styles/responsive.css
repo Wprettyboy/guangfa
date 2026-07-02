@@ -1,0 +1,32 @@
+@media (max-width: 1320px) {
+  .app-shell {
+    grid-template-columns: 210px minmax(940px, 1fr);
+  }
+
+  .annotate-grid,
+  .fill-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .annotate-grid {
+    height: auto;
+    overflow: visible;
+  }
+
+  .annotate-grid .document-card {
+    height: calc(100vh - 170px);
+    min-height: 640px;
+  }
+
+  .annotate-grid .right-panel {
+    height: 420px;
+  }
+
+  .right-panel {
+    min-height: auto;
+  }
+
+  .annotation-summary {
+    grid-template-columns: minmax(190px, 1fr) 96px 92px 132px;
+  }
+}
