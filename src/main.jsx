@@ -506,6 +506,7 @@ function App() {
   const [showCitations, setShowCitations] = useState(true);
   const [draftReady, setDraftReady] = useState(false);
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [bulkFillProgress, setBulkFillProgress] = useState({ current: 0, total: 0 });
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [selectedProjectKnowledgeBaseIds, setSelectedProjectKnowledgeBaseIds] = useState([]);
@@ -1414,16 +1415,20 @@ function App() {
     if (pendingFields.length === 0 || generatingAll) return;
 
     setGeneratingAll(true);
+    setBulkFillProgress({ current: 0, total: pendingFields.length });
     setShowCitations(false);
     window.clearTimeout(fillSyncTimerRef.current);
     let fieldsSnapshot = enrichedFillFields;
     try {
-      for (const field of pendingFields) {
+      for (let index = 0; index < pendingFields.length; index += 1) {
+        const field = pendingFields[index];
+        setBulkFillProgress({ current: index + 1, total: pendingFields.length });
         fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, { syncDocument: false }) || fieldsSnapshot;
       }
       queueFilledOfficeDocumentSync(fieldsSnapshot);
     } finally {
       setGeneratingAll(false);
+      setBulkFillProgress({ current: 0, total: 0 });
     }
   }
 
@@ -1655,6 +1660,7 @@ function App() {
                 onGenerate={generateField}
                 onGenerateAll={generateAllFields}
                 generatingAll={generatingAll}
+                bulkFillProgress={bulkFillProgress}
                 knowledgeBases={knowledgeBases}
                 selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
                 selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
@@ -3321,6 +3327,7 @@ function FillWorkspace({
   onGenerate,
   onGenerateAll,
   generatingAll,
+  bulkFillProgress,
   knowledgeBases,
   selectedProjectKnowledgeBaseIds,
   selectedGlobalKnowledgeBaseIds,
@@ -3335,6 +3342,7 @@ function FillWorkspace({
   const materialUploadModeRef = useRef("temporary");
   const [exportState, setExportState] = useState("idle");
   const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [uploadState, setUploadState] = useState("idle");
   const baseTemplateFile = sourceTemplateFile || templateFile;
   const counts = useMemo(
@@ -3357,6 +3365,9 @@ function FillWorkspace({
   const projectKnowledgeBases = knowledgeBases.filter((base) => base.scope !== "global");
   const globalKnowledgeBases = knowledgeBases.filter((base) => base.scope === "global" && (base.documentCount || 0) > 0);
   const knowledgeSelected = selectedProjectKnowledgeBaseIds.length > 0;
+  const bulkProgressText = generatingAll && bulkFillProgress?.total
+    ? `${bulkFillProgress.current}/${bulkFillProgress.total}`
+    : "";
 
   async function handleMaterialChange(event) {
     const files = event.target.files || [];
@@ -3401,7 +3412,7 @@ function FillWorkspace({
   }
 
   return (
-    <div className="work-grid fill-grid">
+    <div className={panelCollapsed ? "work-grid fill-grid fill-grid-panel-collapsed" : "work-grid fill-grid"}>
       <section className="document-card">
         <DocumentFrame
           mode="fill"
@@ -3415,7 +3426,16 @@ function FillWorkspace({
         />
       </section>
 
-      <aside className="right-panel fill-panel">
+      <aside className={panelCollapsed ? "right-panel fill-panel is-collapsed" : "right-panel fill-panel"}>
+        <button
+          className="fill-panel-collapse-button"
+          type="button"
+          aria-label={panelCollapsed ? "展开填充项面板" : "收起填充项面板"}
+          title={panelCollapsed ? "展开填充项面板" : "收起填充项面板"}
+          onClick={() => setPanelCollapsed((collapsed) => !collapsed)}
+        >
+          {panelCollapsed ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+        </button>
         <div className="panel-section">
           <input
             className="visually-hidden"
@@ -3430,7 +3450,20 @@ function FillWorkspace({
               <h2>填充项</h2>
               <p>{activeTemplateName}</p>
             </div>
-            <span className="soft-count">当前页 {pageFields.length} 项</span>
+            <div className="fill-title-actions">
+              <span className="soft-count">当前页 {pageFields.length} 项</span>
+              <select
+                className="knowledge-topk-select"
+                value={knowledgeTopK}
+                onChange={(event) => onKnowledgeTopKChange(Number(event.target.value))}
+                disabled={!knowledgeSelected}
+                aria-label="知识库召回数量"
+              >
+                <option value={3}>召回3段</option>
+                <option value={6}>召回6段</option>
+                <option value={10}>召回10段</option>
+              </select>
+            </div>
           </div>
           <div className="fill-control-bar">
             <div className="material-upload-menu">
@@ -3495,7 +3528,7 @@ function FillWorkspace({
             </div>
             <button className="tool-button blue-action" onClick={onGenerateAll} disabled={generatingAll || fillableCount === 0}>
               {generatingAll ? <Loader2 size={17} className="spin" /> : <Wand2 size={17} />}
-              {generatingAll ? "填充中" : `一键填充${fillableCount > 0 ? ` ${fillableCount}` : ""}`}
+              {generatingAll ? `一键填充 ${bulkProgressText}` : `一键填充${fillableCount > 0 ? ` ${fillableCount}` : ""}`}
             </button>
             <button className="tool-button solid" onClick={handleExportDocx} disabled={!baseTemplateFile?.buffer || exportState === "exporting"}>
               <Download size={17} />
@@ -3519,16 +3552,6 @@ function FillWorkspace({
               onChange={onSelectedGlobalKnowledgeBaseChange}
               disabled={!knowledgeSelected}
             />
-            <select
-              value={knowledgeTopK}
-              onChange={(event) => onKnowledgeTopKChange(Number(event.target.value))}
-              disabled={!knowledgeSelected}
-              aria-label="知识库召回数量"
-            >
-              <option value={3}>召回3段</option>
-              <option value={6}>召回6段</option>
-              <option value={10}>召回10段</option>
-            </select>
           </div>
           <div className="status-filters">
             <span className="filter active">当前页 {pageFields.length}</span>
