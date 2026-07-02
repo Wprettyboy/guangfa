@@ -6,9 +6,11 @@
 
 本项目根目录：`C:\Users\23811\Desktop\广发new`
 
-当前不是可用 git 仓库：`git status` 会报 `not a git repository`。不要依赖 git 回滚；改代码前先读文件，必要时手动备份关键文件。
+当前已是可用 git 仓库，远端为 `https://github.com/Wprettyboy/guangfa.git`，本地 `main` 跟踪 `origin/main`。改代码前先读文件，避免误改用户未提交内容。
 
 不要把 `.env.local` 里的云端 API Key 发到聊天窗口或文档里。
+
+Git 代码管理已切到 `https://github.com/Wprettyboy/guangfa.git`。以后代码发生变动，完成必要检查后记得 `git commit` 并推送到远端，除非用户明确要求暂不提交。
 
 ## 启动方式
 
