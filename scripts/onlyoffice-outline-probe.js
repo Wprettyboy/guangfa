@@ -232,16 +232,26 @@
     const logicDocument = getLogicDocument();
     const manager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
     const bookmarkName = getFieldBookmarkName(field);
-    if (!manager || !bookmarkName) return { ok: false, error: "字段书签接口不可用" };
+    if (!manager || !bookmarkName) return { ok: false, id: field?.id, error: "字段书签接口不可用" };
     restoreSelectionState(field?.selectionState);
     try {
       if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
       manager.AddBookmark(bookmarkName);
+      const selectedText = readBookmarkedText(manager, bookmarkName);
       saveOnlyOfficeDocument("field-bookmark");
-      return { ok: true, bookmarkName };
+      return { ok: true, id: field?.id, bookmarkName, selectedText };
     } catch (error) {
-      return { ok: false, bookmarkName, error: error?.message || "字段书签写入失败" };
+      return { ok: false, id: field?.id, bookmarkName, error: error?.message || "字段书签写入失败" };
     }
+  }
+
+  function readBookmarkedText(manager, bookmarkName) {
+    try {
+      if (typeof manager?.SelectBookmark === "function") manager.SelectBookmark(bookmarkName);
+    } catch {}
+    const logicDocument = getLogicDocument();
+    const api = getEditorApi();
+    return readSelectedText(logicDocument) || readSelectedText(api) || readSelectedText(window.Asc?.editor);
   }
 
   function addInputPointBookmark(field) {
@@ -331,8 +341,9 @@
           return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
         }
         const result = replaceSelectedText(buildChoiceSelectionReplacementText(field));
+        const cleanupResult = result.ok ? removeNoRequirementChoiceOption(field) : null;
         postFieldPages("fill-choice-replacement");
-        return { ...result, id: field?.id, bookmarkName: getFieldBookmarkName(field), source: "choice-selection-replacement" };
+        return { ...result, cleanupResult, id: field?.id, bookmarkName: getFieldBookmarkName(field), source: "choice-selection-replacement" };
       }
       const result = checkChoiceMarker(field);
       const amountResult = result.ok && (field?.amountValue || field?.fillMode === "amount-choice") ? fillAmountBlank(field) : null;
@@ -390,6 +401,38 @@
     }
 
     return { ok: false, source: "choice-marker", changed, error: "未在文档中定位到选项前的方框" };
+  }
+
+  function removeNoRequirementChoiceOption(field) {
+    const option = findNoRequirementChoiceOption(field);
+    if (!option) return { ok: true, skipped: true, reason: "no-requirement-option-missing" };
+    for (const text of noRequirementSearchTexts(option)) {
+      if (selectSearchText(text, field)) {
+        const removed = removeSelectedTextForReplacement();
+        if (removed.ok) saveOnlyOfficeDocument("fill-choice-replacement-cleanup");
+        return { ...removed, source: "choice-no-requirement-cleanup", text };
+      }
+    }
+    return { ok: false, source: "choice-no-requirement-cleanup", error: "未定位到待清理的无要求选项" };
+  }
+
+  function findNoRequirementChoiceOption(field) {
+    const source = String(field?.sourceText || field?.marker?.text || "");
+    return parseChoiceOptions(source).find(function (option) {
+      return /^无.{0,12}要求/.test(normalizeChoiceText(option.text));
+    }) || null;
+  }
+
+  function noRequirementSearchTexts(option) {
+    const text = String(option?.text || "").trim();
+    const body = String(option?.body || "").replace(/\s+$/, "");
+    if (!text) return [];
+    const values = [];
+    ["□", "☐", "▢", "☑", "✓", "✔"].forEach(function (marker) {
+      values.push(marker + text, marker + " " + text);
+      if (body.trim()) values.push(marker + body);
+    });
+    return Array.from(new Set(values));
   }
 
   function fillAmountBlank(field) {
@@ -890,19 +933,22 @@
     const amountDescriptor = getAmountBlankDescriptor("三、最高限价： 元（□含税 □不含税）");
     const wanDescriptor = getAmountBlankDescriptor("三、最高限价： 万元（□含税 □不含税）");
     const shiwanDescriptor = getAmountBlankDescriptor("三、最高限价： 十万（□含税 □不含税）");
+    const noRequirementOption = findNoRequirementChoiceOption({ sourceText: "2.业绩要求： □近年不少于 个类似项目。 □无业绩要求。" });
     return {
       ok: options.length === 2
         && /综合评估法/.test(target?.text || "")
         && /不含税/.test(taxTarget?.text || "")
         && amountDescriptor?.suffix === "元（"
         && wanDescriptor?.suffix === "万元（"
-        && shiwanDescriptor?.suffix === "十万（",
+        && shiwanDescriptor?.suffix === "十万（"
+        && noRequirementSearchTexts(noRequirementOption)[0] === "□无业绩要求。",
       count: options.length,
       target: target?.text || "",
       taxTarget: taxTarget?.text || "",
       amountDescriptor,
       wanDescriptor,
       shiwanDescriptor,
+      noRequirementOption,
     };
   };
   window.guangfaPostFieldPages = function () {
