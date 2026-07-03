@@ -353,9 +353,9 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
       )}
       {(field.source || sourceSnippetText) && field.status !== "未填充" ? (
         <div className="field-evidence" onClick={(event) => event.stopPropagation()}>
-          <span>溯源</span>
+          <span>依据原文</span>
           <div className="field-evidence-line">
-            <em>{field.source || "未找到来源片段"}</em>
+            <em>{field.source || "未找到依据片段"}</em>
             {sourceSnippetText ? (
               <button
                 type="button"
@@ -417,7 +417,7 @@ function getFillSupplementReason(field = {}) {
     .split("系统判断：")[0]
     .replace(/\s+/g, " ")
     .trim();
-  return reason ? `召回原因：${reason.slice(0, 180)}` : "";
+  return reason ? `证据判断：${reason.slice(0, 180)}` : "";
 }
 
 function toDateInputValue(value) {

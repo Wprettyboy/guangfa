@@ -65,11 +65,11 @@ function getFillModeLabel(mode) {
 }
 
 function getFillModePromptRule(mode) {
-  if (mode === "paragraph") return "长文本填空应输出资料中的完整描述，可为多句或一段；不要为了追求简短而删掉建设规模、范围边界、数量、地点、对象等关键信息。不得输出字段标签和序号。";
+  if (mode === "paragraph") return "长文本填空应基于知识库/上传资料整理为可写入模板的完整描述，可归纳、合并和规范措辞；不要删掉资料支持的建设规模、范围边界、数量、地点、对象等关键信息；不得输出字段标签和序号。";
   if (mode === "date") return "日期填空只输出资料明确支持的日期或时间，优先使用模板要求的中文年月日/年月日时分格式；模板有时分空位时必须输出到时、分；不得输出字段标签、解释或无依据日期。";
   if (mode === "amount") return "金额填空只输出资料明确支持的金额，保留模板需要的单位；不得输出字段标签、解释或无依据金额。";
   if (mode === "choice") return "选择填空只输出被选择的选项文本；若模板选区已列出 □/☐/○/〇/▢ 等候选项，只判断应选哪一项，不输出整段原文、不改写选项文案。";
-  if (mode === "choice-replace") return "替换选择填空先按要求类型/主题判断召回片段是否有同类原文；不要把模板里的年限、数量、日期空位、证书空位当成硬性匹配条件，也不要区分资格门槛和评分项。有同类原文就摘取资料原文作为 value；完全没有同类原文才输出“未命中”、status 输出“需补充资料”，系统会自动转为模板中的“无xx要求”。";
+  if (mode === "choice-replace") return "替换选择填空先按要求类型/主题判断召回片段是否有同类依据；不要把模板里的年限、数量、日期空位、证书空位当成硬性匹配条件，也不要区分资格门槛和评分项。有同类依据就整理为可替换模板选区的完整要求文本；完全没有同类依据才输出“未命中”、status 输出“需补充资料”，系统会自动转为模板中的“无xx要求”。";
   if (mode === "amount-choice") return "金额选择填空必须同时判断金额和候选项：amountValue 输出按模板单位换算后的金额纯数字，choiceValue 输出应勾选的模板选项文本；不要输出整段原文。";
   return "短文本填空只输出要写入空白处的纯值，不得包含字段标签、序号、冒号、前后固定文本、句号或解释说明。";
 }
@@ -79,7 +79,7 @@ function getFillOutputJsonPrompt(mode) {
     return '{"value":"金额纯数字","amountValue":"金额纯数字","choiceValue":"含税或不含税","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"金额和含税状态的一句可溯源证据"}';
   }
   if (mode === "choice-replace") {
-    return '{"value":"命中时为摘取的资料原文；未命中时为未命中","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"命中的原文依据或未命中原因"}';
+    return '{"value":"命中时为基于资料依据生成的完整要求文本；未命中时为未命中","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"支撑该填充值的资料依据或未命中原因"}';
   }
   return '{"value":"字段填充值","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"一句可溯源证据"}';
 }
@@ -333,17 +333,6 @@ function sliceParagraphSourceText(text, terms = []) {
   return normalized.slice(start > 120 ? start : 0, start > 120 ? start + 2000 : 2000).trim();
 }
 
-function createParagraphSourceFallbackResult(candidate) {
-  return {
-    value: candidate.text,
-    status: "待确认",
-    confidence: 76,
-    source: candidate.source,
-    evidence: candidate.text,
-    sourceSnippetText: candidate.sourceSnippetText || candidate.text,
-  };
-}
-
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
   if (!isChoiceField(field)) return null;
   const status = String(parsed?.status || "").trim();
@@ -574,7 +563,6 @@ export {
   extractParagraphSourceCandidate,
   getParagraphSourceTerms,
   scoreParagraphSourceCandidate,
-  createParagraphSourceFallbackResult,
   sanitizeChoiceFillResult,
   sanitizeAmountChoiceFillResult,
   normalizeTaxChoiceValue,

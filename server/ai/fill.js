@@ -4,7 +4,6 @@ import {
   createChoiceReplacementFallbackResult,
   createDefaultPackageOrSegmentResult,
   createNoRequirementChoiceResult,
-  createParagraphSourceFallbackResult,
   describeFieldContract,
   extractChoiceReplacementCandidate,
   extractParagraphSourceCandidate,
@@ -13,7 +12,6 @@ import {
   getFillOutputJsonPrompt,
   getTemplateAmountUnit,
   isChoiceReplacementMiss,
-  isCopiedFromSource,
   isPackageOrSegmentShortField,
   isTemplateOnlyFillEvidence,
   normalizeFillMode,
@@ -130,13 +128,13 @@ async function fillField(payload) {
       "12. 当前字段是日期填空，常见模板包括“ 年 月 日”“ 年 月 日 时 分”这类日期/时间空位，以及“日期：”这类标签；模板有时分空位时 value 必须包含明确到“时、分”的时间，不要重复字段标签。",
     ] : []),
     ...(fillMode === "paragraph" ? [
-      "12. 当前字段是长文本填空：AI 只负责通过语义理解定位应复制的知识库/资料原文，value 必须逐字复制召回片段中的连续原文；不得总结、改写、扩写、压缩或自行组织语言；不要复制“知识库1/临时资料1/相关度”等片段包装前缀。",
+      "12. 当前字段是长文本填空：value 可以基于知识库/上传资料进行归纳、合并和规范表述，但关键事实、数字、日期、名称、资质、人员、业绩等必须能被召回片段支撑；不得编造资料中没有的信息；不要复制“知识库1/临时资料1/相关度”等片段包装前缀。",
     ] : []),
     ...(fillMode === "short" && isPackageOrSegmentShortField(promptField) ? [
       "12. 当前字段是分包/分标段短文本：知识库/资料有对应分包、标段数量或编号时按原值填写；没有对应内容时填写 1。",
     ] : []),
     ...(fillMode === "choice-replace" ? [
-      "14. 当前字段是“替换+选择”：只按要求类型/主题做语义匹配，例如业绩、人员、资质、财务等；模板里的年限、数量、日期空位、证书空位、候选项只是待替换格式，不是必须同时命中的硬条件。召回片段中只要有同类要求原文就视为命中，value 直接摘取该资料原文，status 为待确认。不得因为原文属于评分项、履约能力、实施人员要求、项目团队要求、证书加分项、证明材料说明，而判定为未命中或不能替换。只有召回片段完全没有该要求类型的原文时，value 输出“未命中”，status 为需补充资料。不得套用模板选项、不得添加勾选符号、不得总结改写；不要输出模板中的“无xx要求”，未命中由系统自动处理。",
+      "14. 当前字段是“替换+选择”：只按要求类型/主题做语义匹配，例如业绩、人员、资质、财务等；模板里的年限、数量、日期空位、证书空位、候选项只是待替换格式，不是必须同时命中的硬条件。召回片段中只要有同类要求依据就视为命中，value 应整理为可直接替换模板选区的完整要求文本，status 为待确认。不得因为依据属于评分项、履约能力、实施人员要求、项目团队要求、证书加分项、证明材料说明，而判定为未命中或不能替换。只有召回片段完全没有该要求类型依据时，value 输出“未命中”，status 为需补充资料。不得套用模板选项、不得添加勾选符号；不要输出模板中的“无xx要求”，未命中由系统自动处理。",
     ] : []),
     "",
     knowledgeText ? `【知识库召回片段】\n${knowledgeText}` : "【知识库召回片段】\n未启用或未检索到相关片段。",
@@ -198,20 +196,12 @@ async function fillField(payload) {
   }
 
   let value = normalizeFilledValueForTemplate(promptField, rawValue);
-  const paragraphCopied = fillMode === "paragraph" && Boolean(value) && isCopiedFromSource(value, sourceBundle);
-  if (fillMode === "paragraph" && !paragraphCopied) {
-    const fallback = extractParagraphSourceCandidate(promptField, { value, source, evidence, retrievalQuery, rawRetrievalQuery }, knowledgeSnippets, materialSnippets);
-    if (fallback) {
-      const result = createParagraphSourceFallbackResult(fallback);
-      await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-source-fallback");
-      return result;
-    }
-  }
-  if (fillMode === "paragraph" && value && !paragraphCopied) {
-    const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中定位，且后端未找到对应语义原文，长文本不写入改写内容。", contextualCitation || systemCitation, evidence);
-    await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-not-copied");
-    return result;
-  }
+  const paragraphCitation = fillMode === "paragraph" && value
+    ? extractParagraphSourceCandidate(promptField, { value, source, evidence, retrievalQuery, rawRetrievalQuery }, knowledgeSnippets, materialSnippets)
+    : null;
+  const resolvedCitation = contextualCitation
+    || (paragraphCitation ? { source: paragraphCitation.source, text: paragraphCitation.sourceSnippetText || paragraphCitation.text } : null)
+    || systemCitation;
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
     if (fillMode === "choice-replace") {
@@ -228,12 +218,12 @@ async function fillField(payload) {
     const result = attachSupplementCitation({
       ...choiceGuard,
       evidence: buildSupplementEvidence(choiceGuard.evidence, evidence),
-    }, contextualCitation || systemCitation);
+    }, resolvedCitation);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "choice-guard");
     return result;
   }
   if (isTemplateOnlyFillEvidence(promptField, value, `${source}\n${evidence}`, `${knowledgeText}\n${materialText}`)) {
-    const result = createSupplementResult("模型仅引用模板选区原文，未在知识库或上传资料中找到可填依据。", contextualCitation || systemCitation, evidence);
+    const result = createSupplementResult("模型仅引用模板选区原文，未在知识库或上传资料中找到可支撑当前字段的依据。", resolvedCitation, evidence);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "template-only-evidence");
     return result;
   }
@@ -244,7 +234,7 @@ async function fillField(payload) {
     source,
     evidence,
   };
-  const citedResult = applySystemCitation(result, contextualCitation || systemCitation);
+  const citedResult = applySystemCitation(result, resolvedCitation);
   await writeFillFinalDebugLog(runtime, debugContext, parsed, citedResult, "ok");
   return citedResult;
 }
@@ -311,7 +301,7 @@ function createSupplementResult(reason, citation, detail = "") {
     value: "",
     status: "需补充资料",
     confidence: 0,
-    source: "未找到可直接写入原文",
+    source: "未找到可支撑当前字段的资料依据",
     evidence: buildSupplementEvidence(reason, detail),
   }, citation);
 }
@@ -335,8 +325,8 @@ function attachSupplementCitation(result, citation) {
   const preview = text.slice(0, 500);
   return {
     ...result,
-    source: `未找到可直接写入原文；可参考 ${citation.source}`,
-    evidence: `${result.evidence || "资料不足，无法直接写入。"}\n可参考相近原文：${preview}`,
+    source: `未找到可支撑当前字段的资料依据；可参考 ${citation.source}`,
+    evidence: `${result.evidence || "证据不足，无法直接写入。"}\n可参考相近原文：${preview}`,
     sourceSnippetText: text,
   };
 }
