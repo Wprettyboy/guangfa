@@ -831,26 +831,31 @@
     return expected >= startPage && expected <= endPage;
   }
 
-  function enableTrackRevisions() {
+  function setTrackRevisions(enabled) {
+    const nextEnabled = enabled !== false;
     const api = getEditorApi();
     const logicDocument = getLogicDocument();
     const attempts = [
-      function () { return api && typeof api.asc_SetTrackRevisions === "function" && api.asc_SetTrackRevisions(true); },
-      function () { return api && typeof api.asc_setTrackRevisions === "function" && api.asc_setTrackRevisions(true); },
-      function () { return api && typeof api.SetTrackRevisions === "function" && api.SetTrackRevisions(true); },
-      function () { return logicDocument && typeof logicDocument.SetTrackRevisions === "function" && logicDocument.SetTrackRevisions(true); },
+      function () { return api && typeof api.asc_SetTrackRevisions === "function" && api.asc_SetTrackRevisions(nextEnabled); },
+      function () { return api && typeof api.asc_setTrackRevisions === "function" && api.asc_setTrackRevisions(nextEnabled); },
+      function () { return api && typeof api.SetTrackRevisions === "function" && api.SetTrackRevisions(nextEnabled); },
+      function () { return logicDocument && typeof logicDocument.SetTrackRevisions === "function" && logicDocument.SetTrackRevisions(nextEnabled); },
     ];
     for (const attempt of attempts) {
       try {
         const result = attempt();
         if (result !== false) {
-          window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "track-revisions", ok: true }, "*");
-          return { ok: true };
+          window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "track-revisions", ok: true, enabled: nextEnabled }, "*");
+          return { ok: true, enabled: nextEnabled };
         }
       } catch {}
     }
-    window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "track-revisions", ok: false, error: "zl办公 修订模式接口不可用" }, "*");
-    return { ok: false, error: "zl办公 修订模式接口不可用" };
+    window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "track-revisions", ok: false, enabled: nextEnabled, error: "zl办公 修订模式接口不可用" }, "*");
+    return { ok: false, enabled: nextEnabled, error: "zl办公 修订模式接口不可用" };
+  }
+
+  function enableTrackRevisions() {
+    return setTrackRevisions(true);
   }
 
   function postOutline(trigger) {
@@ -1378,6 +1383,7 @@
     return selection;
   };
   window.guangfaEnableTrackRevisions = enableTrackRevisions;
+  window.guangfaSetTrackRevisions = setTrackRevisions;
   window.guangfaSaveOnlyOfficeDocument = saveOnlyOfficeDocument;
   window.guangfaSetFillFields = setFillFields;
   window.guangfaChoiceMarkerSelfTest = function () {
@@ -1417,6 +1423,9 @@
     const data = event.data || {};
     if (data.source === "guangfa-parent" && data.action === "enable-track-revisions") {
       enableTrackRevisions();
+    }
+    if (data.source === "guangfa-parent" && data.action === "set-track-revisions") {
+      setTrackRevisions(data.enabled);
     }
     if (data.source === "guangfa-parent" && data.action === "save-document") {
       saveOnlyOfficeDocument(data.trigger);

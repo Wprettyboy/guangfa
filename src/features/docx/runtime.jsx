@@ -100,6 +100,7 @@ function DocumentFrame({
   onInputPointCaptured,
   onOfficeDocumentReady,
   aiKnowledgeContext,
+  trackRevisionsEnabled = true,
 }) {
   const title = templateFile?.name ?? "未加载模板";
   const bodyRef = useRef(null);
@@ -617,6 +618,7 @@ function DocumentFrame({
             annotationFields={annotationFields}
             fillFields={fillFields}
             aiKnowledgeContext={aiKnowledgeContext}
+            trackRevisionsEnabled={trackRevisionsEnabled}
             mode={mode}
             serverUrl={activeOfficePreview.serverUrl}
             onReady={() => setRenderState("ready")}

@@ -133,6 +133,11 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 已删除未使用的服务端 `server/docx-preview.js` 和 Vite 中间件；客户端 `docx-preview` fallback 仍在 `runtime.jsx` 中保留。
 - 已验证：`npm run build`、`node --check server\ai.js`、`node --check server\office.js` 通过；浏览器打开 `http://127.0.0.1:5173` 后刷新无新增前端 error，模板标注/填充确认/格式审核三个工作台切换正常。
 
+### 填充工作台修订模式开关
+
+- 填充工作台标题旁新增“关闭/开启修订模式”按钮，默认仍开启修订；点击后通过 `src/features/docx/office/bridge.jsx` 向 OnlyOffice 注入脚本发送 `set-track-revisions`。
+- `scripts/onlyoffice-outline-probe.js` 已将原只能开启的 `enableTrackRevisions()` 扩展为 `setTrackRevisions(enabled)`，可主动关闭修订模式；`scripts/patch-onlyoffice.py` 的 `guangfa-outline-probe.js?gf=` 已更新到 `58`。
+
 ### OnlyOffice 原生 AI 接本地模型
 
 已完成配置：

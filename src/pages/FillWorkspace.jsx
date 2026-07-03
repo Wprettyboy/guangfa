@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Database, Download, FileText, FolderOpen, Info, Loader2, Upload, Wand2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Database, Download, FileText, FolderOpen, Info, Loader2, PenLine, Upload, Wand2, X } from "lucide-react";
 import { FillFieldRow } from "../features/docx/fill/FieldControls.jsx";
 import { DocumentFrame, getFillFieldDisplayPage } from "../features/docx/runtime.jsx";
 import { exportFilledDocx } from "../features/docx/fill/docxXmlFill.js";
@@ -77,6 +77,7 @@ function FillWorkspace({
   const [exportState, setExportState] = useState("idle");
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [trackRevisionsEnabled, setTrackRevisionsEnabled] = useState(true);
   const [uploadState, setUploadState] = useState("idle");
   const baseTemplateFile = sourceTemplateFile || templateFile;
   const counts = useMemo(
@@ -159,6 +160,7 @@ function FillWorkspace({
           onFieldPagesChange={onFieldPagesChange}
           onOfficeDocumentReady={onOfficeDocumentReady}
           aiKnowledgeContext={aiKnowledgeContext}
+          trackRevisionsEnabled={trackRevisionsEnabled}
         />
       </section>
 
@@ -183,7 +185,18 @@ function FillWorkspace({
           />
           <div className="panel-title align-top">
             <div>
-              <h2>填充项</h2>
+              <div className="fill-heading-line">
+                <h2>填充项</h2>
+                <button
+                  className={trackRevisionsEnabled ? "revision-toggle is-on" : "revision-toggle"}
+                  type="button"
+                  onClick={() => setTrackRevisionsEnabled((enabled) => !enabled)}
+                  title={trackRevisionsEnabled ? "关闭修订模式" : "开启修订模式"}
+                >
+                  <PenLine size={14} />
+                  {trackRevisionsEnabled ? "关闭修订模式" : "开启修订模式"}
+                </button>
+              </div>
               <p>{activeTemplateName}</p>
             </div>
             <div className="fill-title-actions">

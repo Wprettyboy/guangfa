@@ -15,12 +15,13 @@ import {
 
 let onlyOfficeFillRequestSeq = 0;
 
-function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, mode, serverUrl, onReady, onError }) {
+function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = true, mode, serverUrl, onReady, onError }) {
   const containerRef = useRef(null);
   const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
   const annotationFieldPayloadRef = useRef([]);
   const fillFieldPayloadRef = useRef([]);
   const aiKnowledgeContextRef = useRef(aiKnowledgeContext);
+  const trackRevisionsEnabledRef = useRef(trackRevisionsEnabled);
 
   useEffect(() => {
     annotationFieldPayloadRef.current = buildOnlyOfficeAnnotationFieldPayload(annotationFields);
@@ -49,6 +50,17 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
   }, [aiKnowledgeContext, mode]);
 
   useEffect(() => {
+    trackRevisionsEnabledRef.current = trackRevisionsEnabled;
+    if (mode === "fill") {
+      postOnlyOfficeCommand(containerRef.current, {
+        source: "guangfa-parent",
+        action: "set-track-revisions",
+        enabled: trackRevisionsEnabled,
+      }, 2);
+    }
+  }, [mode, trackRevisionsEnabled]);
+
+  useEffect(() => {
     let cancelled = false;
     let editor = null;
     const container = containerRef.current;
@@ -75,7 +87,11 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
               onReady?.();
               if (mode === "fill") {
                 window.setTimeout(() => {
-                  postOnlyOfficeCommand(container, { source: "guangfa-parent", action: "enable-track-revisions" });
+                  postOnlyOfficeCommand(container, {
+                    source: "guangfa-parent",
+                    action: "set-track-revisions",
+                    enabled: trackRevisionsEnabledRef.current,
+                  });
                   postOnlyOfficeCommand(container, {
                     source: "guangfa-parent",
                     action: "sync-fill-fields",

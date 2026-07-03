@@ -65,6 +65,38 @@
   flex-wrap: wrap;
 }
 
+.fill-heading-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.revision-toggle {
+  min-height: 24px;
+  border: 1px solid #cdd7e6;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #607086;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.revision-toggle.is-on {
+  border-color: #f6b7b7;
+  color: #b42318;
+  background: #fff7f7;
+}
+
+.revision-toggle:hover {
+  border-color: #9ec2ff;
+  color: #0f63e9;
+}
+
 .fill-control-bar {
   padding: 10px 12px 0;
   display: flex;
