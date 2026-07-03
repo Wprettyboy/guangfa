@@ -6,17 +6,21 @@ import { templateCategories } from "../constants/templates.js";
 import { buildFormatRevisionFileName, formatFileSize } from "../utils/files.js";
 import {
   DocumentFrame,
+  createPreviewId,
+  waitForNextFrame,
+} from "../features/docx/runtime.jsx";
+import {
   auditConfigItems,
   auditConfigStorageKey,
-  createPreviewId,
+  isAuditIssueEnabled,
+  readAuditConfig,
+} from "../features/docx/audit/config.js";
+import {
   enhanceAuditWithAiOutline,
   getOutlineRevisionAction,
   getOutlineRevisionReason,
-  isAuditIssueEnabled,
-  readAuditConfig,
-  readDocxStructure,
-  waitForNextFrame,
-} from "../features/docx/runtime.jsx";
+} from "../features/docx/audit/aiOutline.js";
+import { readDocxStructure } from "../features/docx/structure/docxStructure.js";
 
 function FormatAuditWorkspace({ onStoreTemplate }) {
   const fileInputRef = useRef(null);

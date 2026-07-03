@@ -85,6 +85,142 @@ import {
 
 } from "../../utils/fields.js";
 
+import {
+  buildDateSegmentFillText,
+  buildDateSegmentReplacement,
+  collectChoiceKeywordsFromText,
+  dateSegmentNeedsTime,
+  getFieldAmountValue,
+  getFieldChoiceValue,
+  getFillBookmarkName,
+  getFillTargetBookmarkName,
+  getInputPointBookmarkName,
+  getDateSegmentBlankPattern,
+  hasDateSegmentBlank,
+  isDateField,
+  normalizeChoiceText,
+  padDatePart,
+  parseDateParts,
+} from "./fill/helpers.js";
+
+import {
+  FieldForm,
+  FieldLine,
+  FillFieldRow,
+  PreviewState,
+  cleanChoiceOptionText,
+  getChoiceEditOptions,
+  getFillSupplementReason,
+  getNextFieldNumber,
+  toDateInputValue,
+  formatChineseDateFromInput,
+} from "./fill/FieldControls.jsx";
+
+import {
+  buildOnlyOfficeAnnotationFieldPayload,
+  buildOnlyOfficeChoiceFillText,
+  buildOnlyOfficeFillFieldPayload,
+  buildOnlyOfficeLiveFillText,
+  scoreChoiceOptionMatch,
+} from "./office/payload.js";
+
+import {
+  OnlyOfficePreview,
+  fetchOnlyOfficeDownloadAsBuffer,
+  loadOnlyOfficeApi,
+  postAllOnlyOfficeFrames,
+  postOnlyOfficeCommand,
+  readOnlyOfficePageNumber,
+  requestOnlyOfficeAddFieldBookmark,
+  requestOnlyOfficeAddInputPoint,
+  requestOnlyOfficeDocumentDownloadAs,
+  requestOnlyOfficeDocumentSave,
+  requestOnlyOfficeFillField,
+} from "./office/bridge.jsx";
+
+import {
+  arrayBuffersEqual,
+  delay,
+  fetchOfficeDocumentBuffer,
+  waitForChangedOfficeDocumentBuffer,
+} from "./office/documentSync.js";
+
+import {
+  aiOutlineSourceIssueIds,
+  auditConfigItems,
+  auditConfigStorageKey,
+  auditIssueConfigMap,
+  defaultAuditConfig,
+  isAuditIssueEnabled,
+  isKnownAuditConfigId,
+  readAuditConfig,
+  shouldRunAiOutlineAudit,
+} from "./audit/config.js";
+
+import {
+  buildAiOutlineCandidates,
+  buildForcedOutlineTargets,
+  buildOnlyOfficeOutlineCandidates,
+  buildOnlyOfficeOutlineTextMap,
+  createAiOutlineIssues,
+  enhanceAuditWithAiOutline,
+  filterResolvedAiOutlineTargets,
+  getAiOutlineBlockLevel,
+  getOutlineRevisionAction,
+  getOutlineRevisionReason,
+  getUniversalOutlineAuditRules,
+  isAiOutlineCandidateBlock,
+  isProtectedOutlineHeading,
+  isSafeOutlineDemoteTarget,
+  makeAiOutlineIssue,
+  mergeAiOutlineTargets,
+  normalizeOnlyOfficeOutlineForAi,
+  normalizeOutlineMatchText,
+} from "./audit/aiOutline.js";
+
+import {
+  WORD_XML_NS,
+  addStructureOutlineNode,
+  collectDocxOutlineItems,
+  formatAndAdvanceNumbering,
+  formatNumberValue,
+  getParagraphFieldInfo,
+  getStructureAttr,
+  getStructureNodeText,
+  getStructureParagraphStyleId,
+  getStructureTableText,
+  getWordXmlAttr,
+  getWordXmlChild,
+  getWordXmlChildren,
+  getWordXmlElements,
+  getWordXmlParagraphText,
+  inferStructureHeadingLevel,
+  isTocStyle,
+  joinOutlineNumbering,
+  normalizeOutlineTitle,
+  normalizeStructureString,
+  parseDocxNumbering,
+  parseDocxOutlineStyles,
+  parseHeadingStyleLevel,
+  parseNumberingLevel,
+  parseNumberingProperties,
+  parseOutlineLevel,
+  readDocxOutlineItems,
+  readDocxStructure,
+  readStructureStyleMap,
+  resolveParagraphNumbering,
+  structureBlockPreview,
+  structureChineseNumberToInt,
+  structureDescendants,
+  structureElementChildren,
+  structureHeadingLevelFromStyle,
+  structureLocalName,
+  structureOutlineTitle,
+  toChineseNumber,
+  toLetterNumber,
+  toRomanNumber,
+} from "./structure/docxStructure.js";
+
 
 
 function createPreviewId(prefix = "doc") {
@@ -94,70 +230,6 @@ function createPreviewId(prefix = "doc") {
 function waitForNextFrame() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
-
-const auditConfigStorageKey = "format-audit-config";
-
-const auditConfigItems = [
-  { id: "page-margin", group: "页面版式", name: "页边距" },
-  { id: "body-font", group: "基础文字", name: "正文字体" },
-  { id: "body-size", group: "基础文字", name: "正文字号" },
-  { id: "first-line-indent", group: "段落格式", name: "首行缩进" },
-  { id: "line-spacing", group: "段落格式", name: "行距" },
-  { id: "paragraph-spacing", group: "段落格式", name: "段前段后" },
-  { id: "blank-lines", group: "段落格式", name: "空行" },
-  { id: "body-outline", group: "标题体系", name: "正文误入标题（AI审查，脚本移出大纲）" },
-  { id: "missing-heading-style", group: "标题体系", name: "标题未入大纲（AI审查，脚本套用标题层级）" },
-  { id: "heading-level", group: "标题体系", name: "标题层级" },
-  { id: "heading-visual-style", group: "标题体系", name: "标题字体字号" },
-  { id: "split-heading", group: "标题体系", name: "标题拆分（合并被断开的标题段落）" },
-  { id: "word-outline", group: "目录大纲", name: "Word 大纲（AI审查，脚本修正文档导航窗格层级）" },
-  { id: "toc-items", group: "目录大纲", name: "目录项（按当前标题重建目录项）" },
-];
-
-const auditIssueConfigMap = {
-  "section-normalize": ["page-margin"],
-  "body-font-format": ["body-font"],
-  "body-size-format": ["body-size"],
-  "first-line-indent-format": ["first-line-indent"],
-  "line-spacing-format": ["line-spacing"],
-  "paragraph-spacing-format": ["paragraph-spacing"],
-  "blank-lines-format": ["blank-lines"],
-  "body-outline": ["body-outline"],
-  "missing-heading-style": ["missing-heading-style"],
-  "heading-level-format": ["heading-level"],
-  "heading-visual-style-format": ["heading-visual-style"],
-  "split-heading": ["split-heading"],
-  "word-outline-format": ["word-outline"],
-  "toc-items-format": ["toc-items"],
-  "ai-body-outline": ["body-outline"],
-  "ai-missing-heading-style": ["missing-heading-style"],
-  "ai-word-outline-format": ["word-outline"],
-};
-
-const aiOutlineSourceIssueIds = new Set(["body-outline", "missing-heading-style", "word-outline-format"]);
-
-const defaultAuditConfig = {
-  version: 2,
-  enabled: auditConfigItems.map((item) => item.id),
-  params: {
-    pageMarginTopMm: 37,
-    pageMarginRightMm: 26,
-    pageMarginBottomMm: 35,
-    pageMarginLeftMm: 28,
-    bodyFont: "仿宋",
-    bodyFontSizePt: 16,
-    firstLineChars: 2,
-    lineSpacing: 1.5,
-    paragraphBeforePt: 0,
-    paragraphAfterPt: 0,
-    headingLevel1Font: "小标宋",
-    headingLevel1SizePt: 22,
-    headingLevel2Font: "黑体",
-    headingLevel2SizePt: 16,
-    headingLevel3Font: "楷体",
-    headingLevel3SizePt: 16,
-  },
-};
 
 const emptyPdfHighlights = [];
 
@@ -170,8 +242,6 @@ let aiRevisionId = 1000;
 let fillBookmarkId = 50000;
 
 let fillBookmarkNames = new Set();
-
-let onlyOfficeFillRequestSeq = 0;
 
 function getFillFieldDisplayPage(field, fieldPageMap = {}, hasDynamicFieldPages = false) {
   const mappedPage = hasDynamicFieldPages ? Number(fieldPageMap[field.id]) : 0;
@@ -950,359 +1020,6 @@ function DocumentFrame({
   );
 }
 
-function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, mode, serverUrl, onReady, onError }) {
-  const containerRef = useRef(null);
-  const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
-  const annotationFieldPayloadRef = useRef([]);
-  const fillFieldPayloadRef = useRef([]);
-  const aiKnowledgeContextRef = useRef(aiKnowledgeContext);
-
-  useEffect(() => {
-    annotationFieldPayloadRef.current = buildOnlyOfficeAnnotationFieldPayload(annotationFields);
-  }, [annotationFields, mode]);
-
-  useEffect(() => {
-    fillFieldPayloadRef.current = buildOnlyOfficeFillFieldPayload(fillFields);
-    if (mode === "fill") {
-      postOnlyOfficeCommand(containerRef.current, {
-        source: "guangfa-parent",
-        action: "sync-fill-fields",
-        fields: fillFieldPayloadRef.current,
-      }, 2);
-    }
-  }, [fillFields, mode]);
-
-  useEffect(() => {
-    aiKnowledgeContextRef.current = aiKnowledgeContext;
-    if (mode === "fill") {
-      postOnlyOfficeCommand(containerRef.current, {
-        source: "guangfa-parent",
-        action: "sync-ai-knowledge-context",
-        context: aiKnowledgeContext,
-      }, 2);
-    }
-  }, [aiKnowledgeContext, mode]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let editor = null;
-    const container = containerRef.current;
-    if (!container) return undefined;
-
-    container.replaceChildren();
-    const holder = document.createElement("div");
-    holder.id = holderIdRef.current;
-    holder.style.width = "100%";
-    holder.style.height = "100%";
-    container.append(holder);
-
-    loadOnlyOfficeApi(serverUrl)
-      .then(() => {
-        if (cancelled || !window.DocsAPI?.DocEditor) return;
-        editor = new window.DocsAPI.DocEditor(holderIdRef.current, {
-          ...config,
-          width: "100%",
-          height: "100%",
-          events: {
-            ...(config.events || {}),
-            onAppReady: () => {
-              config.events?.onAppReady?.();
-              onReady?.();
-              if (mode === "fill") {
-                window.setTimeout(() => {
-                  postOnlyOfficeCommand(container, { source: "guangfa-parent", action: "enable-track-revisions" });
-                  postOnlyOfficeCommand(container, {
-                    source: "guangfa-parent",
-                    action: "sync-fill-fields",
-                    fields: fillFieldPayloadRef.current,
-                  });
-                  postOnlyOfficeCommand(container, {
-                    source: "guangfa-parent",
-                    action: "sync-ai-knowledge-context",
-                    context: aiKnowledgeContextRef.current,
-                  });
-                }, 350);
-              }
-            },
-            onDocumentReady: () => {
-              config.events?.onDocumentReady?.();
-            },
-            onDownloadAs: (event) => {
-              config.events?.onDownloadAs?.(event);
-              window.dispatchEvent(new CustomEvent("guangfa-onlyoffice-download-as", { detail: event?.data || {} }));
-            },
-            onError: () => onError?.(),
-          },
-        });
-        window.__guangfaActiveOnlyOfficeEditor = editor;
-      })
-      .catch(() => onError?.());
-
-    return () => {
-      cancelled = true;
-      if (window.__guangfaActiveOnlyOfficeEditor === editor) window.__guangfaActiveOnlyOfficeEditor = null;
-      try {
-        editor?.destroyEditor?.();
-      } catch {}
-      if (container.contains(holder)) container.removeChild(holder);
-    };
-  }, [config, serverUrl]);
-
-  return <div className="onlyoffice-preview-host" ref={containerRef} />;
-}
-
-function buildOnlyOfficeAnnotationFieldPayload(fields = []) {
-  return fields.map((field) => ({
-    id: field.id,
-    name: getTemplateFieldSourceText(field) || field.name,
-    page: field.page,
-    marker: field.marker
-      ? {
-          text: field.marker.text || "",
-        }
-      : null,
-  }));
-}
-
-function buildOnlyOfficeFillFieldPayload(fields = []) {
-  return fields.map((field) => ({
-    id: field.id,
-    bookmarkName: getFillTargetBookmarkName(field),
-    name: getFieldDisplayText(field),
-    category: normalizeFieldCategory(field.category || field.type),
-    sourceText: getTemplateFieldSourceText(field),
-    requiresInputPoint: requiresInputPoint(field),
-    hasInputPoint: hasInputPoint(field),
-    page: field.page,
-    marker: field.marker?.text ? { text: field.marker.text } : null,
-    answerFormat: field.answerFormat,
-    question: field.question,
-    value: field.value || "",
-    amountValue: field.amountValue || "",
-    choiceValue: field.choiceValue || "",
-    fillMode: normalizeFillMode(field.fillMode, field),
-    fillText: buildOnlyOfficeLiveFillText(field),
-  }));
-}
-
-function postOnlyOfficeCommand(container, message, attempts = 8) {
-  const frames = [...(container?.querySelectorAll?.("iframe") || [])];
-  frames.forEach((frame) => {
-    try {
-      frame.contentWindow?.postMessage(message, "*");
-    } catch {}
-  });
-  if (attempts > 0) {
-    window.setTimeout(() => postOnlyOfficeCommand(container, message, attempts - 1), 250);
-  }
-}
-
-function requestOnlyOfficeDocumentSave(trigger = "manual") {
-  [...document.querySelectorAll("iframe")].forEach((frame) => {
-    try {
-      frame.contentWindow?.postMessage({ source: "guangfa-parent", action: "save-document", trigger }, "*");
-    } catch {}
-  });
-}
-
-function requestOnlyOfficeAddFieldBookmark(field) {
-  if (!field?.marker?.selectionState) return;
-  postAllOnlyOfficeFrames({
-    source: "guangfa-parent",
-    action: "add-field-bookmark",
-    field: {
-      id: field.id,
-      bookmarkName: getFillBookmarkName(field),
-      selectionState: field.marker.selectionState,
-    },
-  });
-}
-
-function requestOnlyOfficeAddInputPoint(field) {
-  postAllOnlyOfficeFrames({
-    source: "guangfa-parent",
-    action: "add-input-point",
-    field: {
-      id: field.id,
-      bookmarkName: field.inputPoint?.bookmarkName || getInputPointBookmarkName(field),
-    },
-  });
-}
-
-function requestOnlyOfficeFillField(field, options = {}) {
-  if (!field?.value && !field?.choiceValue) return Promise.resolve({ ok: false, skipped: true, reason: "empty-value", id: field?.id });
-  if (requiresInputPoint(field) && !hasInputPoint(field)) {
-    console.warn("[fill] skip write without input point", { id: field.id, sourceText: getTemplateFieldSourceText(field) });
-    return Promise.resolve({ ok: false, skipped: true, reason: "missing-input-point", id: field.id });
-  }
-  const requestId = options.requestId || `fill-${Date.now()}-${++onlyOfficeFillRequestSeq}`;
-  const timeoutMs = Number(options.timeoutMs || 12000);
-  const message = {
-    source: "guangfa-parent",
-    action: "fill-field-value",
-    requestId,
-    field: {
-      id: field.id,
-      requestId,
-      bookmarkName: getFillTargetBookmarkName(field),
-      page: field.page,
-      marker: field.marker?.text ? { text: field.marker.text } : null,
-      name: getFieldDisplayText(field),
-      category: normalizeFieldCategory(field.category || field.type),
-      sourceText: getTemplateFieldSourceText(field),
-      value: field.value,
-      amountValue: field.amountValue || "",
-      choiceValue: field.choiceValue || "",
-      fillMode: normalizeFillMode(field.fillMode, field),
-      fillText: buildOnlyOfficeLiveFillText(field),
-    },
-  };
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (result) => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(timer);
-      window.removeEventListener("message", handleMessage);
-      resolve(result);
-    };
-    const handleMessage = (event) => {
-      const data = event.data || {};
-      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "field-fill") return;
-      if (data.result?.requestId !== requestId) return;
-      finish(data.result);
-    };
-    const timer = window.setTimeout(() => finish({ ok: false, id: field.id, requestId, timeout: true, error: "OnlyOffice 未在限定时间内确认字段写入。" }), timeoutMs);
-    window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 0);
-  });
-}
-
-function postAllOnlyOfficeFrames(message, attempts = 8) {
-  [...document.querySelectorAll("iframe")].forEach((frame) => {
-    try {
-      frame.contentWindow?.postMessage(message, "*");
-    } catch {}
-  });
-  if (attempts > 0) window.setTimeout(() => postAllOnlyOfficeFrames(message, attempts - 1), 250);
-}
-
-function requestOnlyOfficeDocumentDownloadAs(fileType = "docx", timeoutMs = 20000) {
-  const editor = window.__guangfaActiveOnlyOfficeEditor;
-  if (!editor || typeof editor.downloadAs !== "function") return Promise.resolve(null);
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (buffer) => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(timer);
-      window.removeEventListener("guangfa-onlyoffice-download-as", handleDownloadAs);
-      resolve(buffer || null);
-    };
-    const handleDownloadAs = async (event) => {
-      const url = event.detail?.url;
-      if (!url) return finish(null);
-      try {
-        finish(await fetchOnlyOfficeDownloadAsBuffer(url));
-      } catch {
-        finish(null);
-      }
-    };
-    const timer = window.setTimeout(() => finish(null), timeoutMs);
-    window.addEventListener("guangfa-onlyoffice-download-as", handleDownloadAs);
-    try {
-      editor.downloadAs(fileType);
-    } catch {
-      finish(null);
-    }
-  });
-}
-
-async function fetchOnlyOfficeDownloadAsBuffer(url) {
-  const response = await fetch("/api/office/download-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  return response.ok ? response.arrayBuffer() : null;
-}
-
-function buildOnlyOfficeLiveFillText(field = {}) {
-  const value = getFieldAmountValue(field);
-  if (!value) return "";
-  if (hasInputPoint(field) && !isReplacementField(field)) return value;
-  const source = getTemplateFieldSourceText(field);
-  if (!source) return value;
-  if (isDateField(field) && hasDateSegmentBlank(source)) return buildDateSegmentFillText(source, value) || source;
-  if (/[□☐○〇▢☑✓✔]/.test(source)) return buildOnlyOfficeChoiceFillText(source, getFieldChoiceValue(field) || value);
-  if (/[_＿—-]{2,}|\s{2,}/.test(source)) return source.replace(/_{2,}|＿+|—+|-{2,}|\s{2,}/, value);
-  const quoteBlank = source.match(/^(.*?[“"])\s+([”"].*)$/);
-  if (quoteBlank) return `${quoteBlank[1]}${value}${quoteBlank[2]}`;
-  const punctBlank = source.match(/^(.*?[：:][^。；;，,）)]*?)\s+([。；;，,）)].*)$/);
-  if (punctBlank) return `${punctBlank[1]}${value}${punctBlank[2]}`;
-  const colonBlank = source.match(/^(.*?[：:])\s+(.*)$/);
-  if (colonBlank) return `${colonBlank[1]}${value}${colonBlank[2]}`;
-  if (/[：:]\s*$/.test(source)) return `${source}${value}`;
-  return value;
-}
-
-function getFieldAmountValue(field = {}) {
-  return String(field.amountValue || field.value || "").trim();
-}
-
-function getFieldChoiceValue(field = {}) {
-  if (normalizeFillMode(field.fillMode, field) === "amount-choice") return String(field.choiceValue || "").trim();
-  return String(field.choiceValue || field.value || "").trim();
-}
-
-function buildOnlyOfficeChoiceFillText(source, value) {
-  const cleanValue = normalizeChoiceText(value);
-  const base = source.replace(/[☑✓✔]/g, "□");
-  const match = [...base.matchAll(/[□☐○〇▢]\s*([^□☐○〇▢☑✓✔]{1,80})/g)]
-    .map((item) => ({ item, score: scoreChoiceOptionMatch(item[1], cleanValue) }))
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score || normalizeChoiceText(b.item[1]).length - normalizeChoiceText(a.item[1]).length)[0]?.item;
-  return match ? `${base.slice(0, match.index)}☑${base.slice(match.index + 1)}` : value;
-}
-
-function scoreChoiceOptionMatch(optionText, normalizedValue) {
-  const option = normalizeChoiceText(optionText);
-  if (!option || !normalizedValue) return 0;
-  if (option === normalizedValue) return 100;
-  if (option.includes(normalizedValue)) return 90;
-  if (normalizedValue.includes(option)) return 70;
-  return 0;
-}
-
-function readOnlyOfficePageNumber(payload) {
-  const value =
-    typeof payload === "number" || typeof payload === "string"
-      ? payload
-      : payload?.page ?? payload?.currentPage ?? payload?.visiblePage ?? payload?.value;
-  const page = Number(value);
-  return Number.isFinite(page) && page > 0 ? page : 1;
-}
-
-function loadOnlyOfficeApi(serverUrl) {
-  const scriptUrl = `${String(serverUrl || "").replace(/\/$/, "")}/web-apps/apps/api/documents/api.js?gf=5`;
-  const existing = [...document.scripts].find((script) => script.src === scriptUrl);
-  if (window.DocsAPI?.DocEditor) return Promise.resolve();
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      existing.addEventListener("load", resolve, { once: true });
-      existing.addEventListener("error", reject, { once: true });
-    });
-  }
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = scriptUrl;
-    script.async = true;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.append(script);
-  });
-}
-
 function AuditPdfPreview({ pdfUrl, previewIdentity, zoomPercent, onReady, onError, onScrollChange, onTextReady, onOutlineReady }) {
   return (
     <div className="pdf-preview-host" data-testid="pdf-preview-host" data-preview-identity={previewIdentity}>
@@ -1426,706 +1143,6 @@ function AuditPdfHighlighter({ pdfDocument, previewIdentity, zoomPercent, onRead
   );
 }
 
-function FieldLine({ slot, field, mode, active, brushActive, onClick }) {
-  const isAnnotate = mode === "annotate";
-  const isMarked = Boolean(field);
-  const tag = isAnnotate ? (isMarked ? "已标注" : brushActive ? "点击标注" : "未标注") : field?.status;
-  const value = isAnnotate ? (isMarked ? `{{${getTemplateFieldSourceText(field) || field.name || slot.suggestedName}}}` : "") : field?.value ?? "";
-
-  return (
-    <button
-      className={[
-        "field-line",
-        "doc-slot",
-        active ? "active" : "",
-        isMarked ? "marked" : "",
-        isAnnotate && brushActive && !isMarked ? "brush-target" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      disabled={!isAnnotate}
-      onClick={onClick}
-      type="button"
-    >
-      <span>{slot.label}</span>
-      <div className="blank-line">
-        <strong>{value}</strong>
-      </div>
-      {tag ? <em>{tag}</em> : null}
-    </button>
-  );
-}
-
-function PreviewState({ state, onUploadClick }) {
-  const meta = {
-    empty: {
-      icon: Upload,
-      title: "请先上传 DOCX 模板",
-      desc: "上传后在 OnlyOffice 中选中文字，点击定制组件里的标注字段。",
-    },
-    loading: {
-      icon: Loader2,
-      title: "正在加载文档预览",
-      desc: "正在解析上传的 DOCX 模板。",
-    },
-    unsupported: {
-      icon: CircleAlert,
-      title: "暂不支持该文件格式",
-      desc: "浏览器预览阶段请上传 .docx 文件；.doc 文件后续由后端转换后再支持。",
-    },
-    error: {
-      icon: CircleAlert,
-      title: "文档预览加载失败",
-      desc: "请确认文件没有损坏，或换一个 DOCX 模板重试。",
-    },
-  };
-  const current = meta[state] ?? meta.empty;
-  const Icon = current.icon;
-  const canUpload = state === "empty" && onUploadClick;
-
-  return (
-    <div
-      className={`preview-state ${state} ${canUpload ? "clickable" : ""}`}
-      onClick={canUpload ? onUploadClick : undefined}
-      onKeyDown={
-        canUpload
-          ? (event) => {
-              if (event.key === "Enter" || event.key === " ") onUploadClick();
-            }
-          : undefined
-      }
-      role={canUpload ? "button" : undefined}
-      tabIndex={canUpload ? 0 : undefined}
-    >
-      <Icon size={24} className={state === "loading" ? "spin" : ""} />
-      <strong>{current.title}</strong>
-      <span>{current.desc}</span>
-      {canUpload ? (
-        <button
-          className="mini-button blue"
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onUploadClick();
-          }}
-        >
-          <Upload size={15} />
-          上传文档
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function FieldForm({ field, onChange, onAddInputPoint }) {
-  if (!field) {
-    return (
-      <div className="field-form empty-form">
-        <Info size={20} />
-        <span>在文档中选中文字并点击标注字段，或选择字段编辑</span>
-      </div>
-    );
-  }
-
-  function updateType(type) {
-    const category = normalizeFieldCategory(type);
-    onChange({ type: category, category, fillMode: inferFillMode({ ...field, category, type: category }) });
-  }
-  function updateFillMode(fillMode) {
-    onChange({ fillMode });
-  }
-  const sourceText = getTemplateFieldSourceText(field);
-  const category = normalizeFieldCategory(field.category || field.type);
-  const fillMode = normalizeFillMode(field.fillMode, field);
-  const modeOptions = getFillModeOptions({ ...field, category, type: category });
-  const modeLabel = category === "单选项" ? "单选细分" : "填空类型";
-  const hasInput = hasInputPoint(field);
-  const usesMarkedSelectionTarget = !hasInput && canUseMarkedSelectionAsFillTarget(field);
-  const setupIssue = getFieldSetupIssue({ ...field, category, type: category, fillMode });
-
-  return (
-    <div className="field-form">
-      <div className="field-context">
-        <span>模板选区原文</span>
-        <p>{sourceText || "暂无选区上下文"}</p>
-      </div>
-      <div className="field-context input-point-context">
-        <span>填写输入点</span>
-        <p>{hasInput ? `已设置，第 ${field.inputPoint?.page || field.page || 1} 页` : isReplacementField(field) ? "单选项将使用标注选区作为写入范围" : usesMarkedSelectionTarget ? "将使用标注选区作为填写范围" : "未设置，请把光标放到实际填写位置后点击添加输入点"}</p>
-      </div>
-      {setupIssue ? (
-        <div className="field-context field-context-warning">
-          <span>写入校验</span>
-          <p>{setupIssue}</p>
-        </div>
-      ) : null}
-      <label>
-        <span>自动填充类别</span>
-        <select value={category} onChange={(event) => updateType(event.target.value)}>
-          {fieldCategoryOptions.map((option) => <option key={option}>{option}</option>)}
-        </select>
-      </label>
-      <label>
-        <span>{modeLabel}</span>
-        <select value={fillMode} onChange={(event) => updateFillMode(event.target.value)}>
-          {modeOptions.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-      </label>
-      <div className="field-form-actions">
-        <button className={hasInput ? "tool-button is-selected" : "tool-button"} type="button" onClick={onAddInputPoint}>
-          <PenLine size={16} />
-          {hasInput ? "重设输入点" : "添加输入点"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDisabled, onUpdateValue, onConfirm }) {
-  const rowRef = useRef(null);
-  const [editing, setEditing] = useState(false);
-  const [draftValue, setDraftValue] = useState(field.value || "");
-  const [sourceExpanded, setSourceExpanded] = useState(false);
-  const choiceOptions = useMemo(() => getChoiceEditOptions(field), [field]);
-  const isChoiceEditing = field.type === "单选项" && choiceOptions.length > 0;
-  const isDateEditing = isDateField(field);
-  const sourceSnippetText = String(field.sourceSnippetText || "").trim();
-  const supplementReason = getFillSupplementReason(field);
-
-  useEffect(() => {
-    if (!editing) setDraftValue(field.value || "");
-  }, [editing, field.value]);
-
-  useEffect(() => {
-    setSourceExpanded(false);
-  }, [field.id, field.sourceSnippetText]);
-
-  useGSAP(
-    () => {
-      if (!selected) return;
-      gsap.fromTo(
-        rowRef.current,
-        { backgroundColor: "#eef5ff" },
-        { backgroundColor: "#ffffff", duration: 0.7, ease: "power1.out" },
-      );
-    },
-    { dependencies: [selected], scope: rowRef },
-  );
-
-  return (
-    <div
-      className={selected ? "field-row selected" : "field-row"}
-      data-testid={`fill-row-${field.id}`}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      ref={rowRef}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="field-row-toolbar">
-        <div className="row-actions" onClick={(event) => event.stopPropagation()}>
-          <StatusPill status={field.status} />
-          {editing ? (
-            <>
-              <button
-                className="mini-button blue"
-                onClick={() => {
-                  onUpdateValue(draftValue);
-                  setEditing(false);
-                }}
-              >
-                <Save size={15} />
-                保存
-              </button>
-              <button
-                className="mini-button"
-                onClick={() => {
-                  setDraftValue(field.value || "");
-                  setEditing(false);
-                }}
-              >
-                <X size={15} />
-                取消
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                className="mini-button blue"
-                data-testid={`generate-${field.id}`}
-                onClick={onGenerate}
-                disabled={generateDisabled || field.status === "生成中"}
-              >
-                {field.status === "生成中" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
-                AI填充
-              </button>
-              <button
-                className="mini-button"
-                onClick={() => {
-                  setDraftValue(field.value || "");
-                  setEditing(true);
-                }}
-                disabled={field.status === "生成中"}
-              >
-                <PenLine size={15} />
-                编辑
-              </button>
-              <button
-                className="mini-button"
-                data-testid={`confirm-${field.id}`}
-                onClick={onConfirm}
-                disabled={field.status === "已确认" || !field.value}
-              >
-                <Check size={15} />
-                确认
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-      <div className="field-card-head">
-        <span className="row-index">{index + 1}</span>
-        <strong title={getFieldDisplayText(field)}>{getFieldDisplayText(field)}</strong>
-      </div>
-      {editing ? (
-        isChoiceEditing ? (
-          <div className="field-choice-editor" onClick={(event) => event.stopPropagation()}>
-            {choiceOptions.map((option) => {
-              const active = normalizeChoiceText(option) === normalizeChoiceText(draftValue);
-              return (
-                <button
-                  className={active ? "choice-edit-option selected" : "choice-edit-option"}
-                  key={option}
-                  type="button"
-                  onClick={() => setDraftValue(option)}
-                >
-                  {active ? "☑" : "□"}
-                  <span>{option}</span>
-                </button>
-              );
-            })}
-            <input
-              className="field-value-editor compact"
-              value={draftValue}
-              onChange={(event) => setDraftValue(event.target.value)}
-              onKeyDown={(event) => event.stopPropagation()}
-              placeholder="选中项文本"
-            />
-          </div>
-        ) : isDateEditing ? (
-          <div className="field-date-editor" onClick={(event) => event.stopPropagation()}>
-            <input
-              className="field-value-editor compact"
-              type="date"
-              value={toDateInputValue(draftValue)}
-              onChange={(event) => setDraftValue(formatChineseDateFromInput(event.target.value))}
-              onKeyDown={(event) => event.stopPropagation()}
-            />
-            <input
-              className="field-value-editor compact"
-              value={draftValue}
-              onChange={(event) => setDraftValue(event.target.value)}
-              onKeyDown={(event) => event.stopPropagation()}
-              placeholder="YYYY年MM月DD日 HH时mm分"
-            />
-          </div>
-        ) : (
-          <textarea
-            className="field-value-editor"
-            value={draftValue}
-            onChange={(event) => setDraftValue(event.target.value)}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            placeholder="输入填充内容"
-            rows={4}
-          />
-        )
-      ) : (
-        <div className={field.value ? "field-value rich" : supplementReason ? "field-reason" : "field-value empty"}>
-          {field.value || supplementReason || "暂未生成"}
-        </div>
-      )}
-      {(field.source || sourceSnippetText) && field.status !== "未填充" ? (
-        <div className="field-evidence" onClick={(event) => event.stopPropagation()}>
-          <span>溯源</span>
-          <div className="field-evidence-line">
-            <em>{field.source || "未找到来源片段"}</em>
-            {sourceSnippetText ? (
-              <button
-                type="button"
-                onClick={() => setSourceExpanded((value) => !value)}
-              >
-                {sourceExpanded ? "收起" : "展开"}
-              </button>
-            ) : null}
-          </div>
-          {sourceExpanded && sourceSnippetText ? <p>{sourceSnippetText}</p> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function getChoiceEditOptions(field) {
-  const context = [field.answerFormat, field.question, getFieldChoiceValue(field)]
-    .map((item) => String(item || "").replace(/^模板上下文[：:]/, "").trim())
-    .filter(Boolean)
-    .join("\n");
-  const options = [];
-
-  [...context.matchAll(/[□☐○〇▢☑✓✔]\s*([^□☐○〇▢☑✓✔\n\r]{2,80})/g)].forEach((match) => {
-    options.push(cleanChoiceOptionText(match[1]));
-  });
-
-  if (options.length === 0) {
-    const lineOptions = context
-      .split(/\n+/)
-      .map((line) => cleanChoiceOptionText(line))
-      .filter((line) => /^[^\s].{1,80}$/.test(line) && /综合评估法|综合评分法|最低投标价法|含税|不含税/.test(line));
-    options.push(...lineOptions);
-  }
-
-  if (options.length === 0) {
-    collectChoiceKeywordsFromText(normalizeChoiceText(context), options);
-  }
-  if (getFieldChoiceValue(field)) options.push(getFieldChoiceValue(field));
-
-  return [...new Map(options
-    .map((option) => cleanChoiceOptionText(option))
-    .filter((option) => normalizeChoiceText(option).length >= 2)
-    .map((option) => [normalizeChoiceText(option), option])).values()];
-}
-
-function cleanChoiceOptionText(value) {
-  return String(value || "")
-    .replace(/^模板上下文[：:]/, "")
-    .replace(/^[□☐○〇▢☑✓✔]\s*/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getFillSupplementReason(field = {}) {
-  if (field.status !== "需补充资料" || field.value) return "";
-  const reason = String(field.evidence || "")
-    .split("可参考相近原文：")[0]
-    .split("系统判断：")[0]
-    .replace(/\s+/g, " ")
-    .trim();
-  return reason ? `召回原因：${reason.slice(0, 180)}` : "";
-}
-
-function toDateInputValue(value) {
-  const parts = parseDateParts(value);
-  if (!parts) return "";
-  return `${parts.year}-${padDatePart(parts.month)}-${padDatePart(parts.day)}`;
-}
-
-function formatChineseDateFromInput(value) {
-  const parts = parseDateParts(value);
-  if (!parts) return "";
-  return `${parts.year}年${padDatePart(parts.month)}月${padDatePart(parts.day)}日`;
-}
-
-function getNextFieldNumber(fields) {
-  return (
-    fields.reduce((max, field) => {
-      const number = Number(field.id.replace(/\D/g, ""));
-      return Number.isFinite(number) ? Math.max(max, number) : max;
-    }, 0) + 1
-  );
-}
-
-function readAuditConfig() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(auditConfigStorageKey) || "null");
-    if (Array.isArray(parsed)) return defaultAuditConfig;
-    if (parsed && typeof parsed === "object") {
-      const enabled = parsed.version === defaultAuditConfig.version && Array.isArray(parsed.enabled) ? parsed.enabled.filter(isKnownAuditConfigId) : defaultAuditConfig.enabled;
-      return {
-        version: defaultAuditConfig.version,
-        enabled: enabled.length > 0 ? enabled : defaultAuditConfig.enabled,
-        params: { ...defaultAuditConfig.params, ...(parsed.params || {}) },
-      };
-    }
-  } catch {
-    // ignore bad local config
-  }
-  return defaultAuditConfig;
-}
-
-function isKnownAuditConfigId(id) {
-  return auditConfigItems.some((item) => item.id === id);
-}
-
-function isAuditIssueEnabled(issue, enabledItems) {
-  if (!issue?.fixable || issue.layer === "evidence") return false;
-  const keys = auditIssueConfigMap[issue.id] || (issue.auditConfigKey ? [issue.auditConfigKey] : null);
-  return Boolean(keys?.some((key) => enabledItems.has(key)));
-}
-
-function shouldRunAiOutlineAudit(config) {
-  const enabledSet = new Set(config.enabled || []);
-  return enabledSet.has("body-outline") || enabledSet.has("missing-heading-style") || enabledSet.has("word-outline");
-}
-
-async function enhanceAuditWithAiOutline(auditResult, file, config, onlyOfficeOutline, userInstruction = "") {
-  const enabledSet = new Set(config.enabled || []);
-  const aiOutlineEnabled = shouldRunAiOutlineAudit(config);
-  const baseIssues = (auditResult.issues || []).filter((issue) => !aiOutlineSourceIssueIds.has(issue.id));
-  if (!aiOutlineEnabled) return { ...auditResult, issues: baseIssues };
-  if (!onlyOfficeOutline?.ok || !Array.isArray(onlyOfficeOutline.items) || onlyOfficeOutline.items.length === 0) {
-    return { ...auditResult, aiError: "OnlyOffice 大纲未挂载，不能开始 AI 审查。", issues: baseIssues };
-  }
-
-  const structure = file.structure || (await readDocxStructure(file.buffer.slice(0)).catch(() => null));
-  const candidates = buildAiOutlineCandidates(structure, onlyOfficeOutline);
-  if (candidates.length === 0) return { ...auditResult, issues: baseIssues };
-
-  let data = {};
-  try {
-    const response = await fetch("/api/ai/format-outline-plan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        candidates,
-        onlyOfficeOutline: normalizeOnlyOfficeOutlineForAi(onlyOfficeOutline),
-        auditRules: getUniversalOutlineAuditRules(),
-        userInstruction,
-      }),
-    });
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "AI 标题/大纲审查失败");
-  } catch (error) {
-    return {
-      ...auditResult,
-      aiError: error?.message || "AI 标题/大纲审查失败，请检查模型配置。",
-      issues: baseIssues,
-    };
-  }
-  const plannedTargets = mergeAiOutlineTargets(buildForcedOutlineTargets(candidates), data.targets || []);
-  const aiIssues = createAiOutlineIssues(filterResolvedAiOutlineTargets(plannedTargets, candidates), enabledSet);
-  return {
-    ...auditResult,
-    aiError: "",
-    issues: [...baseIssues, ...aiIssues],
-  };
-}
-
-function buildForcedOutlineTargets(candidates) {
-  return candidates
-    .filter((item) => item.sourceIssue === "onlyoffice-empty-outline")
-    .map((item) => ({
-      paragraphIndex: item.paragraphIndex,
-      outlineIndex: item.outlineIndex,
-      outlineLevel: item.outlineLevel,
-      text: item.text,
-      operation: "demote",
-      level: null,
-      reason: "空标题",
-    }));
-}
-
-function mergeAiOutlineTargets(baseTargets, aiTargets) {
-  const seen = new Set();
-  return [...baseTargets, ...aiTargets].filter((target) => {
-    const key = `${target.outlineIndex ?? target.paragraphIndex}-${target.operation}-${target.level ?? ""}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function getUniversalOutlineAuditRules() {
-  return [
-    "只判断样式和大纲层级，不修改正文文本。",
-    "先根据当前文档 OnlyOffice 大纲中占多数的编号形态、样式名称、层级分布归纳本文档规则。",
-    "不要假设所有文档都使用“第X章/一、/1.”对应固定层级。",
-    "明显标题形态不应降为正文；只在层级异常时调整 displayLevel。",
-    "正文长段、说明性句子、承诺正文、单位落款、空标题不应进入大纲。",
-    "不确定的项目标记 manual，不强行修复。",
-    "只输出脚本可安全执行的结构化修复计划。",
-  ];
-}
-
-function normalizeOnlyOfficeOutlineForAi(outline) {
-  if (!outline?.ok || !Array.isArray(outline.items)) return [];
-  return outline.items.slice(0, 300).map((item) => ({
-    index: Number(item.index) || 0,
-    level: Number(item.level) || 0,
-    title: item.isEmptyItem ? "空标题" : String(item.title || item.displayTitle || "").replace(/\s+/g, " ").trim(),
-    isEmptyItem: Boolean(item.isEmptyItem),
-    isNotHeader: Boolean(item.isNotHeader),
-  }));
-}
-
-function buildAiOutlineCandidates(structure, onlyOfficeOutline) {
-  return buildOnlyOfficeOutlineCandidates(onlyOfficeOutline, structure);
-}
-
-function buildOnlyOfficeOutlineCandidates(outline, structure) {
-  if (!outline?.ok || !Array.isArray(outline.items)) return [];
-  const headingBlocks = (structure?.blocks || []).filter((block) => block.type === "paragraph" && block.isHeading);
-  const byText = new Map();
-  headingBlocks.forEach((block) => {
-    const key = normalizeOutlineMatchText(block.text);
-    const list = byText.get(key) || [];
-    list.push(block);
-    byText.set(key, list);
-  });
-
-  return outline.items.slice(0, 300).map((item, order) => {
-    const title = item.isEmptyItem ? "空标题" : String(item.title || item.displayTitle || "").replace(/\s+/g, " ").trim();
-    const textMatch = byText.get(normalizeOutlineMatchText(title))?.shift();
-    const block = textMatch || headingBlocks[order] || null;
-    return {
-      paragraphIndex: block?.paragraphIndex || null,
-      outlineIndex: Number(item.index) || 0,
-      outlineLevel: Number(item.level) || 0,
-      text: title,
-      currentLevel: Number(item.level) || 0,
-      isHeading: true,
-      styleName: block?.styleName || "",
-      sourceIssue: item.isEmptyItem ? "onlyoffice-empty-outline" : "onlyoffice-outline-table",
-      isEmptyOutline: Boolean(item.isEmptyItem),
-    };
-  }).filter((item) => item.paragraphIndex);
-}
-
-function buildOnlyOfficeOutlineTextMap(outline) {
-  const map = new Map();
-  if (!outline?.ok || !Array.isArray(outline.items)) return map;
-  outline.items.forEach((item) => {
-    const key = normalizeOutlineMatchText(item.title || item.displayTitle || "");
-    if (!key || item.isEmptyItem) return;
-    const list = map.get(key) || [];
-    list.push({ index: Number(item.index), level: Number(item.level) });
-    map.set(key, list);
-  });
-  return map;
-}
-
-function normalizeOutlineMatchText(value) {
-  return String(value || "").replace(/\s+/g, "").trim();
-}
-
-function getAiOutlineBlockLevel(block) {
-  if (!block?.isHeading || !Number.isInteger(block.level) || block.level <= 0) return null;
-  return block.level - 1;
-}
-
-function filterResolvedAiOutlineTargets(targets, candidates) {
-  const candidatesByParagraph = new Map(candidates.map((item) => [Number(item.paragraphIndex), item]));
-  const candidatesByOutline = new Map(candidates.map((item) => [Number(item.outlineIndex), item]));
-  return targets.map((target) => {
-    const candidate = candidatesByOutline.get(Number(target.outlineIndex)) || candidatesByParagraph.get(Number(target.paragraphIndex));
-    const operation = target.operation === "heading" ? "heading" : target.operation === "demote" ? "demote" : "keep";
-    const targetLevel = Number(target.level);
-    const valid = operation === "demote"
-      ? Boolean(candidate?.isHeading || Number.isInteger(candidate?.currentLevel)) && isSafeOutlineDemoteTarget(candidate)
-      : operation === "heading" && Number.isInteger(targetLevel)
-        ? candidate?.currentLevel !== targetLevel
-        : false;
-    if (!valid) return null;
-    return {
-      ...target,
-      text: target.text || candidate?.text || "",
-      outlineIndex: Number.isInteger(Number(target.outlineIndex)) ? Number(target.outlineIndex) : candidate?.outlineIndex,
-      outlineLevel: Number.isInteger(Number(target.outlineLevel)) ? Number(target.outlineLevel) : candidate?.outlineLevel,
-    };
-  }).filter(Boolean);
-}
-
-function isSafeOutlineDemoteTarget(candidate) {
-  const text = String(candidate?.text || "").replace(/\s+/g, " ").trim();
-  if (!text || text === "空标题" || candidate?.sourceIssue === "onlyoffice-empty-outline") return true;
-  if (isProtectedOutlineHeading(text)) return false;
-  if (/[。；;]$/.test(text)) return true;
-  if (text.length > 42) return true;
-  if (text.length > 24 && /[，,。；;：:]/.test(text)) return true;
-  if (/供应商名称|盖章|公章|日期/.test(text)) return true;
-  return false;
-}
-
-function isProtectedOutlineHeading(text) {
-  const value = String(text || "").replace(/\s+/g, " ").trim();
-  if (!value || /[。；;：:]$/.test(value)) return false;
-  if (/^第[一二三四五六七八九十百千万\d]+[章节篇]/.test(value)) return true;
-  if (/^[一二三四五六七八九十]+[、.．]\S{1,60}$/.test(value)) return true;
-  if (/^（[一二三四五六七八九十]+）\S{1,60}$/.test(value)) return true;
-  if (/^\d+(?:[.．]\d+)*[、.．]?\S{1,48}$/.test(value)) return true;
-  return false;
-}
-
-function isAiOutlineCandidateBlock(block) {
-  const text = String(block.text || "").replace(/\s+/g, " ").trim();
-  if (!text || text === "目录" || text.length > 140) return false;
-  if (block.isHeading || /标题|heading/i.test(block.styleName || "")) return true;
-  if (/^第[一二三四五六七八九十百千万\d]+[章节篇]/.test(text)) return true;
-  if (/^[一二三四五六七八九十]+[、.．]\S{1,40}$/.test(text)) return true;
-  if (/^\d+(?:[.．]\d+)*[、.．\s]\S{1,48}$/.test(text)) return true;
-  return false;
-}
-
-function createAiOutlineIssues(targets, enabledSet) {
-  const normalizedTargets = targets
-    .map((target) => ({
-      index: Number(target.paragraphIndex) - 1,
-      outlineIndex: Number.isInteger(Number(target.outlineIndex)) ? Number(target.outlineIndex) : null,
-      outlineLevel: Number.isInteger(Number(target.outlineLevel)) ? Number(target.outlineLevel) : null,
-      text: String(target.text || "").slice(0, 120),
-      operation: target.operation === "heading" ? "heading" : target.operation === "demote" ? "demote" : "keep",
-      level: Number.isInteger(Number(target.level)) ? Number(target.level) : null,
-      reason: String(target.reason || "").slice(0, 120),
-    }))
-    .filter((target) => target.index >= 0 && target.operation !== "keep");
-  return normalizedTargets
-    .map((target) => makeAiOutlineIssue(target))
-    .filter((issue) => isAuditIssueEnabled(issue, enabledSet));
-}
-
-function makeAiOutlineIssue(target) {
-  const isHeading = target.operation === "heading";
-  const auditConfigKey = isHeading ? "missing-heading-style" : "body-outline";
-  const title = isHeading ? "标题未入大纲" : "正文误入标题";
-  const description = isHeading ? "AI 判断该段应进入标题层级，修复时由脚本套用对应 Word 标题样式。" : "AI 判断该段应为正文，修复时由脚本移出 Word 大纲。";
-  return {
-    id: `ai-outline-${target.operation}-${target.outlineIndex ?? target.index}-${target.level ?? "body"}`,
-    title,
-    category: "标题体系",
-    description,
-    severity: "medium",
-    layer: "safe",
-    fixable: true,
-    auditConfigKey,
-    action: "applyAiOutlinePlan",
-    count: 1,
-    targets: [target],
-    samples: [`${target.text || target.reason || "AI 审查项"}${target.reason ? `（${target.reason}）` : ""}`],
-  };
-}
-
-function getOutlineRevisionReason(target) {
-  const text = String(target?.text || "").trim();
-  const reason = String(target?.reason || "").trim();
-  if (!text) return "空标题";
-  if (/空标题/.test(reason)) return "空标题";
-  if (target?.operation === "demote") return "正文误入";
-  if (target?.operation === "heading" && Number.isInteger(target?.level)) return "层级异常";
-  return reason.slice(0, 4) || "大纲异常";
-}
-
-function getOutlineRevisionAction(target) {
-  if (target?.operation === "demote") return "改正文";
-  if (target?.operation === "heading" && Number.isInteger(target?.level)) return `改L${target.level + 1}`;
-  return "人工确认";
-}
 
 function applyPreviewMarker({ fieldId, container, selection, anchorNode }) {
   if (!container) return;
@@ -2409,567 +1426,6 @@ function getAnnotationNodeRank(node) {
   return 4;
 }
 
-const WORD_XML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
-async function readDocxStructure(buffer) {
-  const zip = await JSZip.loadAsync(buffer);
-  const [documentXml, stylesXml, numberingXml] = await Promise.all([
-    zip.file("word/document.xml")?.async("text"),
-    zip.file("word/styles.xml")?.async("text"),
-    zip.file("word/numbering.xml")?.async("text"),
-  ]);
-  if (!documentXml) return { outline: [], blocks: [] };
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(documentXml, "application/xml");
-  const styles = stylesXml ? parseDocxOutlineStyles(parser.parseFromString(stylesXml, "application/xml")) : new Map();
-  const numbering = numberingXml ? parseDocxNumbering(parser.parseFromString(numberingXml, "application/xml")) : { nums: new Map() };
-  const body = structureDescendants(doc, "body")[0];
-  if (!body) return { outline: [], blocks: [] };
-
-  const root = {
-    id: "audit-out-root",
-    parentId: "",
-    level: 0,
-    order: 0,
-    title: "文档正文",
-    paragraphIndex: 0,
-    blockIds: [],
-  };
-  const outline = [];
-  const stack = [root];
-  const blocks = [];
-  let currentOutline = root;
-  let paragraphIndex = 0;
-  let tableIndex = 0;
-  let tocFieldDepth = 0;
-  const numberingState = new Map();
-
-  structureElementChildren(body).forEach((child) => {
-    const name = structureLocalName(child);
-    if (name === "p") {
-      paragraphIndex += 1;
-      const text = getStructureNodeText(child);
-      const styleId = getStructureParagraphStyleId(child);
-      const styleInfo = styles.get(styleId);
-      const styleName = styleInfo?.name || "";
-      const pPr = structureElementChildren(child, "pPr")[0];
-      const directOutline = pPr ? structureElementChildren(pPr, "outlineLvl")[0] : null;
-      const directLevel = parseOutlineLevel(getStructureAttr(directOutline, "val"));
-      const actualLevel = Number.isInteger(directLevel) ? directLevel : styleInfo?.level;
-      const fieldInfo = getParagraphFieldInfo(child);
-      const insideToc = tocFieldDepth > 0 || fieldInfo.startsToc || isTocStyle(styleInfo, styleId);
-      if (fieldInfo.startsToc) tocFieldDepth += Math.max(1, fieldInfo.beginCount);
-      if (tocFieldDepth > 0 && fieldInfo.endCount > 0) tocFieldDepth = Math.max(0, tocFieldDepth - fieldInfo.endCount);
-      const isHeading = !insideToc && Number.isInteger(actualLevel) && actualLevel >= 0 && actualLevel <= 8;
-      if (!text && !isHeading) return;
-      const displayText = text || "空标题";
-      if (isHeading) {
-        const numberPrefix = formatAndAdvanceNumbering(numberingState, numbering, resolveParagraphNumbering(child, styleInfo));
-        currentOutline = addStructureOutlineNode(outline, stack, actualLevel + 1, structureOutlineTitle(joinOutlineNumbering(numberPrefix, displayText)), paragraphIndex);
-      }
-
-      const block = {
-        id: `audit-block-${String(blocks.length + 1).padStart(4, "0")}`,
-        outlineId: currentOutline.id,
-        outlineTitle: currentOutline.title,
-        type: "paragraph",
-        order: blocks.length + 1,
-        paragraphIndex,
-        tableIndex: 0,
-        level: isHeading ? actualLevel + 1 : 0,
-        styleId,
-        styleName,
-        isHeading,
-        text: displayText,
-        preview: structureBlockPreview(displayText),
-      };
-      blocks.push(block);
-      currentOutline.blockIds.push(block.id);
-      return;
-    }
-
-    if (name === "tbl") {
-      tableIndex += 1;
-      const text = getStructureTableText(child);
-      if (!text) return;
-      const block = {
-        id: `audit-block-${String(blocks.length + 1).padStart(4, "0")}`,
-        outlineId: currentOutline.id,
-        outlineTitle: currentOutline.title,
-        type: "table",
-        order: blocks.length + 1,
-        paragraphIndex,
-        tableIndex,
-        level: 0,
-        styleId: "",
-        styleName: "",
-        isHeading: false,
-        text,
-        preview: structureBlockPreview(text),
-      };
-      blocks.push(block);
-      currentOutline.blockIds.push(block.id);
-    }
-  });
-
-  return {
-    outline: outline.map((item) => ({
-      id: item.id,
-      title: item.title,
-      level: Math.max(0, item.level - 1),
-      index: item.paragraphIndex,
-      page: 1,
-      blockIds: item.blockIds,
-    })),
-    blocks,
-  };
-}
-
-function structureLocalName(node) {
-  return String(node?.localName || node?.nodeName || "").split(":").pop();
-}
-
-function structureElementChildren(node, name) {
-  const children = [];
-  for (let index = 0; index < (node?.childNodes?.length || 0); index += 1) {
-    const child = node.childNodes[index];
-    if (child.nodeType === 1 && (!name || structureLocalName(child) === name)) children.push(child);
-  }
-  return children;
-}
-
-function structureDescendants(node, name) {
-  const found = [];
-  function visit(current) {
-    for (let index = 0; index < (current?.childNodes?.length || 0); index += 1) {
-      const child = current.childNodes[index];
-      if (child.nodeType !== 1) continue;
-      if (!name || structureLocalName(child) === name) found.push(child);
-      visit(child);
-    }
-  }
-  visit(node);
-  return found;
-}
-
-function getStructureAttr(node, name) {
-  return node?.getAttribute?.(`w:${name}`) || node?.getAttribute?.(name) || "";
-}
-
-function getStructureNodeText(node) {
-  return structureDescendants(node)
-    .map((item) => {
-      const name = structureLocalName(item);
-      if (name === "t") return item.textContent || "";
-      if (name === "tab") return " ";
-      if (name === "br" || name === "cr") return "\n";
-      return "";
-    })
-    .join("")
-    .replace(/\u00A0/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\s+\n/g, "\n")
-    .trim();
-}
-
-function getStructureTableText(table) {
-  return structureElementChildren(table, "tr")
-    .map((row) =>
-      structureElementChildren(row, "tc")
-        .map((cell) => getStructureNodeText(cell))
-        .filter(Boolean)
-        .join(" | "),
-    )
-    .filter(Boolean)
-    .join("\n");
-}
-
-function getStructureParagraphStyleId(paragraph) {
-  const pPr = structureElementChildren(paragraph, "pPr")[0];
-  const pStyle = pPr ? structureElementChildren(pPr, "pStyle")[0] : null;
-  return getStructureAttr(pStyle, "val");
-}
-
-async function readStructureStyleMap(zip, parser) {
-  const stylesXml = await zip.file("word/styles.xml")?.async("text");
-  const styleMap = new Map();
-  if (!stylesXml) return styleMap;
-  const doc = parser.parseFromString(stylesXml, "application/xml");
-  structureDescendants(doc, "style").forEach((style) => {
-    const styleId = getStructureAttr(style, "styleId");
-    const type = getStructureAttr(style, "type");
-    const name = getStructureAttr(structureElementChildren(style, "name")[0], "val");
-    if (styleId) styleMap.set(styleId, { styleId, type, name });
-  });
-  return styleMap;
-}
-
-function structureChineseNumberToInt(value) {
-  const raw = String(value || "").trim();
-  if (/^\d+$/.test(raw)) return Number(raw);
-  const map = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
-  if (map[raw]) return map[raw];
-  if (raw === "十一") return 11;
-  if (raw === "十二") return 12;
-  return 0;
-}
-
-function structureHeadingLevelFromStyle(styleId, styleName = "") {
-  const source = `${styleId} ${styleName}`.toLowerCase();
-  if (/\btoc\b|目录/.test(source)) return 0;
-  const headingMatch = /(heading|标题)\s*([1-6一二三四五六])/.exec(source);
-  if (headingMatch) return structureChineseNumberToInt(headingMatch[2]);
-  const titleMatch = /^([1-6])$/.exec(String(styleId || ""));
-  if (titleMatch && /标题/.test(styleName)) return Number(titleMatch[1]);
-  return 0;
-}
-
-function normalizeStructureString(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
-function inferStructureHeadingLevel(text, styleId, styleName) {
-  const styledLevel = structureHeadingLevelFromStyle(styleId, styleName);
-  const value = normalizeStructureString(text);
-  if (!value || value.length > 90 || value === "目 录" || value === "目录") return 0;
-  if (/^□?第[一二三四五六七八九十0-9]+章/.test(value)) return 1;
-  if (/^(询比采购公告|采购公告)$/.test(value)) return 1;
-  if (/^(供应商须知|供应商资格证明材料|项目详细要求|响应文件格式|合同主要条款)$/.test(value)) return 1;
-  if (/^□?第五章\s*评审办法/.test(value)) return 1;
-
-  const isChineseSection = /^[一二三四五六七八九十]+[、.．]\s*\S+/.test(value);
-  if (styledLevel === 2 && isChineseSection) return 2;
-  if (styledLevel === 1) return 1;
-  if (styledLevel === 2 && !/^[0-9]+(?:\.[0-9]+)*[、.．\s]/.test(value)) return 2;
-  return 0;
-}
-
-function structureOutlineTitle(text) {
-  return normalizeStructureString(text).replace(/\s+/g, " ").slice(0, 80) || "未命名章节";
-}
-
-function structureBlockPreview(text, maxLength = 220) {
-  const value = normalizeStructureString(text);
-  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-}
-
-function addStructureOutlineNode(outline, stack, level, title, paragraphIndex) {
-  while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
-  const parent = stack[stack.length - 1];
-  const order = outline.length + 1;
-  const node = {
-    id: `audit-out-${String(order).padStart(3, "0")}`,
-    parentId: parent?.id || "",
-    level,
-    order,
-    title,
-    paragraphIndex,
-    blockIds: [],
-  };
-  outline.push(node);
-  stack.push(node);
-  return node;
-}
-
-async function readDocxOutlineItems(buffer) {
-  const zip = await JSZip.loadAsync(buffer);
-  const [documentXml, stylesXml, numberingXml] = await Promise.all([
-    zip.file("word/document.xml")?.async("text"),
-    zip.file("word/styles.xml")?.async("text"),
-    zip.file("word/numbering.xml")?.async("text"),
-  ]);
-  if (!documentXml) return [];
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(documentXml, "application/xml");
-  const styles = stylesXml ? parseDocxOutlineStyles(parser.parseFromString(stylesXml, "application/xml")) : new Map();
-  const numbering = numberingXml ? parseDocxNumbering(parser.parseFromString(numberingXml, "application/xml")) : { nums: new Map() };
-  return collectDocxOutlineItems(doc, styles, numbering);
-}
-
-function collectDocxOutlineItems(doc, styles, numbering) {
-  const numberingState = new Map();
-  let tocFieldDepth = 0;
-
-  return getWordXmlElements(doc, "p")
-    .map((paragraph, index) => {
-      const text = getXmlParagraphText(paragraph).replace(/\s+/g, " ").trim();
-
-      const pPr = getWordXmlChild(paragraph, "pPr");
-      const pStyle = getWordXmlChild(pPr, "pStyle");
-      const styleId = getWordXmlAttr(pStyle, "val");
-      const styleInfo = styles.get(styleId);
-      const fieldInfo = getParagraphFieldInfo(paragraph);
-      const insideToc = tocFieldDepth > 0 || fieldInfo.startsToc || isTocStyle(styleInfo, styleId);
-      if (fieldInfo.startsToc) tocFieldDepth += Math.max(1, fieldInfo.beginCount);
-      if (tocFieldDepth > 0 && fieldInfo.endCount > 0) tocFieldDepth = Math.max(0, tocFieldDepth - fieldInfo.endCount);
-      if (insideToc || !text) return null;
-
-      const directOutline = getWordXmlChild(pPr, "outlineLvl");
-      const directLevel = parseOutlineLevel(getWordXmlAttr(directOutline, "val"));
-      const styleLevel = styleInfo?.level;
-      const level = Number.isInteger(directLevel) ? directLevel : styleLevel;
-      if (!Number.isInteger(level) || level < 0 || level > 8) return null;
-
-      const numberPrefix = formatAndAdvanceNumbering(
-        numberingState,
-        numbering,
-        resolveParagraphNumbering(paragraph, styleInfo),
-      );
-
-      return {
-        id: `outline-${index}`,
-        title: joinOutlineNumbering(numberPrefix, text),
-        level,
-        index,
-      };
-    })
-    .filter(Boolean);
-}
-
-function parseDocxOutlineStyles(stylesDoc) {
-  const styles = new Map();
-  getWordXmlElements(stylesDoc, "style").forEach((style) => {
-    const styleId = getWordXmlAttr(style, "styleId");
-    if (!styleId) return;
-
-    const name = getWordXmlAttr(getWordXmlChild(style, "name"), "val");
-    const pPr = getWordXmlChild(style, "pPr");
-    const outline = getWordXmlChild(pPr, "outlineLvl");
-    const outlineLevel = parseOutlineLevel(getWordXmlAttr(outline, "val"));
-    const headingLevel = parseHeadingStyleLevel(name);
-    const level = Number.isInteger(outlineLevel) ? outlineLevel : headingLevel;
-    styles.set(styleId, { name, level, numPr: parseNumberingProperties(getWordXmlChild(pPr, "numPr")) });
-  });
-  return styles;
-}
-
-function parseDocxNumbering(numberingDoc) {
-  const abstracts = new Map();
-  getWordXmlElements(numberingDoc, "abstractNum").forEach((abstractNum) => {
-    const abstractId = getWordXmlAttr(abstractNum, "abstractNumId");
-    if (!abstractId) return;
-    const levels = new Map();
-    getWordXmlChildren(abstractNum, "lvl").forEach((levelNode) => {
-      const level = parseOutlineLevel(getWordXmlAttr(levelNode, "ilvl"));
-      if (Number.isInteger(level)) levels.set(level, parseNumberingLevel(levelNode));
-    });
-    abstracts.set(abstractId, levels);
-  });
-
-  const nums = new Map();
-  getWordXmlElements(numberingDoc, "num").forEach((numNode) => {
-    const numId = getWordXmlAttr(numNode, "numId");
-    const abstractId = getWordXmlAttr(getWordXmlChild(numNode, "abstractNumId"), "val");
-    if (!numId || !abstracts.has(abstractId)) return;
-
-    const levels = new Map([...abstracts.get(abstractId)].map(([level, info]) => [level, { ...info }]));
-    getWordXmlChildren(numNode, "lvlOverride").forEach((override) => {
-      const level = parseOutlineLevel(getWordXmlAttr(override, "ilvl"));
-      if (!Number.isInteger(level)) return;
-      const overrideLevel = getWordXmlChild(override, "lvl");
-      const base = overrideLevel ? parseNumberingLevel(overrideLevel) : levels.get(level) || {};
-      const startOverride = Number(getWordXmlAttr(getWordXmlChild(override, "startOverride"), "val"));
-      levels.set(level, {
-        ...levels.get(level),
-        ...base,
-        ...(Number.isInteger(startOverride) ? { start: startOverride } : {}),
-      });
-    });
-
-    nums.set(numId, { levels });
-  });
-
-  return { nums };
-}
-
-function parseNumberingLevel(levelNode) {
-  const start = Number(getWordXmlAttr(getWordXmlChild(levelNode, "start"), "val") || "1");
-  return {
-    start: Number.isInteger(start) ? start : 1,
-    numFmt: getWordXmlAttr(getWordXmlChild(levelNode, "numFmt"), "val") || "decimal",
-    lvlText: getWordXmlAttr(getWordXmlChild(levelNode, "lvlText"), "val") || "",
-  };
-}
-
-function parseNumberingProperties(numPr) {
-  if (!numPr) return null;
-  const numId = getWordXmlAttr(getWordXmlChild(numPr, "numId"), "val");
-  const ilvl = parseOutlineLevel(getWordXmlAttr(getWordXmlChild(numPr, "ilvl"), "val"));
-  if (!numId && !Number.isInteger(ilvl)) return null;
-  return { numId, ilvl: Number.isInteger(ilvl) ? ilvl : 0 };
-}
-
-function resolveParagraphNumbering(paragraph, styleInfo) {
-  const pPr = getWordXmlChild(paragraph, "pPr");
-  const direct = parseNumberingProperties(getWordXmlChild(pPr, "numPr"));
-  const inherited = styleInfo?.numPr;
-  const numId = direct?.numId || inherited?.numId;
-  if (!numId) return null;
-  return {
-    numId,
-    ilvl: Number.isInteger(direct?.ilvl) ? direct.ilvl : Number.isInteger(inherited?.ilvl) ? inherited.ilvl : 0,
-  };
-}
-
-function formatAndAdvanceNumbering(state, numbering, numPr) {
-  if (!numPr) return "";
-  const num = numbering.nums.get(String(numPr.numId));
-  const level = Number.isInteger(numPr.ilvl) ? numPr.ilvl : 0;
-  const levelInfo = num?.levels.get(level);
-  if (!levelInfo) return "";
-
-  const counters = state.get(numPr.numId) || [];
-  const previous = Number.isInteger(counters[level]) ? counters[level] : levelInfo.start - 1;
-  counters[level] = previous + 1;
-  for (let index = level + 1; index < counters.length; index += 1) counters[index] = undefined;
-  state.set(numPr.numId, counters);
-
-  if (levelInfo.numFmt === "none") return "";
-  const pattern = levelInfo.lvlText || `%${level + 1}`;
-  return pattern.replace(/%([1-9])/g, (_, levelNumber) => {
-    const levelIndex = Number(levelNumber) - 1;
-    const value = counters[levelIndex];
-    const format = num.levels.get(levelIndex)?.numFmt || "decimal";
-    return Number.isInteger(value) ? formatNumberValue(value, format) : "";
-  });
-}
-
-function formatNumberValue(value, format) {
-  const normalizedFormat = String(format || "decimal").toLowerCase();
-  if (normalizedFormat.includes("chinese") || normalizedFormat.includes("japanese")) return toChineseNumber(value);
-  if (normalizedFormat === "lowerletter") return toLetterNumber(value, false);
-  if (normalizedFormat === "upperletter") return toLetterNumber(value, true);
-  if (normalizedFormat === "lowerroman") return toRomanNumber(value).toLowerCase();
-  if (normalizedFormat === "upperroman") return toRomanNumber(value);
-  return String(value);
-}
-
-function toChineseNumber(value) {
-  if (!Number.isInteger(value) || value <= 0 || value > 9999) return String(value);
-  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
-  const units = ["", "十", "百", "千"];
-  const chars = String(value).split("").map(Number);
-  let result = "";
-  let pendingZero = false;
-  chars.forEach((digit, index) => {
-    const unit = units[chars.length - index - 1];
-    if (digit === 0) {
-      pendingZero = Boolean(result);
-      return;
-    }
-    if (pendingZero) result += "零";
-    result += `${digits[digit]}${unit}`;
-    pendingZero = false;
-  });
-  return result.replace(/^一十/, "十");
-}
-
-function toLetterNumber(value, uppercase) {
-  if (!Number.isInteger(value) || value <= 0) return String(value);
-  let current = value;
-  let result = "";
-  while (current > 0) {
-    current -= 1;
-    result = String.fromCharCode(97 + (current % 26)) + result;
-    current = Math.floor(current / 26);
-  }
-  return uppercase ? result.toUpperCase() : result;
-}
-
-function toRomanNumber(value) {
-  if (!Number.isInteger(value) || value <= 0 || value > 3999) return String(value);
-  const pairs = [
-    [1000, "M"],
-    [900, "CM"],
-    [500, "D"],
-    [400, "CD"],
-    [100, "C"],
-    [90, "XC"],
-    [50, "L"],
-    [40, "XL"],
-    [10, "X"],
-    [9, "IX"],
-    [5, "V"],
-    [4, "IV"],
-    [1, "I"],
-  ];
-  let current = value;
-  let result = "";
-  pairs.forEach(([number, roman]) => {
-    while (current >= number) {
-      result += roman;
-      current -= number;
-    }
-  });
-  return result;
-}
-
-function joinOutlineNumbering(numberPrefix, text) {
-  const prefix = String(numberPrefix || "").trim();
-  if (!prefix) return text;
-  return normalizeOutlineTitle(text).startsWith(normalizeOutlineTitle(prefix)) ? text : `${prefix} ${text}`;
-}
-
-function getParagraphFieldInfo(paragraph) {
-  const instrText = getWordXmlElements(paragraph, "instrText")
-    .map((node) => node.textContent || "")
-    .join(" ");
-  const fldChars = getWordXmlElements(paragraph, "fldChar");
-  return {
-    startsToc: /\bTOC\b/i.test(instrText),
-    beginCount: fldChars.filter((node) => getWordXmlAttr(node, "fldCharType") === "begin").length,
-    endCount: fldChars.filter((node) => getWordXmlAttr(node, "fldCharType") === "end").length,
-  };
-}
-
-function isTocStyle(styleInfo, styleId) {
-  return /^toc\b/i.test(styleInfo?.name || "") || /^TOC/i.test(styleId || "");
-}
-
-function parseHeadingStyleLevel(name) {
-  const match = String(name || "").match(/^heading\s*([1-9])$/i);
-  return match ? Number(match[1]) - 1 : null;
-}
-
-function parseOutlineLevel(value) {
-  if (value === null || value === undefined || String(value).trim() === "") return null;
-  const level = Number(value);
-  return Number.isInteger(level) ? level : null;
-}
-
-function getWordXmlAttr(node, name) {
-  if (!node) return "";
-  return (
-    node.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", name) ||
-    node.getAttribute(`w:${name}`) ||
-    node.getAttribute(name) ||
-    ""
-  );
-}
-
-function getWordXmlChild(node, localName) {
-  if (!node) return null;
-  return [...node.children].find((child) => child.localName === localName) || null;
-}
-
-function getWordXmlChildren(node, localName) {
-  if (!node) return [];
-  return [...node.children].filter((child) => child.localName === localName);
-}
-
-function getWordXmlElements(node, localName) {
-  if (!node) return [];
-  const namespaced = node.getElementsByTagNameNS ? [...node.getElementsByTagNameNS(WORD_XML_NS, localName)] : [];
-  return namespaced.length > 0 ? namespaced : [...node.getElementsByTagName?.(`w:${localName}`) ?? []];
-}
-
-function getWordXmlParagraphText(paragraph) {
-  return getWordXmlElements(paragraph, "t")
-    .map((node) => node.textContent || "")
-    .join("");
-}
 
 function syncRenderedTocEntries(container, docxOutlineItems = []) {
   if (!container || docxOutlineItems.length === 0) return;
@@ -3052,10 +1508,6 @@ function getOutlineNodeBySourceParagraphIndex(paragraphNodes, item, normalizedTi
   if (!node || isRenderedTocNode(node)) return null;
   const normalizedNodeText = normalizeOutlineTitle(node.textContent);
   return isOutlineTitleMatch(normalizedNodeText, normalizedTitle) ? node : null;
-}
-
-function normalizeOutlineTitle(value) {
-  return String(value || "").replace(/\s+/g, "").trim();
 }
 
 function isRenderedTocNode(node) {
@@ -3258,31 +1710,6 @@ function appendDateFillPart(target, field, value) {
   valueNode.dataset.fieldId = field.id;
   valueNode.textContent = value;
   target.append(valueNode);
-}
-
-function hasDateSegmentBlank(text) {
-  return getDateSegmentBlankPattern().test(text || "");
-}
-
-function getDateSegmentBlankPattern() {
-  return /[_＿—\-\s]{0,12}年[_＿—\-\s]{0,8}月[_＿—\-\s]{0,8}日(?:[_＿—\-\s]{0,8}时[_＿—\-\s]{0,8}分)?/;
-}
-
-function buildDateSegmentFillText(source, value) {
-  const parts = parseDateParts(value);
-  if (!parts) return "";
-  return String(source || "").replace(getDateSegmentBlankPattern(), (match) => buildDateSegmentReplacement(match, parts) || match);
-}
-
-function buildDateSegmentReplacement(segment, parts) {
-  if (!parts?.year || !parts.month || !parts.day) return "";
-  if (dateSegmentNeedsTime(segment) && (!parts.hour || !parts.minute)) return "";
-  const dateText = `${parts.year}年${parts.month}月${parts.day}日`;
-  return dateSegmentNeedsTime(segment) ? `${dateText}${parts.hour}时${parts.minute}分` : dateText;
-}
-
-function dateSegmentNeedsTime(segment) {
-  return /时[_＿—\-\s]{0,8}分/.test(segment || "");
 }
 
 function scoreDateSegmentCandidate(text, field) {
@@ -3919,20 +2346,6 @@ function appendXmlInsertedRun(parent, text, field, options = {}) {
   }
 }
 
-function getFillBookmarkName(field) {
-  const id = String(field?.id || "").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 30);
-  return id ? `GF_FIELD_${id}` : "";
-}
-
-function getInputPointBookmarkName(field) {
-  const id = String(field?.id || "").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 30);
-  return id ? `GF_INPUT_${id}` : "";
-}
-
-function getFillTargetBookmarkName(field) {
-  return !isReplacementField(field) && field?.inputPoint?.bookmarkName ? field.inputPoint.bookmarkName : getFillBookmarkName(field);
-}
-
 function setXmlParagraphDeleted(paragraph) {
   const text = getXmlParagraphText(paragraph);
   if (!text.trim()) return;
@@ -4441,77 +2854,6 @@ function getChoiceKeywords(value, context = "") {
     .sort((a, b) => normalizeChoiceText(b).length - normalizeChoiceText(a).length);
 }
 
-function collectChoiceKeywordsFromText(normalizedText, keywords) {
-  if (normalizedText.includes("综合评估法")) {
-    keywords.push("综合评估法", "综合评分法");
-  }
-  if (normalizedText.includes("最低投标价法")) {
-    keywords.push("经评审的最低投标价法", "最低投标价法");
-  }
-  if (normalizedText.includes("不含税")) {
-    keywords.push("不含税");
-  } else if (normalizedText.includes("含税")) {
-    keywords.push("含税");
-  }
-}
-
-function normalizeChoiceText(value) {
-  return (value || "")
-    .replace(/[□☐○〇▢☑✓✔]/g, "")
-    .replace(/^第[一二三四五六七八九十\d]+章\s*/, "")
-    .replace(/[（）()：:，,。；;\s]/g, "")
-    .replace(/综合评分法/g, "综合评估法")
-    .trim();
-}
-
-function parseDateParts(value) {
-  const text = String(value || "").trim();
-  if (!text) return null;
-
-  const chineseMatch = text.match(/(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*(\d{1,2})(?:\s*时\s*|[:：])\s*(\d{1,2})\s*分?)?/);
-  if (chineseMatch) {
-    return {
-      year: chineseMatch[1],
-      month: chineseMatch[2],
-      day: chineseMatch[3],
-      hour: chineseMatch[4] || "",
-      minute: chineseMatch[5] || "",
-    };
-  }
-
-  const numericMatch = text.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s]+(\d{1,2})[:：时](\d{1,2})(?:分)?)?/);
-  if (numericMatch) {
-    return {
-      year: numericMatch[1],
-      month: padDatePart(numericMatch[2]),
-      day: padDatePart(numericMatch[3]),
-      hour: numericMatch[4] ? padDatePart(numericMatch[4]) : "",
-      minute: numericMatch[5] ? padDatePart(numericMatch[5]) : "",
-    };
-  }
-
-  const spacedMatch = text.match(/(\d{4})\s+(\d{1,2})\s+(\d{1,2})(?:\s+(\d{1,2})\s+(\d{1,2}))?/);
-  if (spacedMatch) {
-    return {
-      year: spacedMatch[1],
-      month: padDatePart(spacedMatch[2]),
-      day: padDatePart(spacedMatch[3]),
-      hour: spacedMatch[4] ? padDatePart(spacedMatch[4]) : "",
-      minute: spacedMatch[5] ? padDatePart(spacedMatch[5]) : "",
-    };
-  }
-
-  return null;
-}
-
-function padDatePart(value) {
-  return String(value || "").padStart(2, "0");
-}
-
-function isDateField(field) {
-  return normalizeFillMode(field?.fillMode, field) === "date" || field?.type === "日期" || /日期|年\s*月\s*日|年月日|编制时间/.test(`${field?.name || ""} ${field?.answerFormat || ""} ${field?.question || ""}`);
-}
-
 function collectTextNodes(root) {
   const nodes = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -4848,38 +3190,6 @@ function resolvePreviewPage(anchorNode, container) {
   return [...container.querySelectorAll(".docx-wrapper > section")].indexOf(page) + 1 || 1;
 }
 
-async function waitForChangedOfficeDocumentBuffer(officeDocId, baselineBuffer, options = {}) {
-  const timeoutMs = options.timeoutMs ?? 7000;
-  const intervalMs = options.intervalMs ?? 700;
-  const start = Date.now();
-  await delay(options.initialDelayMs ?? 900);
-  while (Date.now() - start < timeoutMs) {
-    const buffer = await fetchOfficeDocumentBuffer(officeDocId);
-    if (buffer && (!baselineBuffer || !arrayBuffersEqual(buffer, baselineBuffer))) return buffer;
-    await delay(intervalMs);
-  }
-  return null;
-}
-
-async function fetchOfficeDocumentBuffer(officeDocId) {
-  if (!officeDocId) return null;
-  const response = await fetch(`/api/office/documents/${officeDocId}/file?t=${Date.now()}`, { cache: "no-store" });
-  return response.ok ? response.arrayBuffer() : null;
-}
-
-function arrayBuffersEqual(left, right) {
-  if (!left || !right || left.byteLength !== right.byteLength) return false;
-  const a = new Uint8Array(left);
-  const b = new Uint8Array(right);
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) return false;
-  }
-  return true;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
 
 
 

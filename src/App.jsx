@@ -34,16 +34,20 @@ import {
 import {
   clearPreviewMarkers,
   createPreviewId,
-  fetchOfficeDocumentBuffer,
-  getNextFieldNumber,
   removePreviewMarker,
+} from "./features/docx/runtime.jsx";
+import {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
+} from "./features/docx/office/bridge.jsx";
+import {
+  fetchOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
-} from "./features/docx/runtime.jsx";
+} from "./features/docx/office/documentSync.js";
+import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,

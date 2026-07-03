@@ -4,7 +4,8 @@ import { useGSAP } from "@gsap/react";
 import { Highlighter, Loader2, Save, Trash2 } from "lucide-react";
 import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
-import { DocumentFrame, FieldForm } from "../features/docx/runtime.jsx";
+import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
+import { DocumentFrame } from "../features/docx/runtime.jsx";
 import { getFillModeLabel, getTemplateFieldSourceText, normalizeFieldCategory, normalizeFillMode } from "../utils/fields.js";
 import { inferTemplateCategory, normalizeTemplateCategory } from "../utils/templates.js";
 
