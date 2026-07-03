@@ -907,7 +907,7 @@ export default function App() {
   }
 
   function isOnlyOfficeFillFailure(writeResult) {
-    return writeResult && writeResult.ok === false && !writeResult.skipped;
+    return writeResult && writeResult.ok === false && !writeResult.skipped && !writeResult.timeout;
   }
 
   function markOnlyOfficeFillFailure(field, writeResult) {
@@ -1055,7 +1055,7 @@ export default function App() {
 
   async function generateField(fieldId) {
     window.clearTimeout(fillSyncTimerRef.current);
-    await fillFieldWithAI(fieldId, enrichedFillFields, { syncDocument: false });
+    await fillFieldWithAI(fieldId, enrichedFillFields);
   }
 
   async function generateAllFields() {
