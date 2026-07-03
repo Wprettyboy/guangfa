@@ -888,6 +888,7 @@
   }
 
   function postPageChange(pageNumber, source) {
+    if (Date.now() < suppressPageSyncUntil) return;
     const fallback = extractOnlyOfficeVisiblePage();
     const nextPage = Number(pageNumber);
     const page = {
@@ -913,6 +914,12 @@
   let lastFieldPageSignature = "";
   let annotationRestoreRunning = false;
   let lastAnnotationRestoreSignature = "";
+  let suppressPageSyncUntil = 0;
+
+  function suppressPageSync(durationMs) {
+    const until = Date.now() + Math.max(0, Number(durationMs) || 0);
+    suppressPageSyncUntil = Math.max(suppressPageSyncUntil, until);
+  }
 
   function setFillFields(fields) {
     fillFields = Array.isArray(fields) ? fields.slice(0, 300) : [];
@@ -1425,7 +1432,9 @@
     if (data.source === "guangfa-parent" && data.action === "fill-field-value") {
       const field = data.field || {};
       const requestId = data.requestId || field.requestId || "";
+      if (field.suppressPageSync) suppressPageSync(1800);
       const result = fillBookmarkedField(field);
+      if (field.suppressPageSync) suppressPageSync(1800);
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-fill", result: { ...result, requestId } }, "*");
     }
     if (data.source === "guangfa-parent" && data.action === "sync-annotation-fields") {

@@ -193,6 +193,7 @@ function requestOnlyOfficeFillField(field, options = {}) {
       field: {
         ...payload,
         requestId,
+        suppressPageSync: Boolean(options.suppressPageSync),
       },
     }, 0);
   });

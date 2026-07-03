@@ -123,6 +123,7 @@ export default function App() {
   const filledTemplateDraftFileRef = useRef(null);
   const annotateSyncTimerRef = useRef(0);
   const fillSyncTimerRef = useRef(0);
+  const fillPreviewPageLockRef = useRef(null);
   const templateFileRef = useRef(templateFile);
   const enrichedFillFields = useMemo(
     () => mergeFillFieldsWithTemplate(fillFields, templateFields),
@@ -429,6 +430,15 @@ export default function App() {
         // Fill persistence is best effort; the visible OnlyOffice document should keep working.
       }
     }, 1000);
+  }
+
+  function updateFillPreviewPage(pageNumber) {
+    const lockedPage = fillPreviewPageLockRef.current;
+    if (lockedPage) {
+      setFillPreviewPage(lockedPage);
+      return;
+    }
+    setFillPreviewPage(pageNumber);
   }
 
   function startNewAnnotatedTemplate() {
@@ -1025,7 +1035,7 @@ export default function App() {
             : field,
         ),
       );
-      const writeResult = await requestOnlyOfficeFillField(appliedField);
+      const writeResult = await requestOnlyOfficeFillField(appliedField, { suppressPageSync: Boolean(options.suppressPageSync) });
       if (isOnlyOfficeFillFailure(writeResult)) {
         const failedField = markOnlyOfficeFillFailure(appliedField, writeResult);
         const failedFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? failedField : field));
@@ -1065,6 +1075,7 @@ export default function App() {
   async function generateAllFields() {
     const pendingFields = sortFieldsByDocumentOrder(enrichedFillFields.filter((field) => field.status !== "已确认" && field.status !== "生成中"));
     if (pendingFields.length === 0 || generatingAll) return;
+    const preservedFillPreviewPage = fillPreviewPage;
     const blockedFields = pendingFields
       .map((field) => {
         const templateField = templateFields.find((item) => item.id === field.id);
@@ -1074,6 +1085,7 @@ export default function App() {
     const runnableFields = pendingFields.filter((field) => !blockedFields.some((item) => item.field.id === field.id));
 
     setGeneratingAll(true);
+    fillPreviewPageLockRef.current = preservedFillPreviewPage;
     setBulkFillProgress({ current: 0, total: runnableFields.length });
     setShowCitations(false);
     window.clearTimeout(fillSyncTimerRef.current);
@@ -1101,10 +1113,16 @@ export default function App() {
       for (let index = 0; index < runnableFields.length; index += 1) {
         const field = runnableFields[index];
         setBulkFillProgress({ current: index + 1, total: runnableFields.length });
-        fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, { syncDocument: false }) || fieldsSnapshot;
+        fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, { syncDocument: false, suppressPageSync: true }) || fieldsSnapshot;
       }
       queueFilledOfficeDocumentSync(fieldsSnapshot);
     } finally {
+      setFillPreviewPage(preservedFillPreviewPage);
+      window.setTimeout(() => {
+        if (fillPreviewPageLockRef.current === preservedFillPreviewPage) {
+          fillPreviewPageLockRef.current = null;
+        }
+      }, 2200);
       setGeneratingAll(false);
       setBulkFillProgress({ current: 0, total: 0 });
     }
@@ -1336,7 +1354,7 @@ export default function App() {
                 currentPage={fillPreviewPage}
                 fieldPageMap={fillFieldPageMap}
                 officeDocId={fillOfficeDocId}
-                onPreviewPageChange={setFillPreviewPage}
+                onPreviewPageChange={updateFillPreviewPage}
                 onFieldPagesChange={setFillFieldPageMap}
                 onSelectField={setSelectedFieldId}
                 onUploadMaterials={uploadMaterials}
