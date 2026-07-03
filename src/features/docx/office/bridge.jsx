@@ -107,6 +107,15 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
             },
             onDocumentReady: () => {
               config.events?.onDocumentReady?.();
+              if (mode === "fill") {
+                window.setTimeout(() => {
+                  postOnlyOfficeCommand(container, {
+                    source: "guangfa-parent",
+                    action: "set-track-revisions",
+                    enabled: trackRevisionsEnabledRef.current,
+                  });
+                }, 350);
+              }
             },
             onDownloadAs: (event) => {
               config.events?.onDownloadAs?.(event);

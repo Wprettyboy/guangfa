@@ -836,14 +836,15 @@
     const api = getEditorApi();
     const logicDocument = getLogicDocument();
     const attempts = [
-      function () { return api && typeof api.asc_SetTrackRevisions === "function" && api.asc_SetTrackRevisions(nextEnabled); },
-      function () { return api && typeof api.asc_setTrackRevisions === "function" && api.asc_setTrackRevisions(nextEnabled); },
-      function () { return api && typeof api.SetTrackRevisions === "function" && api.SetTrackRevisions(nextEnabled); },
-      function () { return logicDocument && typeof logicDocument.SetTrackRevisions === "function" && logicDocument.SetTrackRevisions(nextEnabled); },
+      function () { return callTrackRevisionSetter(api, "asc_SetTrackRevisions", nextEnabled); },
+      function () { return callTrackRevisionSetter(api, "asc_setTrackRevisions", nextEnabled); },
+      function () { return callTrackRevisionSetter(api, "SetTrackRevisions", nextEnabled); },
+      function () { return callTrackRevisionSetter(logicDocument, "SetTrackRevisions", nextEnabled); },
     ];
     for (const attempt of attempts) {
       try {
         const result = attempt();
+        if (result === "missing") continue;
         if (result !== false) {
           window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "track-revisions", ok: true, enabled: nextEnabled }, "*");
           return { ok: true, enabled: nextEnabled };
@@ -852,6 +853,11 @@
     }
     window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "track-revisions", ok: false, enabled: nextEnabled, error: "zl办公 修订模式接口不可用" }, "*");
     return { ok: false, enabled: nextEnabled, error: "zl办公 修订模式接口不可用" };
+  }
+
+  function callTrackRevisionSetter(target, method, enabled) {
+    if (!target || typeof target[method] !== "function") return "missing";
+    return target[method](enabled);
   }
 
   function enableTrackRevisions() {

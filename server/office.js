@@ -114,6 +114,7 @@ function buildOnlyOfficeConfig({ id, title, fileStat, previewId, sha }) {
       url: fileUrl,
       permissions: {
         edit: true,
+        review: true,
         download: true,
         print: true,
       },
