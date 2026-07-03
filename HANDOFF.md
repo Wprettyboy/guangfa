@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-02
+更新时间：2026-07-03
 
 ## 新会话先读
 
@@ -45,16 +45,73 @@ Invoke-WebRequest http://127.0.0.1:8080/healthcheck -UseBasicParsing
 Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ```
 
-## 核心文件
+## 文件地图
 
-- `src/main.jsx`：主前端，包含模板标注、填充确认、格式审核、OnlyOffice 预览。
-- `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
-- `server/ai.js`：AI 填充接口 `/api/ai/fill-field`、大纲审查接口 `/api/ai/format-outline-plan` 和知识库聊天接口 `/api/ai/chat`。
-- `server/knowledge-base.js`：知识库检索与召回。
-- `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
-- `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
+### 先看这里
+
+- `src/main.jsx`：前端入口，只做 React 挂载；不要再把业务逻辑堆回这里。
+- `src/App.jsx`：根状态与工作台编排，目前仍偏重；只放跨页面状态、批量填充编排、草稿保存这类上层逻辑。
+- `src/pages/AnnotateWorkspace.jsx`：模板标注页面组合。
+- `src/pages/FillWorkspace.jsx`：填充工作台页面组合。
+- `src/pages/FormatAuditWorkspace.jsx`：格式审核页面组合。
+
+### 填充工作台高频区
+
+- `src/features/docx/fill/FieldControls.jsx`：字段卡片、AI 填充按钮、编辑/确认、依据原文展示。
+- `src/features/docx/fill/helpers.js`：填充字段类型、写入模式、输入点/选区判断等前端辅助。
+- `src/features/docx/fill/previewAndExport.js`：填充预览、DOCX 导出、替换/选择写入前的前端处理。
+- `src/styles/fill.css`：填充工作台样式；字段卡片、依据原文、筛选条等样式优先改这里。
+
+### OnlyOffice / DOCX 高频区
+
+- `src/features/docx/runtime.jsx`：DOCX/OnlyOffice 运行时主组件，已拆过但仍是预览和消息流的核心汇合点。
+- `src/features/docx/office/bridge.jsx`：React 与 OnlyOffice 注入脚本之间的消息桥。
+- `src/features/docx/office/payload.js`：字段写入 OnlyOffice 的 payload 组装。
+- `src/features/docx/office/documentSync.js`：OnlyOffice 下载回传、刷新后文档状态同步。
+- `src/features/docx/annotate/markers.js`：模板标注、高亮、字段标记辅助。
+- `src/features/docx/preview/`：PDF/页面布局/大纲搜索等预览辅助模块。
+- `src/features/docx/structure/docxStructure.js`：DOCX 结构解析。
 - `scripts/onlyoffice-outline-probe.js`：注入 OnlyOffice 的桥接脚本，负责大纲、选区、页码、标注、输入点、保存、回填等消息。
-- `data/templates`、`data/knowledge`、`data/drafts`：本地业务数据。
+- `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
+- `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
+- `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
+
+### AI / 知识库高频区
+
+- `server/ai.js`：AI 路由分发入口；保持薄，不要放业务规则。
+- `server/ai/fill.js`：`/api/ai/fill-field` 主链路，包含召回、提示词拼装、后置校验、最终返回。
+- `server/ai/fill-rules.js`：填充模式、字段契约、金额/日期/选择型规则、证据约束辅助。
+- `server/ai/knowledge-query.js`：AI 填充前的核心检索词提取与知识库召回查询。
+- `server/ai/chat.js`：自研知识库聊天接口。
+- `server/ai/format-outline.js`：格式/大纲 AI 审查接口。
+- `server/ai/model.js`：模型调用封装。
+- `server/ai/debug-log.js`：AI 填充调试日志。
+- `server/knowledge-base.js`：知识库管理、检索与召回。
+
+### 样式高频区
+
+- `src/styles/index.css`：样式入口，只维护 import 顺序。
+- `src/styles/base.css`：全局基础样式。
+- `src/styles/layout.css`：主布局、左右面板、工作台栅格。
+- `src/styles/workspace.css`：工作台通用布局和折叠面板。
+- `src/styles/fill.css`：填充工作台。
+- `src/styles/audit.css`：格式审核。
+- `src/styles/knowledge.css`：知识库管理。
+- `src/styles/settings.css`：系统设置/模板管理。
+- `src/styles/responsive.css`：响应式修正。
+
+### 本地数据
+
+- `data/templates`：模板数据。
+- `data/knowledge`：知识库数据。
+- `data/drafts`：填充草稿。
+- `assets/test-materials`：本地测试资料。
+
+### 历史高频但不要继续堆
+
+- `src/main.jsx`：已压缩成入口。
+- `src/styles.css`：已拆为 `src/styles/`。
+- `server/ai.js`：已拆为 `server/ai/` 子模块。
 
 ## 当前技术路线
 
