@@ -926,6 +926,24 @@
     suppressPageSyncUntil = Math.max(suppressPageSyncUntil, until);
   }
 
+  function restoreVisiblePage(pageNumber) {
+    const page = Math.max(1, Number(pageNumber) || 0);
+    if (!page) return false;
+    const api = getEditorApi();
+    const logicDocument = getLogicDocument();
+    const attempts = [
+      function () { return api?.WordControl && typeof api.WordControl.GoToPage === "function" && api.WordControl.GoToPage(page - 1); },
+      function () { return window.Asc?.editor?.WordControl && typeof window.Asc.editor.WordControl.GoToPage === "function" && window.Asc.editor.WordControl.GoToPage(page - 1); },
+      function () { return logicDocument && typeof logicDocument.GoToPage === "function" && logicDocument.GoToPage(page - 1); },
+    ];
+    for (const attempt of attempts) {
+      try {
+        if (attempt() !== false) return true;
+      } catch {}
+    }
+    return false;
+  }
+
   function setFillFields(fields) {
     fillFields = Array.isArray(fields) ? fields.slice(0, 300) : [];
     postFieldPages("set-fields");
@@ -1441,9 +1459,16 @@
     if (data.source === "guangfa-parent" && data.action === "fill-field-value") {
       const field = data.field || {};
       const requestId = data.requestId || field.requestId || "";
-      if (field.suppressPageSync) suppressPageSync(1800);
+      const restorePage = field.suppressPageSync ? extractOnlyOfficeVisiblePage().page : 0;
+      if (field.suppressPageSync) suppressPageSync(3000);
       const result = fillBookmarkedField(field);
-      if (field.suppressPageSync) suppressPageSync(1800);
+      if (field.suppressPageSync) {
+        suppressPageSync(3000);
+        window.setTimeout(function () {
+          suppressPageSync(1200);
+          restoreVisiblePage(restorePage);
+        }, 80);
+      }
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-fill", result: { ...result, requestId } }, "*");
     }
     if (data.source === "guangfa-parent" && data.action === "sync-annotation-fields") {
