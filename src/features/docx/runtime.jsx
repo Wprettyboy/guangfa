@@ -224,18 +224,22 @@ function DocumentFrame({
   const isReady = renderState === "ready";
   const activePage = onPageChange ? currentPage : localPage;
   const activePageRef = useRef(activePage);
+  const stablePreviewId = templateFile?.previewId || [templateFile?.name || "", templateFile?.uploadedAt || "", templateFile?.size || "", templateFile?.buffer?.byteLength || 0].join("|");
+  const officeReloadBufferKey = mode === "fill" ? Boolean(templateFile?.buffer) : templateFile?.buffer;
   const previewIdentity = useMemo(
     () =>
-      [
-        mode,
-        templateFile?.previewId || "",
-        templateFile?.name || "",
-        templateFile?.size || "",
-        templateFile?.uploadedAt || "",
-        templateFile?.buffer?.byteLength || 0,
-        templateFile?.supported === false ? "unsupported" : "supported",
-      ].join("|"),
-    [mode, templateFile?.previewId, templateFile?.name, templateFile?.size, templateFile?.uploadedAt, templateFile?.buffer, templateFile?.supported],
+      mode === "fill"
+        ? [mode, stablePreviewId, templateFile?.supported === false ? "unsupported" : "supported"].join("|")
+        : [
+            mode,
+            templateFile?.previewId || "",
+            templateFile?.name || "",
+            templateFile?.size || "",
+            templateFile?.uploadedAt || "",
+            templateFile?.buffer?.byteLength || 0,
+            templateFile?.supported === false ? "unsupported" : "supported",
+          ].join("|"),
+    [mode, stablePreviewId, templateFile?.previewId, templateFile?.name, templateFile?.size, templateFile?.uploadedAt, templateFile?.buffer, templateFile?.supported],
   );
   const activeOfficePreview = officePreview?.previewIdentity === previewIdentity ? officePreview : null;
   const visibleAnnotationFields = annotationFields.filter((field) => (field.page || 1) === activePage);
@@ -327,7 +331,7 @@ function DocumentFrame({
         pdfUrlRef.current = "";
       }
     };
-  }, [isOfficeMode, mode, onOfficeDocumentReady, previewIdentity, templateFile?.buffer, templateFile?.supported]);
+  }, [isOfficeMode, mode, onOfficeDocumentReady, previewIdentity, officeReloadBufferKey, templateFile?.supported]);
 
   function refreshAuditPdfOutlinePages() {
     if (!isAuditPdfMode) return;
