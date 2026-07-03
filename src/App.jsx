@@ -32,10 +32,12 @@ import {
   initialTemplateFile,
 } from "./constants/templates.js";
 import {
-  clearPreviewMarkers,
   createPreviewId,
-  removePreviewMarker,
 } from "./features/docx/runtime.jsx";
+import {
+  clearPreviewMarkers,
+  removePreviewMarker,
+} from "./features/docx/annotate/markers.js";
 import {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,

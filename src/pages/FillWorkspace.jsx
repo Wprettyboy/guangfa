@@ -1,7 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Database, Download, FileText, FolderOpen, Info, Loader2, Upload, Wand2, X } from "lucide-react";
 import { FillFieldRow } from "../features/docx/fill/FieldControls.jsx";
-import { DocumentFrame, exportFilledDocx, getFillFieldDisplayPage } from "../features/docx/runtime.jsx";
+import { DocumentFrame, getFillFieldDisplayPage } from "../features/docx/runtime.jsx";
+import { exportFilledDocx } from "../features/docx/fill/docxXmlFill.js";
 import { buildExportFileName, downloadDocxBuffer, getExportStatusText } from "../utils/files.js";
 
 function MultiKnowledgeSelect({ label, emptyLabel, bases, selectedIds, onChange, disabled }) {

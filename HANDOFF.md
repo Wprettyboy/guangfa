@@ -59,12 +59,13 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - `src/features/docx/fill/FieldControls.jsx`：字段卡片、AI 填充按钮、编辑/确认、依据原文展示。
 - `src/features/docx/fill/helpers.js`：填充字段类型、写入模式、输入点/选区判断等前端辅助。
-- `src/features/docx/fill/previewAndExport.js`：填充预览、DOCX 导出、替换/选择写入前的前端处理。
+- `src/features/docx/fill/previewAndExport.js`：填充工作台的浏览器预览写入、DOM 选区/空白定位。
+- `src/features/docx/fill/docxXmlFill.js`：填充导出兜底的 DOCX XML 回写、修订痕迹、选择/日期/标签写入。
 - `src/styles/fill.css`：填充工作台样式；字段卡片、依据原文、筛选条等样式优先改这里。
 
 ### OnlyOffice / DOCX 高频区
 
-- `src/features/docx/runtime.jsx`：DOCX/OnlyOffice 运行时主组件，已拆过但仍是预览和消息流的核心汇合点。
+- `src/features/docx/runtime.jsx`：DOCX/OnlyOffice 运行时主组件，只导出 `DocumentFrame`、页码显示和少量运行时工具；不要再当总出口文件。
 - `src/features/docx/office/bridge.jsx`：React 与 OnlyOffice 注入脚本之间的消息桥。
 - `src/features/docx/office/payload.js`：字段写入 OnlyOffice 的 payload 组装。
 - `src/features/docx/office/documentSync.js`：OnlyOffice 下载回传、刷新后文档状态同步。
@@ -110,7 +111,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ### 历史高频但不要继续堆
 
 - `src/main.jsx`：已压缩成入口。
-- `src/styles.css`：已拆为 `src/styles/`。
+- `src/styles.css`：已删除，样式入口是 `src/styles/index.css`。
 - `server/ai.js`：已拆为 `server/ai/` 子模块。
 
 ## 当前技术路线
@@ -122,6 +123,15 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 5. 格式审核工作台保留脚本审查 + AI 大纲审查；修复仍由脚本写 DOCX 副本。
 
 ## 最近已完成
+
+### 前端运行时继续瘦身
+
+- `src/features/docx/runtime.jsx` 已去掉大批转出口，只保留运行时组件/工具出口，页面改为从真实模块直接 import。
+- `src/features/docx/runtime.jsx` 已清理迁移后遗留的 DOCX XML 命名空间和修订计数器常量，XML 导出逻辑统一在 `src/features/docx/fill/docxXmlFill.js`。
+- `src/features/docx/fill/previewAndExport.js` 已拆出 DOCX XML 导出兜底到 `src/features/docx/fill/docxXmlFill.js`，原文件聚焦浏览器预览写入。
+- 已删除旧空壳 `src/styles.css`，主入口直接使用 `src/styles/index.css`。
+- 已删除未使用的服务端 `server/docx-preview.js` 和 Vite 中间件；客户端 `docx-preview` fallback 仍在 `runtime.jsx` 中保留。
+- 已验证：`npm run build`、`node --check server\ai.js`、`node --check server\office.js` 通过；浏览器打开 `http://127.0.0.1:5173` 后刷新无新增前端 error，模板标注/填充确认/格式审核三个工作台切换正常。
 
 ### OnlyOffice 原生 AI 接本地模型
 
@@ -236,11 +246,11 @@ print(urllib.request.urlopen('http://host.docker.internal:8129/v1/models', timeo
 PY"
 ```
 
-5. 做业务修复前，先从 `src/main.jsx` 找完整调用链，不要只改当前按钮事件。
+5. 做业务修复前，先按上面的文件地图找完整调用链，不要从 `src/main.jsx` 入口文件下手，也不要只改当前按钮事件。
 
 ## 下一步可能继续的方向
 
 - 继续验证 OnlyOffice 原生 AI 插件在聊天/摘要/翻译中的实际响应效果。
 - 继续优化填充确认工作台：填空输入点、选择型字段、长文本字段的通用写入策略。
 - 继续稳定模板标注工作台：刷新后字段高亮持久化、字段页码与当前页联动。
-- 继续减少旧 `docx-preview/html docx` 逻辑残留。
+- 继续评估是否能移除客户端 `docx-preview` fallback；确认 OnlyOffice 覆盖所有预览场景后，再删除依赖和 `.docx-preview-host` 样式。
