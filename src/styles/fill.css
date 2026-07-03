@@ -350,6 +350,7 @@
 .field-table {
   padding: 0 10px 12px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-content: start;
   align-items: start;
@@ -358,6 +359,8 @@
 
 .field-row {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid #e3e9f2;
   border-radius: 7px;
   background: #ffffff;
@@ -396,6 +399,7 @@
 }
 
 .field-card-head strong {
+  min-width: 0;
   color: #25324a;
   font-size: 15px;
   line-height: 1.55;
@@ -404,6 +408,7 @@
 
 .field-value {
   grid-column: 1 / -1;
+  min-width: 0;
   color: #25324a;
   background: #f8fafc;
   border: 1px solid #e3e9f2;
@@ -426,6 +431,7 @@
 .field-reason,
 .field-value.supplement {
   grid-column: 1 / -1;
+  min-width: 0;
   color: #9f1239;
   background: #fff5f6;
   border: 1px solid #fecdd3;
@@ -515,6 +521,7 @@
 
 .field-evidence {
   grid-column: 1 / -1;
+  min-width: 0;
   border-left: 3px solid #8db7ff;
   background: #f3f7ff;
   border-radius: 6px;
@@ -532,10 +539,12 @@
   color: #334155;
   line-height: 1.55;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .field-evidence-line {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   margin-top: 5px;
