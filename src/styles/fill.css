@@ -125,6 +125,16 @@
   white-space: pre-wrap;
 }
 
+.field-context-warning {
+  border-color: #f0b46a;
+  background: #fff7ed;
+}
+
+.field-context-warning span,
+.field-context-warning p {
+  color: #9a4f00;
+}
+
 .field-form-actions {
   display: grid;
   gap: 10px;

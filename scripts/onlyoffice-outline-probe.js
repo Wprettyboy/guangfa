@@ -345,10 +345,15 @@
         postFieldPages("fill-choice-replacement");
         return { ...result, cleanupResult, id: field?.id, bookmarkName: getFieldBookmarkName(field), source: "choice-selection-replacement" };
       }
+      const scopedResult = replaceChoiceMarkerSelection(field);
+      if (scopedResult.ok) {
+        postFieldPages("fill-choice-field-bookmark");
+        return { ...scopedResult, id: field?.id, bookmarkName: getFieldBookmarkName(field), source: "choice-marker-bookmark" };
+      }
       const result = checkChoiceMarker(field);
       const amountResult = result.ok && (field?.amountValue || field?.fillMode === "amount-choice") ? fillAmountBlank(field) : null;
       postFieldPages("fill-choice-field");
-      return { ...result, amountResult, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
+      return { ...result, scopedResult, amountResult, id: field?.id, bookmarkName: getFieldBookmarkName(field) };
     }
     if (!selectFieldBookmark(field)) {
       return { ok: false, id: field?.id, bookmarkName: getFieldBookmarkName(field), error: "字段书签不存在，请重新标注并保存模板" };
@@ -403,6 +408,32 @@
     return { ok: false, source: "choice-marker", changed, error: "未在文档中定位到选项前的方框" };
   }
 
+  function replaceChoiceMarkerSelection(field) {
+    if (!selectFieldBookmark(field)) return { ok: false, source: "choice-marker-bookmark", error: "字段书签不存在" };
+    const replacement = buildChoiceMarkerSelectionText(field);
+    if (!replacement) return { ok: false, source: "choice-marker-bookmark", error: "未能基于标注选区生成选择结果" };
+    return replaceSelectedText(replacement);
+  }
+
+  function buildChoiceMarkerSelectionText(field) {
+    const source = String(field?.sourceText || field?.marker?.text || "");
+    const options = parseChoiceOptions(source);
+    const target = findChoiceOption(options, field);
+    if (!source || !target) return "";
+    let text = source;
+    options
+      .slice()
+      .sort(function (a, b) { return b.index - a.index; })
+      .forEach(function (option) {
+        const marker = option === target ? "☑" : uncheckedChoiceMarker(option.marker);
+        text = text.slice(0, option.index) + marker + text.slice(option.index + 1);
+      });
+    if (field?.fillMode === "amount-choice" && field?.amountValue) {
+      text = replaceAmountBlankInText(text, String(field.amountValue).trim());
+    }
+    return text;
+  }
+
   function removeNoRequirementChoiceOption(field) {
     const option = findNoRequirementChoiceOption(field);
     if (!option) return { ok: true, skipped: true, reason: "no-requirement-option-missing" };
@@ -433,6 +464,25 @@
       if (body.trim()) values.push(marker + body);
     });
     return Array.from(new Set(values));
+  }
+
+  function replaceAmountBlankInText(text, amount) {
+    const descriptor = getAmountBlankDescriptor(text);
+    if (!descriptor || !amount) return text;
+    if (descriptor.suffix) {
+      const suffixIndex = text.indexOf(descriptor.suffix);
+      if (suffixIndex > 0) {
+        const before = text.slice(0, suffixIndex);
+        const blank = before.match(/(?:_{2,}|＿+|—+|-{2,}|\s{2,})\s*$/);
+        if (blank) return `${before.slice(0, blank.index)}${amount}${text.slice(suffixIndex)}`;
+      }
+    }
+    if (descriptor.prefix) {
+      const prefixIndex = text.indexOf(descriptor.prefix);
+      const start = prefixIndex >= 0 ? prefixIndex + descriptor.prefix.length : -1;
+      if (start >= 0) return text.slice(0, start) + text.slice(start).replace(/_{2,}|＿+|—+|-{2,}|\s{2,}/, amount);
+    }
+    return text;
   }
 
   function fillAmountBlank(field) {
@@ -498,6 +548,7 @@
           marker: match[1],
           body: match[2].replace(/\s+/g, " ").replace(/\s+$/, ""),
           text: match[2].replace(/\s+/g, " ").trim(),
+          index: match.index,
         };
       })
       .filter(function (option) { return normalizeChoiceText(option.text).length >= 2; });
@@ -1372,8 +1423,10 @@
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "input-point", result }, "*");
     }
     if (data.source === "guangfa-parent" && data.action === "fill-field-value") {
-      const result = fillBookmarkedField(data.field || {});
-      window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-fill", result }, "*");
+      const field = data.field || {};
+      const requestId = data.requestId || field.requestId || "";
+      const result = fillBookmarkedField(field);
+      window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-fill", result: { ...result, requestId } }, "*");
     }
     if (data.source === "guangfa-parent" && data.action === "sync-annotation-fields") {
       try { restoreOnlyOfficeAnnotationFields(data.fields); } catch {}

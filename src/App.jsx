@@ -52,10 +52,11 @@ import {
   createDynamicSlot,
   getTemplateFieldSourceText,
   normalizeFieldCategory,
-  requiresInputPoint,
   getFieldWriteMode,
   hasInputPoint,
   normalizeFillMode,
+  getFieldSetupIssue,
+  sortFieldsByDocumentOrder,
 } from "./utils/fields.js";
 import {
   formatFileSize,
@@ -665,11 +666,17 @@ export default function App() {
     }
 
     const invalidFields = templateFields.filter((field) => !getTemplateFieldSourceText(field) || !(field.category || field.type || "").trim());
+    const setupIssues = templateFields
+      .map((field) => ({ field, issue: getFieldSetupIssue(field) }))
+      .filter((item) => item.issue);
     const hasPendingFields = templateFields.some((field) => field.status !== "已标注");
-    const isComplete = templateFields.length > 0 && invalidFields.length === 0 && !hasPendingFields;
+    const isComplete = templateFields.length > 0 && invalidFields.length === 0 && setupIssues.length === 0 && !hasPendingFields;
 
     if (!isComplete) {
       setSaveState("incomplete");
+      if (setupIssues.length > 0) {
+        window.alert(`有 ${setupIssues.length} 个字段缺少稳定写入位置：\n${setupIssues.slice(0, 6).map(({ field, issue }) => `- ${getTemplateFieldSourceText(field) || field.name || field.id}：${issue}`).join("\n")}`);
+      }
       return;
     }
 
@@ -899,22 +906,38 @@ export default function App() {
     return created;
   }
 
+  function isOnlyOfficeFillFailure(writeResult) {
+    return writeResult && writeResult.ok === false && !writeResult.skipped;
+  }
+
+  function markOnlyOfficeFillFailure(field, writeResult) {
+    return {
+      ...field,
+      status: "需补充资料",
+      confidence: 0,
+      source: "OnlyOffice 写入失败",
+      evidence: writeResult?.error || "未收到 OnlyOffice 写入回执，请确认填充预览已打开并重新尝试。",
+      sourceSnippetText: field.sourceSnippetText || "",
+    };
+  }
+
   async function fillFieldWithAI(fieldId, fieldsSnapshot = enrichedFillFields, options = {}) {
     const syncDocument = options.syncDocument !== false;
     const targetField = fieldsSnapshot.find((field) => field.id === fieldId);
     const templateField = templateFields.find((field) => field.id === fieldId);
     if (!targetField) return fieldsSnapshot;
     const contractField = { ...targetField, ...templateField };
+    const setupIssue = getFieldSetupIssue(contractField);
 
-    if (requiresInputPoint(contractField) && !hasInputPoint(contractField)) {
+    if (setupIssue) {
       const nextFieldsSnapshot = fieldsSnapshot.map((field) =>
         field.id === fieldId
           ? {
               ...field,
               status: "需补充资料",
               confidence: 0,
-              source: "缺少输入点",
-              evidence: "该字段是填空写入字段，请先在模板标注工作台把光标放到实际填写位置并添加输入点。",
+              source: "字段定位校验",
+              evidence: setupIssue,
               sourceSnippetText: "",
             }
           : field,
@@ -928,8 +951,8 @@ export default function App() {
                 ...field,
                 status: "需补充资料",
                 confidence: 0,
-                source: "缺少输入点",
-                evidence: "该字段是填空写入字段，请先在模板标注工作台把光标放到实际填写位置并添加输入点。",
+                source: "字段定位校验",
+                evidence: setupIssue,
                 sourceSnippetText: "",
               }
             : field,
@@ -998,7 +1021,14 @@ export default function App() {
             : field,
         ),
       );
-      requestOnlyOfficeFillField(appliedField);
+      const writeResult = await requestOnlyOfficeFillField(appliedField);
+      if (isOnlyOfficeFillFailure(writeResult)) {
+        const failedField = markOnlyOfficeFillFailure(appliedField, writeResult);
+        const failedFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? failedField : field));
+        enrichedFillFieldsRef.current = failedFieldsSnapshot;
+        setFillFields((fields) => fields.map((field) => (field.id === fieldId ? failedField : field)));
+        return failedFieldsSnapshot;
+      }
       if (syncDocument) queueFilledOfficeDocumentSync(nextFieldsSnapshot);
       return nextFieldsSnapshot;
     } catch (error) {
@@ -1029,18 +1059,44 @@ export default function App() {
   }
 
   async function generateAllFields() {
-    const pendingFields = enrichedFillFields.filter((field) => field.status !== "已确认" && field.status !== "生成中");
+    const pendingFields = sortFieldsByDocumentOrder(enrichedFillFields.filter((field) => field.status !== "已确认" && field.status !== "生成中"));
     if (pendingFields.length === 0 || generatingAll) return;
+    const blockedFields = pendingFields
+      .map((field) => {
+        const templateField = templateFields.find((item) => item.id === field.id);
+        return { field, issue: getFieldSetupIssue({ ...field, ...templateField }) };
+      })
+      .filter((item) => item.issue);
+    const runnableFields = pendingFields.filter((field) => !blockedFields.some((item) => item.field.id === field.id));
 
     setGeneratingAll(true);
-    setBulkFillProgress({ current: 0, total: pendingFields.length });
+    setBulkFillProgress({ current: 0, total: runnableFields.length });
     setShowCitations(false);
     window.clearTimeout(fillSyncTimerRef.current);
-    let fieldsSnapshot = enrichedFillFields;
+    let fieldsSnapshot = blockedFields.length
+      ? enrichedFillFields.map((field) => {
+          const blocked = blockedFields.find((item) => item.field.id === field.id);
+          return blocked
+            ? { ...field, status: "需补充资料", confidence: 0, source: "字段定位校验", evidence: blocked.issue, sourceSnippetText: "" }
+            : field;
+        })
+      : enrichedFillFields;
+    if (blockedFields.length > 0) {
+      enrichedFillFieldsRef.current = fieldsSnapshot;
+      setFillFields((fields) =>
+        fields.map((field) => {
+          const blocked = blockedFields.find((item) => item.field.id === field.id);
+          return blocked
+            ? { ...field, status: "需补充资料", confidence: 0, source: "字段定位校验", evidence: blocked.issue, sourceSnippetText: "" }
+            : field;
+        }),
+      );
+      window.alert(`有 ${blockedFields.length} 个字段缺少输入点或标注范围不完整，已跳过 AI 填充。`);
+    }
     try {
-      for (let index = 0; index < pendingFields.length; index += 1) {
-        const field = pendingFields[index];
-        setBulkFillProgress({ current: index + 1, total: pendingFields.length });
+      for (let index = 0; index < runnableFields.length; index += 1) {
+        const field = runnableFields[index];
+        setBulkFillProgress({ current: index + 1, total: runnableFields.length });
         fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, { syncDocument: false }) || fieldsSnapshot;
       }
       queueFilledOfficeDocumentSync(fieldsSnapshot);
@@ -1060,7 +1116,7 @@ export default function App() {
     );
   }
 
-  function updateFillFieldValue(fieldId, value) {
+  async function updateFillFieldValue(fieldId, value) {
     const targetField = enrichedFillFieldsRef.current.find((field) => field.id === fieldId);
     const appliedField = targetField
       ? {
@@ -1073,14 +1129,19 @@ export default function App() {
           sourceSnippetText: "",
         }
       : null;
+    let nextField = appliedField;
     if (appliedField && value.trim()) {
-      requestOnlyOfficeFillField(appliedField);
-      queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? appliedField : field)));
+      const writeResult = await requestOnlyOfficeFillField(appliedField);
+      nextField = isOnlyOfficeFillFailure(writeResult) ? markOnlyOfficeFillFailure(appliedField, writeResult) : appliedField;
+      enrichedFillFieldsRef.current = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? nextField : field));
+      if (!isOnlyOfficeFillFailure(writeResult)) {
+        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current);
+      }
     }
     setFillFields((fields) =>
       fields.map((field) =>
         field.id === fieldId
-          ? {
+          ? (nextField || {
               ...field,
               value,
               status: value.trim() ? "待确认" : "未填充",
@@ -1088,7 +1149,7 @@ export default function App() {
               source: "人工修改",
               evidence: value.trim() ? "用户对 AI 填充内容进行了人工修改。" : "用户清空了填充内容。",
               sourceSnippetText: "",
-            }
+            })
           : field,
       ),
     );

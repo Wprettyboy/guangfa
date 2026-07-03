@@ -65,6 +65,7 @@ import {
   getFieldDisplayText,
 
   getFillModeOptions,
+  getFieldSetupIssue,
 
   getTemplateFieldSourceText,
 
@@ -169,6 +170,8 @@ let aiRevisionId = 1000;
 let fillBookmarkId = 50000;
 
 let fillBookmarkNames = new Set();
+
+let onlyOfficeFillRequestSeq = 0;
 
 function getFillFieldDisplayPage(field, fieldPageMap = {}, hasDynamicFieldPages = false) {
   const mappedPage = hasDynamicFieldPages ? Number(fieldPageMap[field.id]) : 0;
@@ -1122,17 +1125,21 @@ function requestOnlyOfficeAddInputPoint(field) {
   });
 }
 
-function requestOnlyOfficeFillField(field) {
-  if (!field?.value && !field?.choiceValue) return;
+function requestOnlyOfficeFillField(field, options = {}) {
+  if (!field?.value && !field?.choiceValue) return Promise.resolve({ ok: false, skipped: true, reason: "empty-value", id: field?.id });
   if (requiresInputPoint(field) && !hasInputPoint(field)) {
     console.warn("[fill] skip write without input point", { id: field.id, sourceText: getTemplateFieldSourceText(field) });
-    return;
+    return Promise.resolve({ ok: false, skipped: true, reason: "missing-input-point", id: field.id });
   }
-  postAllOnlyOfficeFrames({
+  const requestId = options.requestId || `fill-${Date.now()}-${++onlyOfficeFillRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || 12000);
+  const message = {
     source: "guangfa-parent",
     action: "fill-field-value",
+    requestId,
     field: {
       id: field.id,
+      requestId,
       bookmarkName: getFillTargetBookmarkName(field),
       page: field.page,
       marker: field.marker?.text ? { text: field.marker.text } : null,
@@ -1145,7 +1152,26 @@ function requestOnlyOfficeFillField(field) {
       fillMode: normalizeFillMode(field.fillMode, field),
       fillText: buildOnlyOfficeLiveFillText(field),
     },
-  }, 0);
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "field-fill") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, id: field.id, requestId, timeout: true, error: "OnlyOffice 未在限定时间内确认字段写入。" }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 0);
+  });
 }
 
 function postAllOnlyOfficeFrames(message, attempts = 8) {
@@ -1511,6 +1537,7 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
   const modeLabel = category === "单选项" ? "单选细分" : "填空类型";
   const hasInput = hasInputPoint(field);
   const usesMarkedSelectionTarget = !hasInput && canUseMarkedSelectionAsFillTarget(field);
+  const setupIssue = getFieldSetupIssue({ ...field, category, type: category, fillMode });
 
   return (
     <div className="field-form">
@@ -1522,6 +1549,12 @@ function FieldForm({ field, onChange, onAddInputPoint }) {
         <span>填写输入点</span>
         <p>{hasInput ? `已设置，第 ${field.inputPoint?.page || field.page || 1} 页` : isReplacementField(field) ? "单选项将使用标注选区作为写入范围" : usesMarkedSelectionTarget ? "将使用标注选区作为填写范围" : "未设置，请把光标放到实际填写位置后点击添加输入点"}</p>
       </div>
+      {setupIssue ? (
+        <div className="field-context field-context-warning">
+          <span>写入校验</span>
+          <p>{setupIssue}</p>
+        </div>
+      ) : null}
       <label>
         <span>自动填充类别</span>
         <select value={category} onChange={(event) => updateType(event.target.value)}>

@@ -33,6 +33,7 @@ function createAnnotatedField(slot, order, typeOverride) {
     page: slot.page,
     path: slot.path,
     marker: slot.marker ?? null,
+    documentOrder: getFieldDocumentOrder(slot, order),
   };
 }
 
@@ -76,12 +77,13 @@ function pickTemplateFillContext(field) {
     path: field.path,
     marker: field.marker ?? null,
     inputPoint: field.inputPoint ?? null,
+    documentOrder: getFieldDocumentOrder(field),
   };
 }
 
-function normalizeTemplateFieldForRuntime(field = {}) {
+function normalizeTemplateFieldForRuntime(field = {}, index = 0) {
   const category = normalizeFieldCategory(field.category || field.type);
-  return { ...field, category, type: category, fillMode: normalizeFillMode(field.fillMode, field) };
+  return { ...field, category, type: category, fillMode: normalizeFillMode(field.fillMode, field), documentOrder: getFieldDocumentOrder(field, index + 1) };
 }
 
 function createDynamicSlot(target, order) {
@@ -99,6 +101,7 @@ function createDynamicSlot(target, order) {
     suggestedQuestion: text ? `模板上下文：${text.slice(0, 60)}` : "请补充字段说明",
     answerFormat: text || "按模板上下文填写",
     marker: target.marker ?? null,
+    documentOrder: getFieldDocumentOrder(target, order),
     aiInstruction:
       guessedType === "单选项"
         ? `根据资料自动判断并选择“${guessedName}”`
@@ -244,6 +247,49 @@ function hasFillBlank(text) {
   return /[_＿—-]{2,}|\s{2,}|(?<=[：:])\s+(?=元|万元|%|％|日历天|分钟|天)|(?<=的)\s+(?=%|％)/.test(text || "");
 }
 
+function getFieldDocumentOrder(field = {}, fallbackIndex = 0) {
+  const existing = Number(field.documentOrder);
+  if (Number.isFinite(existing) && existing > 0) return existing;
+  const page = Math.max(1, Number(field.page || field.marker?.page || field.inputPoint?.page || 1) || 1);
+  return page * 1000000000 + (getMarkerOrder(field.marker) || Math.max(1, Number(fallbackIndex) || 1));
+}
+
+function getMarkerOrder(marker = {}) {
+  const path = Array.isArray(marker.startPath) ? marker.startPath : Array.isArray(marker.elementPath) ? marker.elementPath : [];
+  if (!path.length) return 0;
+  const pathOrder = path
+    .slice(0, 4)
+    .reduce((sum, item) => sum * 100 + Math.min(99, Math.max(1, Number(item) + 1 || 1)), 0);
+  return pathOrder + Math.min(999, Math.max(0, Number(marker.startOffset) || 0)) / 1000;
+}
+
+function sortFieldsByDocumentOrder(fields = []) {
+  return [...fields].sort((a, b) => getFieldDocumentOrder(a) - getFieldDocumentOrder(b) || String(a.id || "").localeCompare(String(b.id || "")));
+}
+
+function getFieldSetupIssue(field = {}) {
+  const source = getTemplateFieldSourceText(field);
+  if (!source) return "未记录模板选区原文，请重新标注字段。";
+  const category = normalizeFieldCategory(field.category || field.type || field.defaultType);
+  const fillMode = normalizeFillMode(field.fillMode, { ...field, category, type: category });
+  if (category === "单选项") {
+    if (!hasChoiceMarker(source)) return "单选项需要框选包含选项方框的完整区域。";
+    if (fillMode === "amount-choice" && !hasAmountChoiceTarget(source)) return "金额+选择需要同时框选金额空白、金额单位和含税/不含税选项。";
+    return "";
+  }
+  if (requiresInputPoint(field) && !hasInputPoint(field)) return "当前字段不能从标注选区判断填写位置，请添加输入点。";
+  return "";
+}
+
+function hasChoiceMarker(text) {
+  return /[□☐○〇▢☑✓✔]/.test(text || "");
+}
+
+function hasAmountChoiceTarget(text) {
+  const source = String(text || "");
+  return hasChoiceMarker(source) && /含税|不含税/.test(source) && /金额|限价|报价|费用|预算|元|万元/.test(source) && hasFillBlank(source);
+}
+
 
 
 export {
@@ -276,5 +322,10 @@ export {
   guessFieldType,
   inferChoiceFieldName,
   hasFillBlank,
+  getFieldDocumentOrder,
+  sortFieldsByDocumentOrder,
+  getFieldSetupIssue,
+  hasChoiceMarker,
+  hasAmountChoiceTarget,
 };
 
