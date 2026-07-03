@@ -4,8 +4,10 @@ import {
   createChoiceReplacementFallbackResult,
   createDefaultPackageOrSegmentResult,
   createNoRequirementChoiceResult,
+  createParagraphSourceFallbackResult,
   describeFieldContract,
   extractChoiceReplacementCandidate,
+  extractParagraphSourceCandidate,
   getFillModeLabel,
   getFillModePromptRule,
   getFillOutputJsonPrompt,
@@ -196,8 +198,17 @@ async function fillField(payload) {
   }
 
   let value = normalizeFilledValueForTemplate(promptField, rawValue);
-  if (fillMode === "paragraph" && value && !isCopiedFromSource(value, sourceBundle)) {
-    const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中逐字定位，长文本填空不做语义改写。", contextualCitation || systemCitation, evidence);
+  const paragraphCopied = fillMode === "paragraph" && Boolean(value) && isCopiedFromSource(value, sourceBundle);
+  if (fillMode === "paragraph" && !paragraphCopied) {
+    const fallback = extractParagraphSourceCandidate(promptField, { value, source, evidence, retrievalQuery, rawRetrievalQuery }, knowledgeSnippets, materialSnippets);
+    if (fallback) {
+      const result = createParagraphSourceFallbackResult(fallback);
+      await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-source-fallback");
+      return result;
+    }
+  }
+  if (fillMode === "paragraph" && value && !paragraphCopied) {
+    const result = createSupplementResult("模型返回内容未能在知识库/上传资料召回片段中定位，且后端未找到对应语义原文，长文本不写入改写内容。", contextualCitation || systemCitation, evidence);
     await writeFillFinalDebugLog(runtime, debugContext, parsed, result, "paragraph-not-copied");
     return result;
   }

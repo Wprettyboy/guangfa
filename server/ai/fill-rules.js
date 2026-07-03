@@ -233,6 +233,117 @@ function createChoiceReplacementFallbackResult(candidate) {
   };
 }
 
+function extractParagraphSourceCandidate(field = {}, modelContext = {}, knowledgeSnippets = [], materialSnippets = []) {
+  const terms = getParagraphSourceTerms(field, modelContext);
+  if (!terms.length) return null;
+  const reference = `${modelContext.source || ""}\n${modelContext.evidence || ""}`;
+  const items = [
+    ...knowledgeSnippets.map((item, index) => ({ item, index, type: "knowledge" })),
+    ...materialSnippets.map((item, index) => ({ item, index, type: "material" })),
+  ];
+
+  return items
+    .map(({ item, index, type }) => {
+      const text = String(item.text || "").replace(/\s+/g, " ").trim();
+      if (!text) return null;
+      const sourceReferenced = isReferencedSource(reference, type, index + 1);
+      const score = scoreParagraphSourceCandidate(text, terms, modelContext, Number(item.score || 0), sourceReferenced);
+      if (score < 4) return null;
+      const source = type === "knowledge"
+        ? `知识库${index + 1}（${item.scope === "global" ? "全局库" : "项目库"}｜${item.documentName || "未命名资料"} 片段${item.chunkIndex || index + 1}）`
+        : `临时资料${index + 1}（${item.name || "未命名资料"}｜片段${item.chunkIndex || index + 1}）`;
+      return {
+        text: sliceParagraphSourceText(text, terms),
+        source,
+        sourceSnippetText: text,
+        score,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function getParagraphSourceTerms(field = {}, modelContext = {}) {
+  const context = [
+    field.name,
+    field.sourceText,
+    field.templateContext,
+    field.answerFormat,
+    field.question,
+    field.aiInstruction,
+    modelContext.retrievalQuery,
+    modelContext.rawRetrievalQuery,
+    modelContext.value,
+    modelContext.evidence,
+  ].filter(Boolean).join(" ");
+  const terms = [];
+  const add = (...items) => terms.push(...items);
+  const addIf = (pattern, ...items) => {
+    if (pattern.test(context)) add(...items);
+  };
+
+  addIf(/项目概况|工程概况|建设规模|建设内容|建筑面积|服务内容/, "项目概况", "工程概况", "建设规模", "工程建设规模", "总建筑面积", "建设内容", "服务内容");
+  addIf(/采购范围|实施范围|服务范围|主要施工内容|施工图范围|工作内容|包括但不限于|分项内容/, "采购范围", "实施范围", "服务范围", "主要施工内容", "施工图范围内", "工作内容", "包括但不限于");
+  addIf(/技术要求|商务要求|项目详细要求|实施内容/, "技术要求", "商务要求", "项目详细要求", "实施内容");
+  addIf(/业绩|履约能力|类似项目|合同关键页|发票/, "业绩要求", "履约能力", "类似项目业绩", "类似项目", "合同关键页");
+  addIf(/人员|项目经理|项目负责人|技术负责人|安全员|专职安全|项目团队|服务团队|职称|证书/, "人员要求", "实施人员要求", "项目团队", "项目负责人", "技术负责人", "专职安全生产管理人员", "职称", "证书");
+  addIf(/资质|资格|许可证|营业执照|劳务资质|安全生产许可证/, "资质要求", "资格要求", "安全生产许可证", "营业执照", "劳务资质");
+  addIf(/财务|审计|财务报表|亏损|纳税/, "财务要求", "财务状况", "审计报告", "财务报表", "亏损", "纳税");
+  addIf(/工期|合同工期|日历天|开工|完工|进场通知/, "工期", "合同工期", "日历天", "进场通知");
+  addIf(/付款|支付|进度款|结算款|质保金|缺陷责任/, "付款方式", "支付", "进度款", "结算款", "质保金", "缺陷责任");
+
+  return [...new Map(terms
+    .map((term) => [normalizeForSearch(term), term])
+    .filter(([key]) => key.length >= 2)).values()];
+}
+
+function scoreParagraphSourceCandidate(text, terms, modelContext = {}, baseScore = 0, sourceReferenced = false) {
+  const normalizedText = normalizeForSearch(text);
+  let score = sourceReferenced ? 20 : 0;
+  let matched = sourceReferenced ? 1 : 0;
+  terms.forEach((term) => {
+    const normalizedTerm = normalizeForSearch(term);
+    if (normalizedTerm && normalizedText.includes(normalizedTerm)) {
+      matched += 1;
+      score += Math.min(8, normalizedTerm.length);
+    }
+  });
+  if (isCopiedFromSource(modelContext.value, text)) {
+    matched += 1;
+    score += 30;
+  }
+  if (!/模型未返回明确证据片段/.test(String(modelContext.evidence || "")) && isCopiedFromSource(modelContext.evidence, text)) {
+    matched += 1;
+    score += 20;
+  }
+  return matched ? score + Math.min(10, Math.max(0, baseScore * 10)) : 0;
+}
+
+function isReferencedSource(reference, type, number) {
+  const prefix = type === "knowledge" ? "知识库" : "(?:临时资料|上传资料)";
+  return new RegExp(`${prefix}\\s*${number}(?=[（(:：\\s中提])`).test(String(reference || ""));
+}
+
+function sliceParagraphSourceText(text, terms = []) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  const starts = terms
+    .map((term) => normalized.indexOf(term))
+    .filter((index) => index >= 0);
+  const start = starts.length ? Math.min(...starts) : 0;
+  return normalized.slice(start > 120 ? start : 0, start > 120 ? start + 2000 : 2000).trim();
+}
+
+function createParagraphSourceFallbackResult(candidate) {
+  return {
+    value: candidate.text,
+    status: "待确认",
+    confidence: 76,
+    source: candidate.source,
+    evidence: candidate.text,
+    sourceSnippetText: candidate.sourceSnippetText || candidate.text,
+  };
+}
+
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {
   if (!isChoiceField(field)) return null;
   const status = String(parsed?.status || "").trim();
@@ -460,6 +571,10 @@ export {
   getChoiceReplacementThemeTerms,
   sliceChoiceReplacementText,
   createChoiceReplacementFallbackResult,
+  extractParagraphSourceCandidate,
+  getParagraphSourceTerms,
+  scoreParagraphSourceCandidate,
+  createParagraphSourceFallbackResult,
   sanitizeChoiceFillResult,
   sanitizeAmountChoiceFillResult,
   normalizeTaxChoiceValue,
