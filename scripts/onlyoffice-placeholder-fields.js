@@ -156,7 +156,7 @@
   }
 
   function insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager) {
-    return insertBookmarkedInlineText(text, bookmarkName, manager, { placeholderStyle: true });
+    return insertBookmarkedInlineText(text, bookmarkName, manager, { placeholderStyle: true, inheritDirectTextPr: true });
   }
 
   function insertBookmarkedInlineText(text, bookmarkName, manager, options) {
@@ -207,9 +207,12 @@
       const run = new ParaRun(tempParagraph, false);
       run.AddText(text);
 
-      const currentTextPr = safeCall(logicDocument, "GetDirectTextPr", null);
-      if (currentTextPr && typeof currentTextPr.Copy === "function" && typeof run.SetPr === "function") {
-        run.SetPr(currentTextPr.Copy());
+      const shouldInheritDirectTextPr = options?.inheritDirectTextPr !== false && options?.placeholderStyle !== false;
+      if (shouldInheritDirectTextPr) {
+        const currentTextPr = safeCall(logicDocument, "GetDirectTextPr", null);
+        if (currentTextPr && typeof currentTextPr.Copy === "function" && typeof run.SetPr === "function") {
+          run.SetPr(currentTextPr.Copy());
+        }
       }
       const placeholderTextPr = options?.placeholderStyle === false ? null : createPlaceholderTextPr();
       if (placeholderTextPr && typeof run.ApplyPr === "function") {
@@ -233,7 +236,7 @@
       safeCall(logicDocument, "UpdateInterface", null);
       safeCall(logicDocument, "UpdateSelection", null);
       safeCall(manager, "Update", null);
-      return { ok: true, source: "selected-content-bookmark-run", style: placeholderTextPr ? "highlight+bold+color" : "document-current-style" };
+      return { ok: true, source: "selected-content-bookmark-run", style: placeholderTextPr ? "highlight+bold+color" : shouldInheritDirectTextPr ? "document-current-style" : "plain-text" };
     } catch (error) {
       return { ok: false, error: error?.message || "自动字段标签生成失败" };
     } finally {
@@ -380,7 +383,7 @@
     if (!selected.ok) return selected;
     try {
       removePlaceholderBookmark(manager, bookmarkName);
-      const insertResult = insertBookmarkedInlineText(value, bookmarkName, manager, { placeholderStyle: false });
+      const insertResult = insertBookmarkedInlineText(value, bookmarkName, manager, { placeholderStyle: false, inheritDirectTextPr: false });
       if (!insertResult.ok) {
         return { ok: false, bookmarkName, page: selected.page, error: insertResult.error || "自动字段填充值写入失败" };
       }

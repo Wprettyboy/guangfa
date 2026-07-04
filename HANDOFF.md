@@ -223,7 +223,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `getEditorApi()`、`getLogicDocument()`：同上，用于取得编辑器 API 和逻辑文档。
   - `getBookmarkManager()`：优先 `api.asc_GetBookmarksManager()`，其次 `logicDocument.GetBookmarksManager()`。
   - `insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager)`：使用 OnlyOffice 段落、run、`CSelectedContent` 和 `CParagraphBookmark` 生成带书签的内联标签文本。
-  - `insertBookmarkedInlineText(text, bookmarkName, manager, options)`：复用 OnlyOffice 内联插入能力，按需保留标签样式或使用文档当前样式。
+  - `insertBookmarkedInlineText(text, bookmarkName, manager, options)`：复用 OnlyOffice 内联插入能力；`placeholderStyle` 控制是否应用标签视觉样式，`inheritDirectTextPr:false` 可按纯文本写入，不复制当前选区的直接字体属性。
   - `hasPlaceholderBookmark(manager, bookmarkName)`：优先 `asc_HaveBookmark`，其次 `HaveBookmark`。
   - `goToPlaceholderBookmark(manager, bookmarkName)`：优先 `asc_GoToBookmark`，其次 `GoToBookmark`。
   - `selectPlaceholderBookmark(bookmarkName)`：检查书签、跳转书签，并尝试 `asc_SelectBookmark` / `SelectBookmark` 选中范围。
@@ -246,6 +246,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `GetSelectedText` / `asc_GetSelectedText` / `getSelectedText`：读取当前选区文本。
 - `logicDocument.GetCurrentParagraph()` / `GetCurrentAnchorPosition()`：取得当前插入位置。
 - `logicDocument.RemoveBeforePaste()` / `Remove(...)`：删除当前选区文本。
+- `ParaRun.AddText(text)`：通过 OnlyOffice run 写入纯文本内容；不设置 run 直接字体属性时，字号等由当前位置的段落/样式体系决定。
 - `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。
 - `logicDocument.Recalculate()`、`UpdateInterface()`、`UpdateSelection()`：插入或删除后刷新文档状态和 UI。
 - `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
