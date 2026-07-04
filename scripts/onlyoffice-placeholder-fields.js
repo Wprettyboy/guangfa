@@ -230,26 +230,29 @@
   function applyInsertedPlaceholderHighlight() {
     const api = getEditorApi();
     try {
-      const apiDocument = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
-      const range = apiDocument && typeof apiDocument.GetRangeBySelect === "function" ? apiDocument.GetRangeBySelect() : null;
-      if (range && typeof range.SetHighlight === "function") {
-        const result = range.SetHighlight("lightGray");
-        if (result) return { ok: true, color: "D3D3D3", source: "api-range-highlight" };
-      }
-      if (range && typeof range.SetShd === "function") {
-        const result = range.SetShd("clear", 229, 231, 235);
-        if (result) return { ok: true, color: "E5E7EB", source: "api-range-shading" };
-      }
-    } catch {}
-    try {
       if (api && typeof api.put_LineHighLight === "function") {
         api.put_LineHighLight(true, 229, 231, 235);
-        return { ok: true, color: "E5E7EB", source: "line-highlight" };
+        if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
+        return { ok: true, color: "E5E7EB", source: "put-line-highlight" };
       }
     } catch (error) {
       return { ok: false, error: error?.message || "占位符灰色底纹设置失败" };
     }
-    return { ok: true, skipped: true, reason: "line-highlight-api-unavailable" };
+    try {
+      const apiDocument = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
+      const range = apiDocument && typeof apiDocument.GetRangeBySelect === "function" ? apiDocument.GetRangeBySelect() : null;
+      if (range && typeof range.SetShd === "function") {
+        const result = range.SetShd("clear", 229, 231, 235);
+        if (result) return { ok: true, color: "E5E7EB", source: "api-range-shading" };
+      }
+      if (range && typeof range.SetHighlight === "function") {
+        const result = range.SetHighlight("lightGray");
+        if (result) return { ok: true, color: "D3D3D3", source: "api-range-highlight" };
+      }
+    } catch (error) {
+      return { ok: false, error: error?.message || "占位符灰色底纹设置失败" };
+    }
+    return { ok: true, skipped: true, reason: "highlight-api-unavailable" };
   }
 
   function addBookmarkToCurrentSelection(manager, bookmarkName) {
