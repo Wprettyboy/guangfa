@@ -66,6 +66,9 @@ import {
 } from "./features/docx/office/documentSync.js";
 import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
 import {
+  normalizeDraftFillState,
+} from "./features/docx/fill/draftState.js";
+import {
   applyPlaceholderAnchors,
   buildPlaceholderToken,
   buildPlaceholderFillCards,
@@ -329,7 +332,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([readStoredTemplates(), readDraftState()]).then(async ([templates, draft]) => {
-      const draftToRestore = shouldRestoreDraftState(draft, templates) ? draft : null;
+      const draftToRestore = shouldRestoreDraftState(draft, templates) ? normalizeDraftFillState(draft) : null;
       if (draft && !draftToRestore) await clearDraftState();
       if (cancelled) return;
       setTemplateLibrary(templates);
@@ -449,7 +452,7 @@ export default function App() {
           selectedGlobalKnowledgeBaseIds,
         }
       : null;
-    draftAutosaveSnapshotRef.current = shouldSaveWorkspaceDraft(nextDraftSnapshot, templateLibrary) ? nextDraftSnapshot : null;
+    draftAutosaveSnapshotRef.current = shouldSaveWorkspaceDraft(nextDraftSnapshot, templateLibrary) ? normalizeDraftFillState(nextDraftSnapshot) : null;
   }, [
     activeWorkspace,
     activeModule,
@@ -553,7 +556,7 @@ export default function App() {
           file?.buffer && file.previewId === sourcePreviewId ? { ...file, buffer: buffer.slice(0), size: formatFileSize(buffer.byteLength) } : file,
         );
         console.log("[annotate] synced highlighted docx", { id: officeDocId, bytes: buffer.byteLength });
-        const nextDraft = {
+        const nextDraft = normalizeDraftFillState({
           activeModule,
           activeWorkspace: "annotate",
           annotateSidePanelMode,
@@ -574,7 +577,7 @@ export default function App() {
           fillPreviewPage,
           selectedProjectKnowledgeBaseIds,
           selectedGlobalKnowledgeBaseIds,
-        };
+        });
         if (shouldSaveWorkspaceDraft(nextDraft, templateLibrary)) {
           await saveDraftState(nextDraft);
         }
@@ -613,7 +616,7 @@ export default function App() {
         filledTemplateBufferRef.current = buffer.slice(0);
         filledTemplateDraftFileRef.current = filledFile;
         setFilledTemplateFile(filledFile);
-        await saveDraftState({
+        await saveDraftState(normalizeDraftFillState({
           activeModule,
           activeWorkspace: "fill",
           annotateSidePanelMode,
@@ -635,7 +638,7 @@ export default function App() {
           fillPreviewPage,
           selectedProjectKnowledgeBaseIds,
           selectedGlobalKnowledgeBaseIds,
-        });
+        }));
         console.log("[fill] synced filled docx", { bytes: buffer.byteLength, fields: fieldsSnapshot.length });
       } catch {
         // Fill persistence is best effort; the visible OnlyOffice document should keep working.
@@ -1195,7 +1198,7 @@ export default function App() {
     setFillFields(createFillFieldsFromTemplate(normalizedTemplateFields, fillFields));
     setSelectedFieldId(normalizedTemplateFields[0]?.id ?? "");
     setCitationFieldId(normalizedTemplateFields[0]?.id ?? "");
-    await saveDraftState({
+    await saveDraftState(normalizeDraftFillState({
       activeModule,
       activeWorkspace: "annotate",
       annotateSidePanelMode,
@@ -1216,7 +1219,7 @@ export default function App() {
       fillPreviewPage,
       selectedProjectKnowledgeBaseIds,
       selectedGlobalKnowledgeBaseIds,
-    });
+    }));
     setSaveState("saved");
   }
 
