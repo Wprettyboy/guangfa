@@ -167,11 +167,57 @@
     } catch {}
   }
 
-  function postInsertedResult(result) {
-    const message = { source: "guangfa-onlyoffice-custom", action: "placeholder-anchor-inserted", result };
+  function postPlaceholderResult(action, result) {
+    const message = { source: "guangfa-onlyoffice-custom", action, result };
     try { window.parent?.postMessage(message, "*"); } catch {}
     try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
     return result;
+  }
+
+  function postInsertedResult(result) {
+    return postPlaceholderResult("placeholder-anchor-inserted", result);
+  }
+
+  function selectPlaceholderBookmark(bookmarkName) {
+    const manager = getBookmarkManager();
+    if (!manager || !bookmarkName || typeof manager.SelectBookmark !== "function") {
+      return { ok: false, bookmarkName, error: "OnlyOffice 书签定位接口不可用" };
+    }
+    try {
+      if (manager.SelectBookmark(bookmarkName) === false) {
+        return { ok: false, bookmarkName, error: "未找到对应自动字段书签" };
+      }
+      const page = getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", null));
+      return { ok: true, bookmarkName, page };
+    } catch (error) {
+      return { ok: false, bookmarkName, error: error?.message || "自动字段书签定位失败" };
+    }
+  }
+
+  function jumpToPlaceholderAnchor(payload = {}) {
+    const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || "");
+    const requestId = payload.requestId || "";
+    const result = selectPlaceholderBookmark(bookmarkName);
+    return postPlaceholderResult("placeholder-anchor-selected", { ...result, requestId });
+  }
+
+  function deletePlaceholderAnchor(payload = {}) {
+    const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || "");
+    const requestId = payload.requestId || "";
+    const selected = selectPlaceholderBookmark(bookmarkName);
+    if (!selected.ok) return postPlaceholderResult("placeholder-anchor-deleted", { ...selected, requestId });
+    const manager = getBookmarkManager();
+    const removeText = removeSelectedTextForReplacement();
+    if (!removeText.ok) {
+      return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page, error: removeText.error });
+    }
+    try {
+      if (typeof manager?.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
+      saveDocument("placeholder-variable-delete");
+      return postPlaceholderResult("placeholder-anchor-deleted", { ok: true, requestId, bookmarkName, page: selected.page });
+    } catch (error) {
+      return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page, error: error?.message || "自动字段书签删除失败" });
+    }
   }
 
   function insertPlaceholderVariable(payload = {}) {
@@ -227,11 +273,19 @@
   }
 
   window.guangfaInsertPlaceholderVariable = insertPlaceholderVariable;
+  window.guangfaJumpToPlaceholderAnchor = jumpToPlaceholderAnchor;
+  window.guangfaDeletePlaceholderAnchor = deletePlaceholderAnchor;
 
   window.addEventListener("message", function (event) {
     const data = event.data || {};
     if (data.source === "guangfa-parent" && data.action === "insert-placeholder-variable") {
       insertPlaceholderVariable(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "select-placeholder-anchor") {
+      jumpToPlaceholderAnchor(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "delete-placeholder-anchor") {
+      deletePlaceholderAnchor(data);
     }
   });
 })();

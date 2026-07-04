@@ -1454,10 +1454,6 @@
     if (data.source === "guangfa-parent" && data.action === "save-document") {
       saveOnlyOfficeDocument(data.trigger);
     }
-    if (data.source === "guangfa-parent" && data.action === "go-to-page") {
-      const page = Math.max(1, Number(data.page) || 1);
-      if (restoreVisiblePage(page)) postPageChange(page, "jump-command");
-    }
     if (data.source === "guangfa-parent" && data.action === "add-field-bookmark") {
       const result = addBookmarkToCurrentSelection(data.field || {});
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-bookmark", result }, "*");

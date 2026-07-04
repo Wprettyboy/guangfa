@@ -259,13 +259,42 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
   });
 }
 
-function requestOnlyOfficeGoToPage(page) {
-  const targetPage = Math.max(1, Number(page) || 1);
-  postAllOnlyOfficeFrames({
+function requestOnlyOfficeSelectPlaceholderAnchor(anchor) {
+  return requestOnlyOfficePlaceholderAnchorAction("select-placeholder-anchor", "placeholder-anchor-selected", anchor);
+}
+
+function requestOnlyOfficeDeletePlaceholderAnchor(anchor) {
+  return requestOnlyOfficePlaceholderAnchorAction("delete-placeholder-anchor", "placeholder-anchor-deleted", anchor);
+}
+
+function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) {
+  const requestId = `placeholder-${Date.now()}-${++onlyOfficePlaceholderRequestSeq}`;
+  const message = {
     source: "guangfa-parent",
-    action: "go-to-page",
-    page: targetPage,
-  }, 2);
+    action,
+    requestId,
+    bookmarkName: anchor?.bookmarkName,
+    anchor,
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== resultAction) return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段书签命令。" }), 8000);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 8);
+  });
 }
 
 function postAllOnlyOfficeFrames(message, attempts = 8) {
@@ -368,7 +397,8 @@ export {
   requestOnlyOfficeAddInputPoint,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
+  requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeFillField,
-  requestOnlyOfficeGoToPage,
   requestOnlyOfficeInsertPlaceholderVariable,
+  requestOnlyOfficeSelectPlaceholderAnchor,
 };

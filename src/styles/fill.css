@@ -445,7 +445,7 @@
 
 .placeholder-maintenance-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) 36px;
+  grid-template-columns: minmax(220px, 1fr) 36px;
   gap: 12px;
   align-items: center;
   min-height: 54px;
@@ -474,16 +474,6 @@
   color: #25324a;
 }
 
-.placeholder-maintenance-row em {
-  min-width: 0;
-  color: #728097;
-  font-size: 12px;
-  font-style: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .placeholder-card-anchor-list {
   display: grid;
   min-width: 0;
@@ -505,7 +495,7 @@
 .placeholder-anchor-head,
 .placeholder-anchor-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 86px;
+  grid-template-columns: 34px minmax(0, 1fr) 72px 32px;
   gap: 8px;
   align-items: center;
 }
@@ -573,6 +563,10 @@
 
 .placeholder-page-link:hover {
   background: #dbeafe;
+}
+
+.placeholder-anchor-delete {
+  justify-self: end;
 }
 
 .template-library-list {

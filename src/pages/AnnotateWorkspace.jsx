@@ -32,6 +32,7 @@ function AnnotateWorkspace({
   onDeletePlaceholderVariable,
   onInsertPlaceholderVariable,
   onJumpPlaceholderAnchor,
+  onDeletePlaceholderAnchor,
   onPlaceholderAnchorsDetected,
   onPlaceholderAnchorInserted,
   onOpenPlaceholderPanel,
@@ -119,6 +120,7 @@ function AnnotateWorkspace({
             onDeleteVariable={onDeletePlaceholderVariable}
             onInsertVariable={onInsertPlaceholderVariable}
             onJumpAnchor={onJumpPlaceholderAnchor}
+            onDeleteAnchor={onDeletePlaceholderAnchor}
             onBack={() => onSidePanelModeChange?.("fields")}
           />
         ) : (
@@ -217,7 +219,7 @@ function AnnotateWorkspace({
   );
 }
 
-function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onJumpAnchor, onBack }) {
+function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onJumpAnchor, onDeleteAnchor, onBack }) {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [collapsedVariables, setCollapsedVariables] = useState({});
 
@@ -285,16 +287,20 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
                         <span>序号</span>
                         <span>书签</span>
                         <span>页面</span>
+                        <span>操作</span>
                       </div>
                       {anchorRows.map((anchor, index) => (
                         <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
                           <span className="row-index">{index + 1}</span>
                           <div className="placeholder-anchor-copy">
-                            <strong>{anchor.token}</strong>
-                            <span>{anchor.bookmarkName}</span>
+                            <strong>{anchor.bookmarkName}</strong>
+                            <span>{anchor.token}</span>
                           </div>
                           <button className="placeholder-page-link" type="button" onClick={() => onJumpAnchor?.(anchor)}>
                             {anchor.pageLabel}
+                          </button>
+                          <button className="placeholder-anchor-delete icon-button quiet" type="button" aria-label={`删除${anchor.bookmarkName}`} onClick={() => onDeleteAnchor?.(anchor)}>
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       ))}
@@ -386,21 +392,17 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
                 <Highlighter size={16} />
                 <span>暂无字段变量</span>
               </div>
-            ) : variables.map((variable) => {
-              const count = anchors.filter((anchor) => anchor.variableId === variable.id).length;
-              return (
+            ) : variables.map((variable) => (
                 <div className="placeholder-maintenance-row" key={variable.id}>
                   <label>
                     <span>字段名称</span>
                     <input value={variable.name} onChange={(event) => onRenameVariable?.(variable.id, event.target.value)} />
                   </label>
-                  <em>{variable.token || "{{字段名}}"} · 已插入 {count} 处</em>
                   <button className="icon-button quiet" type="button" aria-label={`删除${variable.name || "字段"}`} onClick={() => onDeleteVariable?.(variable.id)}>
                     <Trash2 size={15} />
                   </button>
                 </div>
-              );
-            })}
+              ))}
           </div>
         </div>
         <div className="modal-actions">

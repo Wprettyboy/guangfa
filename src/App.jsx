@@ -41,11 +41,12 @@ import {
 import {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
+  requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
-  requestOnlyOfficeGoToPage,
   requestOnlyOfficeInsertPlaceholderVariable,
+  requestOnlyOfficeSelectPlaceholderAnchor,
 } from "./features/docx/office/bridge.jsx";
 import {
   fetchOfficeDocumentBuffer,
@@ -746,10 +747,31 @@ export default function App() {
   }
 
   function jumpToPlaceholderAnchor(anchor) {
-    const page = Math.max(1, Number(anchor?.page) || 1);
-    setAnnotatePreviewPage(page);
-    requestOnlyOfficeGoToPage(page);
     setAnnotateSidePanelMode("placeholders");
+    requestOnlyOfficeSelectPlaceholderAnchor(anchor).then((result) => {
+      if (result?.timeout || !result?.ok) {
+        window.alert(result?.error || "OnlyOffice 未能定位该自动字段书签。");
+        return;
+      }
+      const page = Math.max(1, Number(result.page || anchor?.page) || 1);
+      setAnnotatePreviewPage(page);
+    });
+  }
+
+  function deletePlaceholderAnchor(anchor) {
+    if (!anchor?.bookmarkName) return;
+    requestOnlyOfficeDeletePlaceholderAnchor(anchor).then((result) => {
+      if (result?.timeout || !result?.ok) {
+        window.alert(result?.error || "OnlyOffice 未能删除该自动字段书签。");
+        return;
+      }
+      const bookmarkName = result.bookmarkName || anchor.bookmarkName;
+      const nextAnchors = placeholderAnchorsRef.current.filter((item) => item.bookmarkName !== bookmarkName);
+      setPlaceholderAnchors(nextAnchors);
+      setAnnotateSidePanelMode("placeholders");
+      setSaveState("dirty");
+      syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors, placeholderVariablesRef.current);
+    });
   }
 
   function applyPlaceholderAnchorResult(result) {
@@ -1485,6 +1507,7 @@ export default function App() {
                 onDeletePlaceholderVariable={removePlaceholderVariable}
                 onInsertPlaceholderVariable={insertPlaceholderVariable}
                 onJumpPlaceholderAnchor={jumpToPlaceholderAnchor}
+                onDeletePlaceholderAnchor={deletePlaceholderAnchor}
                 onPlaceholderAnchorsDetected={applyPlaceholderAnchorResult}
                 onPlaceholderAnchorInserted={applyPlaceholderAnchorResult}
                 onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}
