@@ -45,6 +45,7 @@ import {
 import {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
+  requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
@@ -836,6 +837,7 @@ export default function App() {
     setPlaceholderAnchors(nextAnchors);
     setAnnotateSidePanelMode("placeholders");
     setSaveState("dirty");
+    requestOnlyOfficeDeletePlaceholderAnchor(anchor).catch(() => {});
   }
 
   function applyPlaceholderAnchorResult(result) {

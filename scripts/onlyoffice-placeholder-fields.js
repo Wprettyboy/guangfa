@@ -431,7 +431,6 @@
           if (!removeStaleText.ok || removeStaleText.skipped) {
             return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, stale: true, requestId, bookmarkName, page: searchResult.page, error: removeStaleText.error || "未能选中自动字段文本，未删除文档内容。" });
           }
-          saveDocument("placeholder-variable-delete-stale");
         } else if (token && searchResult.error !== "未找到对应自动字段文本") {
           return postPlaceholderResult("placeholder-anchor-deleted", { ...searchResult, ok: false, stale: true, requestId, bookmarkName });
         }
@@ -453,7 +452,6 @@
     try {
       if (typeof manager?.asc_RemoveBookmark === "function") manager.asc_RemoveBookmark(bookmarkName);
       else if (typeof manager?.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
-      saveDocument("placeholder-variable-delete");
       return postPlaceholderResult("placeholder-anchor-deleted", { ok: true, requestId, bookmarkName, page: selected.page });
     } catch (error) {
       return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page, error: error?.message || "自动字段书签删除失败" });
