@@ -38,12 +38,12 @@ html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister,
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 html = re.sub(r'\s*<script src="guangfa-placeholder-fields\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=62"></script>\n<script src="guangfa-placeholder-fields.js?gf=23"></script>\n</body>')
-html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=14"', html)
-if 'urlArgs: "gf=14"' not in html:
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=62"></script>\n<script src="guangfa-placeholder-fields.js?gf=24"></script>\n</body>')
+html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=15"', html)
+if 'urlArgs: "gf=15"' not in html:
     html = html.replace(
         "var require = {\n            waitSeconds: 30,",
-        'var require = {\n            waitSeconds: 30,\n            urlArgs: "gf=14",',
+        'var require = {\n            waitSeconds: 30,\n            urlArgs: "gf=15",',
     )
 write_patched(index, html)
 
@@ -61,7 +61,7 @@ for api in [
 ]:
     if api.exists():
         text = api.read_text(encoding="utf-8")
-        next_text = re.sub(r'var params = "\?_dc=9\.4\.0-129(?:-gf\d+)?";', 'var params = "?_dc=9.4.0-129-gf23";', text)
+        next_text = re.sub(r'var params = "\?_dc=9\.4\.0-129(?:-gf\d+)?";', 'var params = "?_dc=9.4.0-129-gf24";', text)
         if next_text != text:
             api.chmod(0o644)
             api.write_text(next_text, encoding="utf-8")

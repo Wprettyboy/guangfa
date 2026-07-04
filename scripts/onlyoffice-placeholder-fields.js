@@ -30,14 +30,15 @@
 
   function getBookmarkManager() {
     const api = getEditorApi();
+    const logicDocument = getLogicDocument();
+    const logicManager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
     try {
       if (api && typeof api.asc_GetBookmarksManager === "function") {
         const manager = api.asc_GetBookmarksManager();
-        if (manager) return manager;
+        if (manager && (!logicManager || typeof manager.GetNewBookmarkId === "function")) return manager;
       }
     } catch {}
-    const logicDocument = getLogicDocument();
-    return logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
+    return logicManager;
   }
 
   function normalizeName(name) {
@@ -186,168 +187,98 @@
     }
   }
 
-  function enterText(text) {
-    const api = getEditorApi();
+  function createPlaceholderTextPr() {
+    const CTextPr = window.AscWord?.CTextPr || window.AscCommonWord?.CTextPr;
+    const CDocumentColor = window.AscCommonWord?.CDocumentColor;
+    if (typeof CTextPr !== "function") return null;
+    const textPr = new CTextPr();
+    if (typeof textPr.SetBold === "function") textPr.SetBold(true);
+    if (typeof textPr.SetColor === "function") textPr.SetColor(31, 78, 121, false);
+    if (typeof textPr.SetHighlight === "function" && typeof CDocumentColor === "function") {
+      textPr.SetHighlight(new CDocumentColor(229, 231, 235, false));
+    }
+    return textPr;
+  }
+
+  function insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager) {
     const logicDocument = getLogicDocument();
-    try {
-      if (api && typeof api.asc_enterText === "function") {
-        api.asc_enterText(Array.from(text).map(function (char) { return char.codePointAt(0); }));
-        return { ok: true, source: "asc-enter-text" };
-      }
-      if (logicDocument && typeof logicDocument.EnterText === "function") {
-        logicDocument.EnterText(text);
-        return { ok: true, source: "logic-enter-text" };
-      }
-      return { ok: false, error: "文本输入接口不可用" };
-    } catch (error) {
-      return { ok: false, error: error?.message || "占位符写入失败" };
-    }
-  }
-
-  function selectInsertedText(text) {
-    const logicDocument = getLogicDocument();
-    if (!logicDocument || typeof logicDocument.MoveCursorLeft !== "function") {
-      return { ok: false, error: "光标选择接口不可用" };
-    }
-    try {
-      Array.from(text).forEach(function () {
-        logicDocument.MoveCursorLeft(true, false);
-      });
-      const selectedText = normalizeSelectionText(readSelectedText(logicDocument) || readSelectedText(getEditorApi()));
-      const compactSelected = compactSelectionText(selectedText);
-      const compactExpected = compactSelectionText(text);
-      if (compactSelected !== compactExpected) {
-        return { ok: false, selectedText, error: "未能重新选中刚插入的占位符，请撤销后重试。" };
-      }
-      safeCall(logicDocument, "UpdateSelection", null);
-      safeCall(logicDocument, "UpdateInterface", null);
-      return { ok: true, selectedText, selectionState: safeCall(logicDocument, "GetSelectionState", null) };
-    } catch (error) {
-      return { ok: false, error: error?.message || "占位符选区定位失败" };
-    }
-  }
-
-  function restoreSelectionState(selectionState) {
-    const logicDocument = getLogicDocument();
-    if (!selectionState || !logicDocument || typeof logicDocument.SetSelectionState !== "function") return false;
-    try {
-      logicDocument.SetSelectionState(selectionState);
-      safeCall(logicDocument, "UpdateSelection", null);
-      safeCall(logicDocument, "UpdateInterface", null);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function applyInsertedPlaceholderHighlight(selectionState) {
-    const api = getEditorApi();
-    const sources = [];
-    let lastError = null;
-    try {
-      restoreSelectionState(selectionState);
-      if (api && typeof api.SetMarkerFormat === "function") {
-        api.SetMarkerFormat(true, true, 229, 231, 235);
-        api.SetMarkerFormat(false);
-        sources.push("set-marker-format");
-      }
-    } catch (error) {
-      lastError = error;
-    }
-    try {
-      restoreSelectionState(selectionState);
-      if (api && typeof api.put_LineHighLight === "function") {
-        api.put_LineHighLight(true, 229, 231, 235);
-        sources.push("put-line-highlight");
-      }
-    } catch (error) {
-      lastError = error;
-    }
-    if (sources.length > 0) {
-      if (api && typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
-      return { ok: true, color: "E5E7EB", source: sources.join("+") };
-    }
-    try {
-      restoreSelectionState(selectionState);
-      const apiDocument = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
-      const range = apiDocument && typeof apiDocument.GetRangeBySelect === "function" ? apiDocument.GetRangeBySelect() : null;
-      if (range && typeof range.SetShd === "function") {
-        const result = range.SetShd("clear", 229, 231, 235);
-        if (result) return { ok: true, color: "E5E7EB", source: "api-range-shading" };
-      }
-      if (range && typeof range.SetHighlight === "function") {
-        const result = range.SetHighlight("lightGray");
-        if (result) return { ok: true, color: "D3D3D3", source: "api-range-highlight" };
-      }
-    } catch (error) {
-      return { ok: false, error: error?.message || "占位符灰色底纹设置失败" };
-    }
-    if (lastError) return { ok: false, error: lastError?.message || "占位符灰色底纹设置失败" };
-    return { ok: true, skipped: true, reason: "highlight-api-unavailable" };
-  }
-
-  function addBookmarkToCurrentSelection(manager, bookmarkName) {
-    let managerResult = null;
-    try {
-      const apiDocument = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
-      const range = apiDocument && typeof apiDocument.GetRangeBySelect === "function" ? apiDocument.GetRangeBySelect() : null;
-      if (range && typeof range.AddBookmark === "function") {
-        const rangeResult = range.AddBookmark(bookmarkName);
-        if (rangeResult !== false) return { ok: true, source: "api-range" };
-      }
-    } catch {}
-    try {
-      if (typeof manager?.asc_AddBookmark === "function") {
-        const result = manager.asc_AddBookmark(bookmarkName);
-        managerResult = { ok: result !== false, source: "asc-bookmarks-manager" };
-        if (hasPlaceholderBookmark(manager, bookmarkName)) return managerResult;
-      } else if (typeof manager?.AddBookmark === "function") {
-        const result = manager.AddBookmark(bookmarkName);
-        managerResult = { ok: result !== false, source: "bookmarks-manager" };
-        if (hasPlaceholderBookmark(manager, bookmarkName)) return managerResult;
-      }
-    } catch (error) {
-      return { ok: false, error: error?.message || "自动字段书签创建失败" };
-    }
-    const directResult = addBookmarkCharsToSelection(manager, bookmarkName);
-    if (directResult.ok) return directResult;
-    if (managerResult) return managerResult;
-    return { ok: false, error: "OnlyOffice 书签新增接口不可用" };
-  }
-
-  function addBookmarkCharsToSelection(manager, bookmarkName) {
-    const logicDocument = getLogicDocument();
+    const Paragraph = window.AscWord?.Paragraph;
+    const ParaRun = window.AscWord?.ParaRun || window.AscCommonWord?.ParaRun;
     const BookmarkClass = window.AscWord?.CParagraphBookmark || window.AscCommonWord?.CParagraphBookmark;
-    if (!logicDocument || !BookmarkClass || typeof manager?.GetNewBookmarkId !== "function") {
-      return { ok: false, error: "OnlyOffice 书签字符接口不可用" };
+    const SelectedContent = window.AscCommonWord?.CSelectedContent;
+    const SelectedElement = window.AscCommonWord?.CSelectedElement;
+    if (!logicDocument || !manager || typeof manager.GetNewBookmarkId !== "function") {
+      return { ok: false, error: "OnlyOffice 书签生成接口不可用" };
     }
-    const paragraphs = safeCall(logicDocument, "GetCurrentParagraph", [], false, true);
-    if (!Array.isArray(paragraphs) || paragraphs.length <= 0) {
-      return { ok: false, error: "未获取到自动字段选区段落" };
+    if (
+      typeof Paragraph !== "function"
+      || typeof ParaRun !== "function"
+      || typeof BookmarkClass !== "function"
+      || typeof SelectedContent !== "function"
+      || typeof SelectedElement !== "function"
+    ) {
+      return { ok: false, error: "OnlyOffice 标签内容生成接口不可用" };
     }
-    const startParagraph = paragraphs[0];
-    const endParagraph = paragraphs[paragraphs.length - 1];
-    if (!startParagraph || !endParagraph || typeof startParagraph.AddBookmarkChar !== "function" || typeof endParagraph.AddBookmarkChar !== "function") {
-      return { ok: false, error: "自动字段选区不支持书签字符" };
-    }
+
+    let actionStarted = false;
     try {
-      const bookmarkId = manager.GetNewBookmarkId();
-      const bookmarkStart = new BookmarkClass(true, bookmarkId, bookmarkName);
-      const bookmarkEnd = new BookmarkClass(false, bookmarkId, bookmarkName);
-      if (safeCall(logicDocument, "GetSelectDirection", 1) > 0) {
-        endParagraph.AddBookmarkChar(bookmarkEnd, true, false);
-        startParagraph.AddBookmarkChar(bookmarkStart, true, true);
-      } else {
-        endParagraph.AddBookmarkChar(bookmarkEnd, true, true);
-        startParagraph.AddBookmarkChar(bookmarkStart, true, false);
+      const changeType = window.AscCommon?.changestype_Paragraph_AddText;
+      const isLocked = changeType && typeof logicDocument.IsSelectionLocked === "function"
+        ? logicDocument.IsSelectionLocked(changeType, null, false, safeCall(logicDocument, "IsFormFieldEditing", false))
+        : false;
+      if (isLocked) return { ok: false, error: "当前选区被锁定，无法插入自动字段。" };
+
+      const historyType = window.AscDFH?.historydescription_Document_AddTextWithProperties;
+      if (typeof logicDocument.StartAction === "function") {
+        logicDocument.StartAction(historyType);
+        actionStarted = true;
       }
+
+      if (typeof logicDocument.RemoveBeforePaste === "function") {
+        logicDocument.RemoveBeforePaste();
+      }
+
+      const currentParagraph = typeof logicDocument.GetCurrentParagraph === "function" ? logicDocument.GetCurrentParagraph() : null;
+      if (!currentParagraph || typeof currentParagraph.GetCurrentAnchorPosition !== "function") {
+        return { ok: false, error: "OnlyOffice 当前光标位置不可用" };
+      }
+
+      const bookmarkId = manager.GetNewBookmarkId();
+      const tempParagraph = new Paragraph(currentParagraph.GetParent ? currentParagraph.GetParent() : null);
+      const run = new ParaRun(tempParagraph, false);
+      run.AddText(text);
+
+      const currentTextPr = safeCall(logicDocument, "GetDirectTextPr", null);
+      if (currentTextPr && typeof currentTextPr.Copy === "function" && typeof run.SetPr === "function") {
+        run.SetPr(currentTextPr.Copy());
+      }
+      const placeholderTextPr = createPlaceholderTextPr();
+      if (placeholderTextPr && typeof run.ApplyPr === "function") {
+        run.ApplyPr(placeholderTextPr);
+      }
+
+      tempParagraph.AddToContent(0, new BookmarkClass(true, bookmarkId, bookmarkName));
+      tempParagraph.AddToContent(1, run);
+      tempParagraph.AddToContent(2, new BookmarkClass(false, bookmarkId, bookmarkName));
+      safeCall(tempParagraph, "Correct_Content", null);
+
+      const selectedContent = new SelectedContent();
+      selectedContent.Add(new SelectedElement(tempParagraph, false));
+      selectedContent.EndCollect(logicDocument);
+      selectedContent.ForceInlineInsert();
+      selectedContent.PlaceCursorInLastInsertedRun(false);
+      const inserted = selectedContent.Insert(currentParagraph.GetCurrentAnchorPosition());
+      if (inserted === false) return { ok: false, error: "OnlyOffice 标签内容插入失败" };
+
       safeCall(logicDocument, "Recalculate", null);
-      safeCall(logicDocument, "UpdateSelection", null);
       safeCall(logicDocument, "UpdateInterface", null);
+      safeCall(logicDocument, "UpdateSelection", null);
       safeCall(manager, "Update", null);
-      return { ok: hasPlaceholderBookmark(manager, bookmarkName), source: "paragraph-bookmark-char" };
+      return { ok: true, source: "selected-content-bookmark-run", style: "highlight+bold+color" };
     } catch (error) {
-      return { ok: false, error: error?.message || "自动字段书签字符写入失败" };
+      return { ok: false, error: error?.message || "自动字段标签生成失败" };
+    } finally {
+      if (actionStarted) safeCall(logicDocument, "FinalizeAction", null);
     }
   }
 
@@ -521,30 +452,19 @@
       return postInsertedResult({ ok: false, requestId, error: "字段名称为空，无法插入占位符。" });
     }
     const manager = getBookmarkManager();
-    if (!manager || (typeof manager.asc_AddBookmark !== "function" && typeof manager.AddBookmark !== "function")) {
+    if (!manager || typeof manager.GetNewBookmarkId !== "function") {
       return postInsertedResult({ ok: false, requestId, error: "OnlyOffice 书签接口不可用" });
     }
 
     const bookmarkName = payload.bookmarkName || buildBookmarkName(variable.id, variable.anchorIndex);
     if (requestId) handledRequestIds.add(requestId);
-    const selectionState = safeCall(getLogicDocument(), "GetSelectionState", null);
-    const removeResult = removeSelectedTextForReplacement();
-    if (!removeResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: removeResult.error });
-
-    const enterResult = enterText(variable.token);
-    if (!enterResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: enterResult.error });
-
-    const selectResult = selectInsertedText(variable.token);
-    if (!selectResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: selectResult.error, selectedText: selectResult.selectedText });
-    const highlightResult = applyInsertedPlaceholderHighlight(selectResult.selectionState);
-    restoreSelectionState(selectResult.selectionState);
 
     try {
       if (typeof manager.asc_RemoveBookmark === "function") manager.asc_RemoveBookmark(bookmarkName);
       else if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
-      const addResult = addBookmarkToCurrentSelection(manager, bookmarkName);
-      if (!addResult.ok) {
-        return postInsertedResult({ ok: false, requestId, bookmarkName, error: addResult.error || "自动字段书签创建失败" });
+      const insertResult = insertFormattedBookmarkedPlaceholder(variable.token, bookmarkName, manager);
+      if (!insertResult.ok) {
+        return postInsertedResult({ ok: false, requestId, bookmarkName, error: insertResult.error || "自动字段标签生成失败" });
       }
       const confirmBookmark = function (attemptsLeft) {
         if (!hasPlaceholderBookmark(manager, bookmarkName)) {
@@ -560,7 +480,7 @@
           postInsertedResult({ ok: false, requestId, bookmarkName, error: bookmarkResult.error || "自动字段书签创建后无法定位" });
           return;
         }
-        const page = bookmarkResult.page || getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", selectionState));
+        const page = bookmarkResult.page || currentSelectionPage();
         saveDocument("placeholder-variable");
         postInsertedResult({
           ok: true,
@@ -573,7 +493,7 @@
             page,
             index: variable.anchorIndex,
             documentOrder: page * 1000000 + variable.anchorIndex,
-            highlight: highlightResult,
+            style: { ok: true, source: insertResult.source, value: insertResult.style },
           },
         });
       };
