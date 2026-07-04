@@ -1,37 +1,53 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-
-const dataDir = path.resolve(process.cwd(), "data", "templates");
-const libraryFile = path.join(dataDir, "library.json");
+import {
+  readTemplate,
+  readTemplateLibraries,
+  readTemplateLibrary,
+  readTemplateTypes,
+  replaceTemplateLibrary,
+} from "./template-db.js";
 
 export function templateLibraryMiddleware() {
   return async function handleTemplateLibrary(request, response, next) {
-    if (!request.url?.startsWith("/api/templates")) {
+    const url = new URL(request.url || "/", "http://localhost");
+    if (
+      !url.pathname.startsWith("/api/templates")
+      && !url.pathname.startsWith("/api/template-libraries")
+      && !url.pathname.startsWith("/api/template-types")
+    ) {
       next();
       return;
     }
 
     try {
-      if (request.method === "GET" && request.url === "/api/templates") {
+      if (request.method === "GET" && url.pathname === "/api/template-libraries") {
+        sendJson(response, 200, await readTemplateLibraries());
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/template-types") {
+        sendJson(response, 200, await readTemplateTypes(url.searchParams.get("libraryId") || ""));
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/templates") {
         sendJson(response, 200, await readTemplateLibrary());
         return;
       }
 
-      if (request.method === "GET" && request.url.startsWith("/api/templates/")) {
-        const templateId = decodeURIComponent(request.url.replace("/api/templates/", ""));
-        const templates = await readTemplateLibrary();
-        sendJson(response, 200, templates.find((template) => template.id === templateId) || null);
+      const templateMatch = url.pathname.match(/^\/api\/templates\/([^/]+)$/);
+      if (request.method === "GET" && templateMatch) {
+        sendJson(response, 200, await readTemplate(decodeURIComponent(templateMatch[1])));
         return;
       }
 
-      if (request.method === "POST" && request.url === "/api/templates") {
+      if (request.method === "POST" && url.pathname === "/api/templates") {
         const templates = await readJsonBody(request);
         if (!Array.isArray(templates)) {
           const error = new Error("模板库数据格式错误");
           error.statusCode = 400;
           throw error;
         }
-        await writeTemplateLibrary(templates);
+        await replaceTemplateLibrary(templates);
         sendJson(response, 200, { ok: true, count: templates.length });
         return;
       }
@@ -43,22 +59,6 @@ export function templateLibraryMiddleware() {
       });
     }
   };
-}
-
-async function readTemplateLibrary() {
-  try {
-    const raw = await readFile(libraryFile, "utf8");
-    const templates = JSON.parse(raw);
-    return Array.isArray(templates) ? templates : [];
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-async function writeTemplateLibrary(templates) {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(libraryFile, JSON.stringify(templates, null, 2), "utf8");
 }
 
 function readJsonBody(request) {
