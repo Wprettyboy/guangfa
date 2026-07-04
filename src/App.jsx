@@ -45,7 +45,6 @@ import {
 import {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
-  requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
@@ -105,6 +104,8 @@ import {
 
 gsap.registerPlugin(useGSAP);
 
+const DRAFT_AUTOSAVE_INTERVAL_MS = 6 * 60 * 1000;
+
 export default function App() {
   const [initialSession] = useState(readWorkspaceSession);
   const [activeModule, setActiveModule] = useState(initialSession.activeModule || "workspace");
@@ -148,6 +149,7 @@ export default function App() {
   const fillSyncTimerRef = useRef(0);
   const fillPreviewPageLockRef = useRef(null);
   const templateFileRef = useRef(templateFile);
+  const draftAutosaveSnapshotRef = useRef(null);
   const placeholderVariablesRef = useRef(placeholderVariables);
   const placeholderAnchorsRef = useRef(placeholderAnchors);
   const enrichedFillFields = useMemo(
@@ -336,30 +338,27 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!draftReady) return;
-    if (!templateFile?.buffer) return;
-    const timeout = window.setTimeout(() => {
-      saveDraftState({
-        activeWorkspace,
-        activeModule,
-        annotateSidePanelMode,
-        templateFile: getDraftTemplateFile(),
-        filledTemplateFile: getDraftFilledTemplateFile(),
-        templateFields,
-        placeholderVariables,
-        placeholderAnchors,
-        fillFields,
-        materialFiles,
-        selectedTemplateFieldId,
-        selectedFieldId,
-        citationFieldId,
-        annotatePreviewPage,
-        fillPreviewPage,
-        selectedProjectKnowledgeBaseIds,
-        selectedGlobalKnowledgeBaseIds,
-      });
-    }, 450);
-    return () => window.clearTimeout(timeout);
+    draftAutosaveSnapshotRef.current = draftReady && templateFile?.buffer
+      ? {
+          activeWorkspace,
+          activeModule,
+          annotateSidePanelMode,
+          templateFile: getDraftTemplateFile(),
+          filledTemplateFile: getDraftFilledTemplateFile(),
+          templateFields,
+          placeholderVariables,
+          placeholderAnchors,
+          fillFields,
+          materialFiles,
+          selectedTemplateFieldId,
+          selectedFieldId,
+          citationFieldId,
+          annotatePreviewPage,
+          fillPreviewPage,
+          selectedProjectKnowledgeBaseIds,
+          selectedGlobalKnowledgeBaseIds,
+        }
+      : null;
   }, [
     activeWorkspace,
     activeModule,
@@ -379,6 +378,15 @@ export default function App() {
     templateFields,
     templateFile,
   ]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (draftAutosaveSnapshotRef.current) {
+        saveDraftState(draftAutosaveSnapshotRef.current);
+      }
+    }, DRAFT_AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, []);
 
   function animateWorkspace(nextWorkspace) {
     setActiveModule("workspace");
@@ -814,27 +822,20 @@ export default function App() {
       setAnnotatePreviewPage(page);
       const nextAnchors = updatePlaceholderAnchorPage(placeholderAnchorsRef.current, result.bookmarkName || anchor.bookmarkName, page);
       if (nextAnchors !== placeholderAnchorsRef.current) {
+        placeholderAnchorsRef.current = nextAnchors;
         setPlaceholderAnchors(nextAnchors);
         setSaveState("dirty");
-        syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors, placeholderVariablesRef.current);
       }
     });
   }
 
   function deletePlaceholderAnchor(anchor) {
     if (!anchor?.bookmarkName) return;
-    requestOnlyOfficeDeletePlaceholderAnchor(anchor).then((result) => {
-      if (result?.timeout || !result?.ok) {
-        window.alert(result?.error || "OnlyOffice 未能删除该自动字段书签。");
-        return;
-      }
-      const bookmarkName = result.bookmarkName || anchor.bookmarkName;
-      const nextAnchors = placeholderAnchorsRef.current.filter((item) => item.bookmarkName !== bookmarkName);
-      setPlaceholderAnchors(nextAnchors);
-      setAnnotateSidePanelMode("placeholders");
-      setSaveState("dirty");
-      syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors, placeholderVariablesRef.current);
-    });
+    const nextAnchors = placeholderAnchorsRef.current.filter((item) => item.bookmarkName !== anchor.bookmarkName);
+    placeholderAnchorsRef.current = nextAnchors;
+    setPlaceholderAnchors(nextAnchors);
+    setAnnotateSidePanelMode("placeholders");
+    setSaveState("dirty");
   }
 
   function applyPlaceholderAnchorResult(result) {
@@ -847,7 +848,6 @@ export default function App() {
     setPlaceholderAnchors(nextAnchors);
     setAnnotateSidePanelMode("placeholders");
     setSaveState("dirty");
-    syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors, placeholderVariablesRef.current);
   }
 
   function removeTemplateField(fieldId) {
