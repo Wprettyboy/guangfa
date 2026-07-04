@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-03
+更新时间：2026-07-04
 
 ## 新会话先读
 
@@ -142,25 +142,108 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 一键填充期间如果写入字段导致 OnlyOffice 选区跳到字段所在页，`scripts/onlyoffice-outline-probe.js` 会在 `suppressPageSync` 分支记录写入前可见页并在写入后用 `WordControl.GoToPage` 拉回，避免进度中途停在第一页；脚本缓存号已更新到 `60`。
 - 已修复修订模式“常关”：`server/office.js` 下发 `permissions.review=true`，填充预览在 `onDocumentReady` 后补发修订状态，`scripts/onlyoffice-outline-probe.js` 不再把编辑器 API 未就绪误判为设置成功；脚本缓存号已更新到 `60`。
 
-### 占位符变量自动设置
+### OnlyOffice 通用接口与本地封装
 
-- 定制组件“自动字段设置”现在只打开右侧独立面板，不再扫描模板文本。
-- 右侧面板只显示两列变量卡片清单；新增、改名、删除统一在“维护字段”弹窗里完成。默认给一个 `项目名称`，点击卡片右上角“插入字段”会把 `{{字段名}}` 插入 OnlyOffice 当前光标/选区，并给插入 token 自动加灰色底纹。
-- 自动字段插入命令会多次投递到 OnlyOffice iframe/可访问子 iframe，注入脚本用 `requestId` 去重；8 秒无回传时前端提示 OnlyOffice 未响应。
-- 改 OnlyOffice 定制组件按钮或 Toolbar 注入逻辑后，必须同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`，否则浏览器可能继续加载旧 `Toolbar.js?...`。
-- 占位符变量模块独立于旧模板字段：前端状态为 `placeholderVariables`、`placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`。
-- `src/features/placeholders/variables.js` 负责变量名、Token、锚点归一化；`scripts/onlyoffice-placeholder-fields.js` 只负责插入 token、反选刚插入的 token、添加 `GF_PH_` 书签并回传锚点。
-- 已插入位置后续定位依赖书签，不依赖页码、行号，也不依赖旧字段选区；变量改名只影响后续插入，已插入的 token/锚点保留当时记录。
+这段只记录可复用接口和封装，不记录具体场景规则。新增 OnlyOffice 能力时先查这里和现有封装，优先复用，不要把 OnlyOffice 内部 API 直接散落到页面组件。
 
-#### OnlyOffice 书签接口笔记
+#### 通信约定
 
-- 先从项目已有 bridge/注入脚本查入口：React 侧用 `src/features/docx/office/bridge.jsx` 的 `postAllOnlyOfficeFrames()` 向 OnlyOffice iframe 和可访问子 iframe 投递命令；OnlyOffice 侧业务集中在 `scripts/onlyoffice-placeholder-fields.js`，不要把书签逻辑放回页面主文件。
-- 获取书签管理器优先走 OnlyOffice 公开 API：`api.asc_GetBookmarksManager()`；拿不到时再退到 `logicDocument.GetBookmarksManager()`。常用能力包括 `asc_HaveBookmark`、`asc_AddBookmark`、`asc_RemoveBookmark`、`asc_GoToBookmark`、`asc_SelectBookmark`，对应内部方法是 `HaveBookmark`、`AddBookmark`、`RemoveBookmark`、`GoToBookmark`、`SelectBookmark`。
-- 插入自动字段时先用 OnlyOffice 文本接口写入 token：`api.asc_enterText([...codePoints])`，再用 `logicDocument.MoveCursorLeft(true, false)` 反选刚插入的 token，并调用 `UpdateSelection()` / `UpdateInterface()` 刷新 OnlyOffice 当前选区。
-- 创建书签的优先路径是 OnlyOffice range/书签 API：`Api.GetDocument().GetRangeBySelect().AddBookmark(bookmarkName)`，其次 `manager.asc_AddBookmark(bookmarkName)`。若这些接口返回成功但 `asc_HaveBookmark(bookmarkName)` 仍不可见，可用 OnlyOffice 自身的 `AscWord.CParagraphBookmark` / `AscCommonWord.CParagraphBookmark` 加 `Paragraph.AddBookmarkChar()` 写 start/end bookmark char；这是 OnlyOffice 内部 `CDocument.AddBookmark()` 的同类机制，不是 DOM 文本定位。
-- 跳转页面标签必须走书签：先 `asc_HaveBookmark(bookmarkName)` 判断，再 `asc_GoToBookmark(bookmarkName)` 定位；`asc_SelectBookmark(bookmarkName)` 只用于选中文本范围，不能把 `SelectBookmark === false` 等同于无法跳转。
-- 删除有效书签时先走 `asc_GoToBookmark`/`asc_SelectBookmark` 选中书签范围，再删除选区文本并 `asc_RemoveBookmark`；如果历史锚点在右侧有记录但 OnlyOffice 返回“未找到对应自动字段书签”，说明这是陈旧元数据，只清理右侧记录，不弹错误。
-- 改 `scripts/onlyoffice-placeholder-fields.js`、Toolbar 注入或 `api.js` 加载参数后，必须同步 bump `scripts/patch-onlyoffice.py` 中 `guangfa-placeholder-fields.js?gf=`、`urlArgs`、`_dc=9.4.0-129-gf*`，并重新 patch 容器或运行 `npm run office`。
+- React -> OnlyOffice：统一发送 `postMessage({ source: "guangfa-parent", action, ...payload }, "*")`。
+- OnlyOffice -> React：注入脚本统一回传 `postMessage({ source: "guangfa-onlyoffice-custom", action, result|payload }, "*")`。
+- 异步命令使用 `requestId` 关联请求和结果；桥接层负责超时、去重和失败回传。
+- 需要投递到编辑器 iframe 时，优先调用 `src/features/docx/office/bridge.jsx` 的本地封装，不直接在页面里遍历 iframe。
+
+#### 服务端 Office 接口
+
+- `GET /api/office/health`：返回 OnlyOffice 服务地址、当前公开回调地址和可用状态。
+- `POST /api/office/documents?title=...&previewId=...`：接收 DOCX 二进制，写入本地临时目录，返回 `{ id, config, serverUrl, available }`；`config` 直接传给 `DocsAPI.DocEditor`。
+- `GET /api/office/documents/:id/file`：读取当前文档二进制，供预览刷新、同步、导出前取回。
+- `POST /api/office/callback/:id`：OnlyOffice 回调入口；当回调状态为 `2` 或 `6` 且带 `url` 时，下载最新文档覆盖本地临时文件。
+- `POST /api/office/download-url`：代理下载 OnlyOffice `downloadAs` 事件返回的文件地址；只允许 `127.0.0.1`、`localhost`、`host.docker.internal`。
+- `server/office.js` 的 `buildOnlyOfficeConfig()` 负责生成 `document.url`、`document.key`、`editorConfig.callbackUrl` 和编辑权限；不要在前端手写 OnlyOffice 初始化配置。
+
+#### 前端桥接函数
+
+- `OnlyOfficePreview(config, ...)`：创建并销毁 `window.DocsAPI.DocEditor`，统一挂载 `onAppReady`、`onDocumentReady`、`onDownloadAs`、`onError`。
+- `loadOnlyOfficeApi(serverUrl)`：加载 `${serverUrl}/web-apps/apps/api/documents/api.js?...`；重复调用会复用已加载脚本或已有 `window.DocsAPI.DocEditor`。
+- `postOnlyOfficeCommand(container, message, attempts)`：向某个预览容器内的 iframe 重试投递消息，适合当前实例内命令。
+- `postAllOnlyOfficeFrames(message, attempts)`：向页面内所有 iframe 和可访问子 iframe 重试投递消息，适合不知道命令实际落在哪层 iframe 的场景。
+- `requestOnlyOfficeDocumentSave(trigger)`：发送 `save-document`，由注入脚本调用 `api.asc_Save(false)`。
+- `requestOnlyOfficeDocumentDownloadAs(fileType, timeoutMs)`：调用当前活动编辑器的 `downloadAs(fileType)`，监听 `onDownloadAs`，再通过 `/api/office/download-url` 取回 `ArrayBuffer`。
+- `fetchOnlyOfficeDownloadAsBuffer(url)`：下载 `downloadAs` 给出的临时文件地址。
+- `requestOnlyOfficeFillField(field, options)`：组装写入 payload，发送 `fill-field-value`，等待 `field-fill` 回传。
+- `requestOnlyOfficeAddFieldBookmark(field)`：发送 `add-field-bookmark`，让注入脚本按已有选区状态写入书签。
+- `requestOnlyOfficeAddInputPoint(field)`：发送 `add-input-point`，让注入脚本在当前光标处写入输入点书签。
+- `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
+- `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
+- `requestOnlyOfficeDeletePlaceholderAnchor(anchor)`：发送 `delete-placeholder-anchor`，等待 `placeholder-anchor-deleted` 回传。
+- `readOnlyOfficePageNumber(payload)`：把 OnlyOffice 返回的页码 payload 归一成正整数页码。
+
+#### Payload 与文档同步函数
+
+- `buildOnlyOfficeAnnotationFieldPayload(fields)`：把前端字段列表压缩成注入脚本可识别的标注字段 payload。
+- `buildOnlyOfficeFillFieldPayload(fields)`：把前端字段列表压缩成写入 payload，包含目标书签、字段类型、原文、值和预计算写入文本。
+- `buildOnlyOfficeLiveFillText(field)`：根据字段值和原文生成可直接写入的文本。
+- `buildOnlyOfficeChoiceFillText(source, value)`：根据选项原文和值生成勾选后的文本。
+- `resolveOfficeDocumentBuffer(officeDocId, baselineBuffer, options)`：优先走 `downloadAs("docx")` 取回文档；失败时触发保存并轮询 `/api/office/documents/:id/file`。
+- `waitForChangedOfficeDocumentBuffer(officeDocId, baselineBuffer, options)`：轮询文档文件，直到内容与基线不同或超时。
+- `fetchOfficeDocumentBuffer(officeDocId)`：直接读取 `/api/office/documents/:id/file`。
+- `arrayBuffersEqual(left, right)`：比较两个 `ArrayBuffer` 是否完全相同。
+
+#### 注入脚本通用函数
+
+- `scripts/onlyoffice-outline-probe.js`
+  - `getEditorApi()`：按 `window.DE -> Navigation.api -> window.Asc.editor -> window.editor` 顺序取 OnlyOffice API。
+  - `getLogicDocument()`：取 `api.WordControl.m_oLogicDocument`，用于选区、段落、书签、修订等内部能力。
+  - `extractOnlyOfficeOutline()`：读取 OnlyOffice 导航大纲。
+  - `extractOnlyOfficeSelection()`：读取当前选区文本、页码和 `selectionState`。
+  - `extractOnlyOfficePage(selectionState)`：从选区状态、编辑器 API 或逻辑文档推断当前页。
+  - `extractOnlyOfficeVisiblePage()`：读取当前可见页，优先 DOM/编辑器可见页接口。
+  - `highlightOnlyOfficeSelection(selectionState)`：恢复选区并调用高亮。
+  - `applyTextHighlightToCurrentSelection()`：调用 `api.put_LineHighLight(true, r, g, b)` 给当前选区加高亮。
+  - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
+  - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
+  - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
+- `scripts/onlyoffice-placeholder-fields.js`
+  - `getEditorApi()`、`getLogicDocument()`：同上，用于取得编辑器 API 和逻辑文档。
+  - `getBookmarkManager()`：优先 `api.asc_GetBookmarksManager()`，其次 `logicDocument.GetBookmarksManager()`。
+  - `insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager)`：使用 OnlyOffice 段落、run、`CSelectedContent` 和 `CParagraphBookmark` 生成带书签的内联文本。
+  - `hasPlaceholderBookmark(manager, bookmarkName)`：优先 `asc_HaveBookmark`，其次 `HaveBookmark`。
+  - `goToPlaceholderBookmark(manager, bookmarkName)`：优先 `asc_GoToBookmark`，其次 `GoToBookmark`。
+  - `selectPlaceholderBookmark(bookmarkName)`：检查书签、跳转书签，并尝试 `asc_SelectBookmark` / `SelectBookmark` 选中范围。
+  - `removeSelectedTextForReplacement()`：优先 `logicDocument.RemoveBeforePaste()` 删除当前选区，其次 `logicDocument.Remove(...)`。
+  - `deletePlaceholderAnchor(payload)`：按书签定位并删除当前书签文本，再调用 `asc_RemoveBookmark` / `RemoveBookmark`。
+  - `insertPlaceholderVariable(payload)`：生成书签名，插入带书签文本，确认书签可见后回传锚点信息。
+
+#### 当前已用到的 OnlyOffice API 能力
+
+- `DocsAPI.DocEditor(holderId, config)`：创建编辑器实例。
+- `editor.downloadAs(fileType)`：触发 OnlyOffice 导出，并通过 `onDownloadAs` 返回临时下载地址。
+- `api.asc_Save(false)`：请求 OnlyOffice 保存当前文档。
+- `api.asc_GetBookmarksManager()` / `logicDocument.GetBookmarksManager()`：取得书签管理器。
+- `asc_HaveBookmark` / `HaveBookmark`：判断书签是否存在。
+- `asc_GoToBookmark` / `GoToBookmark`：跳转到书签。
+- `asc_SelectBookmark` / `SelectBookmark`：选中书签范围。
+- `asc_RemoveBookmark` / `RemoveBookmark`：删除书签。
+- `logicDocument.GetSelectionState()` / `SetSelectionState()`：读取或恢复选区状态。
+- `GetSelectedText` / `asc_GetSelectedText` / `getSelectedText`：读取当前选区文本。
+- `logicDocument.GetCurrentParagraph()` / `GetCurrentAnchorPosition()`：取得当前插入位置。
+- `logicDocument.RemoveBeforePaste()` / `Remove(...)`：删除当前选区文本。
+- `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。
+- `logicDocument.Recalculate()`、`UpdateInterface()`、`UpdateSelection()`：插入或删除后刷新文档状态和 UI。
+- `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
+- `api.put_LineHighLight(true, r, g, b)`：给当前选区加高亮。
+- `api.asc_ShowDocumentOutline()` / `api.asc_GetDocumentOutlineManager()`：打开并读取文档大纲管理器。
+- `api.asc_SetTrackRevisions(enabled)` / `api.asc_setTrackRevisions(enabled)` / `SetTrackRevisions(enabled)`：设置修订模式。
+- `AscWord.CParagraphBookmark` / `AscCommonWord.CParagraphBookmark`：创建书签开始/结束节点。
+- `AscCommonWord.CSelectedContent` / `CSelectedElement`：组装并插入 OnlyOffice 内部选中内容。
+
+#### 缓存与补丁
+
+- 改 `scripts/onlyoffice-outline-probe.js` 或 `scripts/onlyoffice-placeholder-fields.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
+- 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
+- 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
+- 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 ### OnlyOffice 原生 AI 接本地模型
 
