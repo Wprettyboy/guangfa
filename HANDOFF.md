@@ -145,12 +145,22 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ### 占位符变量自动设置
 
 - 定制组件“自动字段设置”现在只打开右侧独立面板，不再扫描模板文本。
-- 右侧面板只显示两列变量卡片清单；新增、改名、删除统一在“维护字段”弹窗里完成。默认给一个 `项目名称`，点击变量卡片会把 `{{字段名}}` 插入 OnlyOffice 当前光标/选区，并给插入 token 自动加灰色底纹。
+- 右侧面板只显示两列变量卡片清单；新增、改名、删除统一在“维护字段”弹窗里完成。默认给一个 `项目名称`，点击卡片右上角“插入字段”会把 `{{字段名}}` 插入 OnlyOffice 当前光标/选区，并给插入 token 自动加灰色底纹。
 - 自动字段插入命令会多次投递到 OnlyOffice iframe/可访问子 iframe，注入脚本用 `requestId` 去重；8 秒无回传时前端提示 OnlyOffice 未响应。
 - 改 OnlyOffice 定制组件按钮或 Toolbar 注入逻辑后，必须同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`，否则浏览器可能继续加载旧 `Toolbar.js?...`。
 - 占位符变量模块独立于旧模板字段：前端状态为 `placeholderVariables`、`placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`。
 - `src/features/placeholders/variables.js` 负责变量名、Token、锚点归一化；`scripts/onlyoffice-placeholder-fields.js` 只负责插入 token、反选刚插入的 token、添加 `GF_PH_` 书签并回传锚点。
 - 已插入位置后续定位依赖书签，不依赖页码、行号，也不依赖旧字段选区；变量改名只影响后续插入，已插入的 token/锚点保留当时记录。
+
+#### OnlyOffice 书签接口笔记
+
+- 先从项目已有 bridge/注入脚本查入口：React 侧用 `src/features/docx/office/bridge.jsx` 的 `postAllOnlyOfficeFrames()` 向 OnlyOffice iframe 和可访问子 iframe 投递命令；OnlyOffice 侧业务集中在 `scripts/onlyoffice-placeholder-fields.js`，不要把书签逻辑放回页面主文件。
+- 获取书签管理器优先走 OnlyOffice 公开 API：`api.asc_GetBookmarksManager()`；拿不到时再退到 `logicDocument.GetBookmarksManager()`。常用能力包括 `asc_HaveBookmark`、`asc_AddBookmark`、`asc_RemoveBookmark`、`asc_GoToBookmark`、`asc_SelectBookmark`，对应内部方法是 `HaveBookmark`、`AddBookmark`、`RemoveBookmark`、`GoToBookmark`、`SelectBookmark`。
+- 插入自动字段时先用 OnlyOffice 文本接口写入 token：`api.asc_enterText([...codePoints])`，再用 `logicDocument.MoveCursorLeft(true, false)` 反选刚插入的 token，并调用 `UpdateSelection()` / `UpdateInterface()` 刷新 OnlyOffice 当前选区。
+- 创建书签的优先路径是 OnlyOffice range/书签 API：`Api.GetDocument().GetRangeBySelect().AddBookmark(bookmarkName)`，其次 `manager.asc_AddBookmark(bookmarkName)`。若这些接口返回成功但 `asc_HaveBookmark(bookmarkName)` 仍不可见，可用 OnlyOffice 自身的 `AscWord.CParagraphBookmark` / `AscCommonWord.CParagraphBookmark` 加 `Paragraph.AddBookmarkChar()` 写 start/end bookmark char；这是 OnlyOffice 内部 `CDocument.AddBookmark()` 的同类机制，不是 DOM 文本定位。
+- 跳转页面标签必须走书签：先 `asc_HaveBookmark(bookmarkName)` 判断，再 `asc_GoToBookmark(bookmarkName)` 定位；`asc_SelectBookmark(bookmarkName)` 只用于选中文本范围，不能把 `SelectBookmark === false` 等同于无法跳转。
+- 删除有效书签时先走 `asc_GoToBookmark`/`asc_SelectBookmark` 选中书签范围，再删除选区文本并 `asc_RemoveBookmark`；如果历史锚点在右侧有记录但 OnlyOffice 返回“未找到对应自动字段书签”，说明这是陈旧元数据，只清理右侧记录，不弹错误。
+- 改 `scripts/onlyoffice-placeholder-fields.js`、Toolbar 注入或 `api.js` 加载参数后，必须同步 bump `scripts/patch-onlyoffice.py` 中 `guangfa-placeholder-fields.js?gf=`、`urlArgs`、`_dc=9.4.0-129-gf*`，并重新 patch 容器或运行 `npm run office`。
 
 ### OnlyOffice 原生 AI 接本地模型
 
