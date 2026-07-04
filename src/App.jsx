@@ -50,6 +50,7 @@ import {
 } from "./features/docx/office/bridge.jsx";
 import {
   fetchOfficeDocumentBuffer,
+  resolveOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
 } from "./features/docx/office/documentSync.js";
 import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
@@ -393,7 +394,11 @@ export default function App() {
     window.clearTimeout(annotateSyncTimerRef.current);
     annotateSyncTimerRef.current = window.setTimeout(async () => {
       try {
-        const buffer = await waitForChangedOfficeDocumentBuffer(officeDocId, baselineBuffer);
+        const buffer = await resolveOfficeDocumentBuffer(officeDocId, baselineBuffer, {
+          downloadAs: requestOnlyOfficeDocumentDownloadAs,
+          requestSave: requestOnlyOfficeDocumentSave,
+          saveTrigger: "annotate-sync",
+        });
         if (!buffer) return;
         if (templateFileRef.current?.previewId !== sourcePreviewId) return;
         annotatedTemplateBufferRef.current = buffer.slice(0);
@@ -419,7 +424,7 @@ export default function App() {
       } catch {
         // Annotation persistence is best effort; field creation should stay instant.
       }
-    }, 1800);
+    }, 600);
   }
 
   function queueFilledOfficeDocumentSync(fieldsSnapshot = enrichedFillFieldsRef.current) {
@@ -845,13 +850,11 @@ export default function App() {
     let fileBuffer = (annotatedTemplateBufferRef.current || templateFile.buffer).slice(0);
     if (templateOfficeDocId) {
       try {
-        let officeBuffer = await requestOnlyOfficeDocumentDownloadAs("docx");
-        if (!officeBuffer) {
-          requestOnlyOfficeDocumentSave("save-template");
-          officeBuffer =
-            (await waitForChangedOfficeDocumentBuffer(templateOfficeDocId, fileBuffer, { timeoutMs: 10000, intervalMs: 500, initialDelayMs: 600 })) ||
-            (await fetchOfficeDocumentBuffer(templateOfficeDocId));
-        }
+        const officeBuffer = await resolveOfficeDocumentBuffer(templateOfficeDocId, fileBuffer, {
+          downloadAs: requestOnlyOfficeDocumentDownloadAs,
+          requestSave: requestOnlyOfficeDocumentSave,
+          saveTrigger: "save-template",
+        });
         if (!officeBuffer) {
           setSaveState("storage-error");
           return;
@@ -1504,7 +1507,6 @@ export default function App() {
                   setAnnotateSidePanelMode("fields");
                   setSelectedTemplateFieldId(fieldId);
                 }}
-                onSidePanelModeChange={setAnnotateSidePanelMode}
                 onUpdateField={updateTemplateField}
                 onRemoveField={removeTemplateField}
                 onAddInputPoint={addInputPointForTemplateField}

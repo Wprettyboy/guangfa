@@ -11,6 +11,29 @@ async function waitForChangedOfficeDocumentBuffer(officeDocId, baselineBuffer, o
   return null;
 }
 
+async function resolveOfficeDocumentBuffer(officeDocId, baselineBuffer, options = {}) {
+  const downloadAs = options.downloadAs;
+  if (typeof downloadAs === "function") {
+    try {
+      const buffer = await downloadAs("docx", options.downloadTimeoutMs ?? 15000);
+      if (buffer) return buffer;
+    } catch {}
+  }
+
+  try {
+    options.requestSave?.(options.saveTrigger || "office-sync");
+  } catch {}
+
+  return (
+    (await waitForChangedOfficeDocumentBuffer(officeDocId, baselineBuffer, {
+      timeoutMs: options.timeoutMs ?? 10000,
+      intervalMs: options.intervalMs ?? 500,
+      initialDelayMs: options.initialDelayMs ?? 600,
+    })) ||
+    (await fetchOfficeDocumentBuffer(officeDocId))
+  );
+}
+
 async function fetchOfficeDocumentBuffer(officeDocId) {
   if (!officeDocId) return null;
   const response = await fetch(`/api/office/documents/${officeDocId}/file?t=${Date.now()}`, { cache: "no-store" });
@@ -35,5 +58,6 @@ export {
   arrayBuffersEqual,
   delay,
   fetchOfficeDocumentBuffer,
+  resolveOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
 };

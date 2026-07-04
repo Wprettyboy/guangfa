@@ -40,7 +40,6 @@ function AnnotateWorkspace({
   placeholderVariables = [],
   placeholderAnchors = [],
   sidePanelMode = "fields",
-  onSidePanelModeChange,
 }) {
   const fileInputRef = useRef(null);
   const panelRef = useRef(null);
@@ -115,13 +114,15 @@ function AnnotateWorkspace({
           <PlaceholderPanel
             variables={placeholderVariables}
             anchors={placeholderAnchors}
+            saveState={saveState}
+            templateCategory={templateCategory}
             onAddVariable={onAddPlaceholderVariable}
             onRenameVariable={onRenamePlaceholderVariable}
             onDeleteVariable={onDeletePlaceholderVariable}
             onInsertVariable={onInsertPlaceholderVariable}
             onJumpAnchor={onJumpPlaceholderAnchor}
             onDeleteAnchor={onDeletePlaceholderAnchor}
-            onBack={() => onSidePanelModeChange?.("fields")}
+            onSaveTemplate={onSaveTemplate}
           />
         ) : (
           <>
@@ -219,7 +220,19 @@ function AnnotateWorkspace({
   );
 }
 
-function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onJumpAnchor, onDeleteAnchor, onBack }) {
+function PlaceholderPanel({
+  variables,
+  anchors,
+  saveState,
+  templateCategory,
+  onAddVariable,
+  onRenameVariable,
+  onDeleteVariable,
+  onInsertVariable,
+  onJumpAnchor,
+  onDeleteAnchor,
+  onSaveTemplate,
+}) {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [collapsedVariables, setCollapsedVariables] = useState({});
 
@@ -240,7 +253,10 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
             <Settings2 size={14} />
             维护字段
           </button>
-          <button className="text-button" type="button" onClick={onBack}>返回字段标注</button>
+          <button className="text-button" type="button" onClick={() => onSaveTemplate?.(templateCategory)} disabled={saveState === "saving"}>
+            {saveState === "saving" ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+            {saveState === "saving" ? "保存中" : "保存模板"}
+          </button>
         </div>
       </div>
       <div className="placeholder-summary">
