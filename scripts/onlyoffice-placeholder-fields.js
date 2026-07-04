@@ -1,9 +1,4 @@
 (function () {
-  const defaultDefinitions = [
-    { key: "projectName", label: "项目名称", token: "{{项目名称}}" },
-  ];
-  let placeholderDefinitions = defaultDefinitions;
-
   function safeCall(target, name, fallback, ...args) {
     try {
       return target && typeof target[name] === "function" ? target[name](...args) : fallback;
@@ -31,8 +26,38 @@
     return api?.WordControl?.m_oLogicDocument || window.Asc?.editor?.WordControl?.m_oLogicDocument || null;
   }
 
+  function getBookmarkManager() {
+    const logicDocument = getLogicDocument();
+    return logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
+  }
+
+  function normalizeName(name) {
+    return String(name || "").replace(/\s+/g, "").trim().slice(0, 40);
+  }
+
   function normalizeSelectionText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function buildToken(name) {
+    const normalizedName = normalizeName(name);
+    return normalizedName ? "{{" + normalizedName + "}}" : "";
+  }
+
+  function normalizeVariable(variable) {
+    const name = normalizeName(variable?.name || variable?.label || variable?.key);
+    const token = String(variable?.token || buildToken(name));
+    return {
+      id: String(variable?.id || "PV-001"),
+      name,
+      token,
+      anchorIndex: Math.max(1, Number(variable?.anchorIndex || variable?.index || 1) || 1),
+    };
+  }
+
+  function buildBookmarkName(variableId, index) {
+    const safeId = String(variableId || "PV").replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40);
+    return "GF_PH_" + safeId + "_" + String(Math.max(1, Number(index) || 1)).padStart(3, "0");
   }
 
   function readSelectedText(target) {
@@ -61,119 +86,130 @@
     return Number.isFinite(page) ? Math.max(1, page + 1) : 1;
   }
 
-  function createSearchSettings(text) {
-    const CSearchSettings = window.AscCommon?.CSearchSettings;
-    if (typeof CSearchSettings !== "function") return null;
-    const settings = new CSearchSettings();
-    safeCall(settings, "put_Text", null, text);
-    safeCall(settings, "put_MatchCase", null, true);
-    safeCall(settings, "put_WholeWords", null, false);
-    return settings;
-  }
-
-  function moveSearchCursorToStart() {
+  function removeSelectedTextForReplacement() {
     const logicDocument = getLogicDocument();
-    const attempts = [
-      function () { return logicDocument && typeof logicDocument.MoveCursorToStartOfDocument === "function" && logicDocument.MoveCursorToStartOfDocument(); },
-      function () { return logicDocument && typeof logicDocument.MoveCursorToStartPos === "function" && logicDocument.MoveCursorToStartPos(false); },
-    ];
-    for (const attempt of attempts) {
-      try {
-        if (attempt() !== false) return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  function getBookmarkManager() {
-    const logicDocument = getLogicDocument();
-    return logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
-  }
-
-  function cleanupPlaceholderBookmarks(definitions) {
-    const manager = getBookmarkManager();
-    if (!manager || typeof manager.RemoveBookmark !== "function") return;
-    definitions.forEach(function (definition) {
-      for (let index = 1; index <= 200; index += 1) {
-        try { manager.RemoveBookmark(buildBookmarkName(definition.key, index)); } catch {}
+    const selectedText = readSelectedText(logicDocument) || readSelectedText(getEditorApi());
+    if (!selectedText) return { ok: true, skipped: true };
+    try {
+      if (typeof logicDocument?.RemoveBeforePaste === "function") {
+        logicDocument.RemoveBeforePaste();
+        return { ok: true, source: "remove-before-paste" };
       }
-    });
+      if (typeof logicDocument?.Remove === "function") {
+        logicDocument.Remove(1, true, true, true);
+        return { ok: true, source: "logic-remove" };
+      }
+      return { ok: false, error: "当前选区无法替换，请把光标放到插入位置后重试。" };
+    } catch (error) {
+      return { ok: false, error: error?.message || "替换当前选区失败" };
+    }
   }
 
-  function buildBookmarkName(key, index) {
-    return "GF_PH_" + String(key || "placeholder").replace(/[^A-Za-z0-9_]/g, "_") + "_" + String(index).padStart(3, "0");
-  }
-
-  function detectPlaceholderFields(definitions = placeholderDefinitions) {
+  function enterText(text) {
     const api = getEditorApi();
     const logicDocument = getLogicDocument();
-    const manager = getBookmarkManager();
-    if (!api || typeof api.asc_findText !== "function") return postResult({ ok: false, error: "OnlyOffice 搜索接口不可用", anchors: [] });
-    if (!logicDocument || !manager || typeof manager.AddBookmark !== "function") return postResult({ ok: false, error: "OnlyOffice 书签接口不可用", anchors: [] });
-
-    const anchors = [];
-    cleanupPlaceholderBookmarks(definitions);
-    definitions.forEach(function (definition) {
-      const settings = createSearchSettings(definition.token);
-      if (!settings) return;
-      let hitIndex = 0;
-      try {
-        if (typeof api.asc_endFindText === "function") api.asc_endFindText();
-        moveSearchCursorToStart();
-        const count = Number(api.asc_findText(settings, true)) || 0;
-        const max = Math.min(Math.max(count, 0), 200);
-        for (let index = 0; index < max; index += 1) {
-          const selectedText = normalizeSelectionText(readSelectedText(logicDocument) || readSelectedText(api));
-          if (selectedText === definition.token) {
-            hitIndex += 1;
-            const bookmarkName = buildBookmarkName(definition.key, hitIndex);
-            const selectionState = safeCall(logicDocument, "GetSelectionState", null);
-            try { manager.RemoveBookmark(bookmarkName); } catch {}
-            manager.AddBookmark(bookmarkName);
-            const page = getSelectionPage(selectionState);
-            anchors.push({
-              key: definition.key,
-              label: definition.label,
-              token: definition.token,
-              bookmarkName,
-              page,
-              index: hitIndex,
-              documentOrder: page * 1000000 + anchors.length + 1,
-            });
-          }
-          if (index < max - 1) api.asc_findText(settings, true);
-        }
-      } catch (error) {
-        console.warn("[guangfa-placeholder-detect]", definition.token, error?.message || error);
-      } finally {
-        try { if (typeof api.asc_endFindText === "function") api.asc_endFindText(); } catch {}
+    try {
+      if (api && typeof api.asc_enterText === "function") {
+        api.asc_enterText(Array.from(text).map(function (char) { return char.codePointAt(0); }));
+        return { ok: true, source: "asc-enter-text" };
       }
-    });
-    try { if (typeof api.asc_Save === "function") api.asc_Save(false); } catch {}
-    return postResult({ ok: true, anchors });
+      if (logicDocument && typeof logicDocument.EnterText === "function") {
+        logicDocument.EnterText(text);
+        return { ok: true, source: "logic-enter-text" };
+      }
+      return { ok: false, error: "文本输入接口不可用" };
+    } catch (error) {
+      return { ok: false, error: error?.message || "占位符写入失败" };
+    }
   }
 
-  function postResult(result) {
-    const message = { source: "guangfa-onlyoffice-custom", action: "placeholder-anchors-detected", result };
+  function selectInsertedText(text) {
+    const logicDocument = getLogicDocument();
+    if (!logicDocument || typeof logicDocument.MoveCursorLeft !== "function") {
+      return { ok: false, error: "光标选择接口不可用" };
+    }
+    try {
+      Array.from(text).forEach(function () {
+        logicDocument.MoveCursorLeft(true, false);
+      });
+      const selectedText = normalizeSelectionText(readSelectedText(logicDocument) || readSelectedText(getEditorApi()));
+      const compactSelected = selectedText.replace(/\s+/g, "");
+      const compactExpected = normalizeSelectionText(text).replace(/\s+/g, "");
+      if (compactSelected !== compactExpected) {
+        return { ok: false, selectedText, error: "未能重新选中刚插入的占位符，请撤销后重试。" };
+      }
+      return { ok: true, selectedText };
+    } catch (error) {
+      return { ok: false, error: error?.message || "占位符选区定位失败" };
+    }
+  }
+
+  function saveDocument(trigger) {
+    const api = getEditorApi();
+    try {
+      if (api && typeof api.asc_Save === "function") api.asc_Save(false);
+      window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "office-save", ok: true, trigger }, "*");
+    } catch {}
+  }
+
+  function postInsertedResult(result) {
+    const message = { source: "guangfa-onlyoffice-custom", action: "placeholder-anchor-inserted", result };
     try { window.parent?.postMessage(message, "*"); } catch {}
     try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
     return result;
   }
 
-  window.guangfaSetPlaceholderDefinitions = function (definitions) {
-    if (Array.isArray(definitions) && definitions.length > 0) placeholderDefinitions = definitions;
-  };
-  window.guangfaDetectPlaceholderFields = function () {
-    return detectPlaceholderFields(placeholderDefinitions);
-  };
+  function insertPlaceholderVariable(payload = {}) {
+    const variable = normalizeVariable(payload.variable || payload);
+    const requestId = payload.requestId || "";
+    if (!variable.name || !variable.token) {
+      return postInsertedResult({ ok: false, requestId, error: "字段名称为空，无法插入占位符。" });
+    }
+    const manager = getBookmarkManager();
+    if (!manager || typeof manager.AddBookmark !== "function") {
+      return postInsertedResult({ ok: false, requestId, error: "OnlyOffice 书签接口不可用" });
+    }
+
+    const bookmarkName = payload.bookmarkName || buildBookmarkName(variable.id, variable.anchorIndex);
+    const selectionState = safeCall(getLogicDocument(), "GetSelectionState", null);
+    const removeResult = removeSelectedTextForReplacement();
+    if (!removeResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: removeResult.error });
+
+    const enterResult = enterText(variable.token);
+    if (!enterResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: enterResult.error });
+
+    const selectResult = selectInsertedText(variable.token);
+    if (!selectResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: selectResult.error, selectedText: selectResult.selectedText });
+
+    try {
+      if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
+      manager.AddBookmark(bookmarkName);
+      const page = getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", selectionState));
+      saveDocument("placeholder-variable");
+      return postInsertedResult({
+        ok: true,
+        requestId,
+        anchor: {
+          variableId: variable.id,
+          variableName: variable.name,
+          token: variable.token,
+          bookmarkName,
+          page,
+          index: variable.anchorIndex,
+          documentOrder: page * 1000000 + variable.anchorIndex,
+        },
+      });
+    } catch (error) {
+      return postInsertedResult({ ok: false, requestId, bookmarkName, error: error?.message || "占位符书签写入失败" });
+    }
+  }
+
+  window.guangfaInsertPlaceholderVariable = insertPlaceholderVariable;
 
   window.addEventListener("message", function (event) {
     const data = event.data || {};
-    if (data.source === "guangfa-parent" && data.action === "sync-placeholder-definitions") {
-      window.guangfaSetPlaceholderDefinitions(data.definitions);
-    }
-    if (data.source === "guangfa-parent" && data.action === "detect-placeholder-fields") {
-      detectPlaceholderFields(placeholderDefinitions);
+    if (data.source === "guangfa-parent" && data.action === "insert-placeholder-variable") {
+      insertPlaceholderVariable(data);
     }
   });
 })();

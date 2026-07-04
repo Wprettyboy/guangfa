@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Highlighter, Loader2, Save, Trash2 } from "lucide-react";
+import { Highlighter, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
@@ -26,8 +26,15 @@ function AnnotateWorkspace({
   onRemoveField,
   onAddInputPoint,
   onInputPointCaptured,
+  onAddPlaceholderVariable,
+  onRenamePlaceholderVariable,
+  onDeletePlaceholderVariable,
+  onInsertPlaceholderVariable,
   onPlaceholderAnchorsDetected,
+  onPlaceholderAnchorInserted,
+  onOpenPlaceholderPanel,
   onOfficeDocumentReady,
+  placeholderVariables = [],
   placeholderAnchors = [],
   sidePanelMode = "fields",
   onSidePanelModeChange,
@@ -94,6 +101,8 @@ function AnnotateWorkspace({
           onUploadClick={() => fileInputRef.current?.click()}
           onInputPointCaptured={onInputPointCaptured}
           onPlaceholderAnchorsDetected={onPlaceholderAnchorsDetected}
+          onPlaceholderAnchorInserted={onPlaceholderAnchorInserted}
+          onOpenPlaceholderPanel={onOpenPlaceholderPanel}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />
       </section>
@@ -101,7 +110,12 @@ function AnnotateWorkspace({
       <aside className="right-panel field-panel" ref={panelRef}>
         {showPlaceholderPanel ? (
           <PlaceholderPanel
+            variables={placeholderVariables}
             anchors={placeholderAnchors}
+            onAddVariable={onAddPlaceholderVariable}
+            onRenameVariable={onRenamePlaceholderVariable}
+            onDeleteVariable={onDeletePlaceholderVariable}
+            onInsertVariable={onInsertPlaceholderVariable}
             onBack={() => onSidePanelModeChange?.("fields")}
           />
         ) : (
@@ -200,33 +214,70 @@ function AnnotateWorkspace({
   );
 }
 
-function PlaceholderPanel({ anchors, onBack }) {
-  const projectNameAnchors = anchors.filter((anchor) => anchor.key === "projectName");
+function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onBack }) {
   return (
     <div className="panel-section placeholder-panel-section standalone">
       <div className="panel-title">
         <h2>自动字段设置</h2>
         <div className="panel-actions">
-          <span className="soft-count">项目名称 {projectNameAnchors.length} 个</span>
+          <span className="soft-count">字段 {variables.length} 个</span>
           <button className="text-button" type="button" onClick={onBack}>返回字段标注</button>
         </div>
       </div>
       <div className="placeholder-summary">
-        <strong>项目名称</strong>
-        <span>支持占位符：{"{{项目名称}}"}</span>
+        <strong>字段变量</strong>
+        <span>已插入 {anchors.length} 处，后续填充按书签定位。</span>
       </div>
-      <div className="placeholder-anchor-list">
-        {projectNameAnchors.length === 0 ? (
+      <button className="placeholder-add-button" type="button" onClick={onAddVariable}>
+        <Plus size={15} />
+        新增字段
+      </button>
+      <div className="placeholder-variable-list">
+        {variables.length === 0 ? (
           <div className="empty-state compact">
             <Highlighter size={16} />
-            <span>模板中暂无 {"{{项目名称}}"} 占位符</span>
+            <span>暂无字段变量</span>
+          </div>
+        ) : variables.map((variable) => {
+          const count = anchors.filter((anchor) => anchor.variableId === variable.id).length;
+          return (
+            <div className="placeholder-variable-card" key={variable.id}>
+              <button className="placeholder-insert-card" type="button" onClick={() => onInsertVariable?.(variable)}>
+                <strong>{variable.name}</strong>
+                <span>{variable.token} · 已插入 {count} 处</span>
+              </button>
+              <div className="placeholder-variable-tools">
+                <input
+                  value={variable.name}
+                  onChange={(event) => onRenameVariable?.(variable.id, event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  aria-label={`${variable.name}字段名称`}
+                />
+                <button
+                  className="icon-button quiet"
+                  type="button"
+                  aria-label={`删除${variable.name}`}
+                  onClick={() => onDeleteVariable?.(variable.id)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="placeholder-anchor-list">
+        {anchors.length === 0 ? (
+          <div className="empty-state compact">
+            <Highlighter size={16} />
+            <span>暂无已插入的自动字段</span>
           </div>
         ) : (
-          projectNameAnchors.map((anchor, index) => (
+          anchors.map((anchor, index) => (
             <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
               <span className="row-index">{index + 1}</span>
               <div>
-                <strong>{anchor.label}</strong>
+                <strong>{anchor.variableName}</strong>
                 <span>{anchor.token} · 第 {anchor.page || 1} 页 · {anchor.bookmarkName}</span>
               </div>
             </div>

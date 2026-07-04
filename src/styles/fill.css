@@ -310,6 +310,79 @@
   font-size: 12px;
 }
 
+.placeholder-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  margin: 10px 12px;
+  border: 1px solid #cfd8e6;
+  background: #ffffff;
+  color: #25324a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.placeholder-variable-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.placeholder-variable-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e3e8f0;
+  background: #ffffff;
+}
+
+.placeholder-insert-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.placeholder-insert-card strong,
+.placeholder-insert-card span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder-insert-card strong {
+  color: #25324a;
+  font-size: 14px;
+}
+
+.placeholder-insert-card span {
+  color: #728097;
+  font-size: 12px;
+}
+
+.placeholder-variable-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+}
+
+.placeholder-variable-tools input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid #d8e0ec;
+  padding: 0 9px;
+  color: #25324a;
+}
+
 .placeholder-anchor-list {
   display: grid;
   max-height: 190px;

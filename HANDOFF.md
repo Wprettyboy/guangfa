@@ -73,7 +73,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/docx/preview/`：PDF/页面布局/大纲搜索等预览辅助模块。
 - `src/features/docx/structure/docxStructure.js`：DOCX 结构解析。
 - `scripts/onlyoffice-outline-probe.js`：注入 OnlyOffice 的桥接脚本，负责大纲、选区、页码、标注、输入点、保存、回填等消息。
-- `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，只负责精确定位 `{{项目名称}}` 等占位符并写入 `GF_PH_` 书签。
+- `src/features/placeholders/variables.js`：自动字段设置的变量/Token/锚点归一化工具，独立于旧模板字段。
+- `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，只负责把右侧变量卡片插入当前光标/选区并写入 `GF_PH_` 书签。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
@@ -143,10 +144,11 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### 占位符变量自动设置
 
-- 定制组件新增“自动字段设置”，当前只实装并识别 `{{项目名称}}` 占位符。
-- 占位符变量模块独立于旧模板字段：前端状态为 `placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`，右侧面板也与字段属性/字段列表互斥显示。
-- `src/features/placeholders/definitions.js` 维护占位符白名单；`src/features/placeholders/applyDetectedPlaceholders.js` 只负责整理检测结果。
-- `scripts/onlyoffice-placeholder-fields.js` 使用 OnlyOffice 搜索接口精确查找占位符文本，校验选区后写入唯一 `GF_PH_` 书签并回传锚点；后续定位应依赖书签，不依赖页码、行号或旧字段选区。
+- 定制组件“自动字段设置”现在只打开右侧独立面板，不再扫描模板文本。
+- 右侧面板维护可编辑变量卡片，默认给一个 `项目名称`，用户可新增、改名、删除；卡片点击后把 `{{字段名}}` 插入 OnlyOffice 当前光标/选区。
+- 占位符变量模块独立于旧模板字段：前端状态为 `placeholderVariables`、`placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`。
+- `src/features/placeholders/variables.js` 负责变量名、Token、锚点归一化；`scripts/onlyoffice-placeholder-fields.js` 只负责插入 token、反选刚插入的 token、添加 `GF_PH_` 书签并回传锚点。
+- 已插入位置后续定位依赖书签，不依赖页码、行号，也不依赖旧字段选区；变量改名只影响后续插入，已插入的 token/锚点保留当时记录。
 
 ### OnlyOffice 原生 AI 接本地模型
 

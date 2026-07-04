@@ -44,13 +44,21 @@ import {
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeInsertPlaceholderVariable,
 } from "./features/docx/office/bridge.jsx";
 import {
   fetchOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
 } from "./features/docx/office/documentSync.js";
 import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
-import { applyDetectedPlaceholders } from "./features/placeholders/applyDetectedPlaceholders.js";
+import {
+  applyPlaceholderAnchors,
+  buildPlaceholderToken,
+  createPlaceholderVariable,
+  getNextPlaceholderAnchorIndex,
+  normalizePlaceholderName,
+  normalizePlaceholderVariables,
+} from "./features/placeholders/variables.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -96,6 +104,7 @@ export default function App() {
   const [settingsNavOpen, setSettingsNavOpen] = useState(true);
   const [templateFile, setTemplateFile] = useState(initialTemplateFile);
   const [templateFields, setTemplateFields] = useState(initialTemplateFields);
+  const [placeholderVariables, setPlaceholderVariables] = useState(() => normalizePlaceholderVariables());
   const [placeholderAnchors, setPlaceholderAnchors] = useState([]);
   const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState("fields");
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
@@ -130,6 +139,7 @@ export default function App() {
   const fillSyncTimerRef = useRef(0);
   const fillPreviewPageLockRef = useRef(null);
   const templateFileRef = useRef(templateFile);
+  const placeholderVariablesRef = useRef(placeholderVariables);
   const placeholderAnchorsRef = useRef(placeholderAnchors);
   const enrichedFillFields = useMemo(
     () => mergeFillFieldsWithTemplate(fillFields, templateFields),
@@ -184,6 +194,10 @@ export default function App() {
     placeholderAnchorsRef.current = placeholderAnchors;
   }, [placeholderAnchors]);
 
+  useEffect(() => {
+    placeholderVariablesRef.current = placeholderVariables;
+  }, [placeholderVariables]);
+
   const selectedTemplateField = templateFields.find((field) => field.id === selectedTemplateFieldId);
   const workspaceTitle =
     activeModule === "template-management"
@@ -228,7 +242,8 @@ export default function App() {
         filledTemplateBufferRef.current = draft.filledTemplateFile?.buffer ? draft.filledTemplateFile.buffer.slice(0) : null;
         filledTemplateDraftFileRef.current = draft.filledTemplateFile || null;
         setTemplateFields(draft.templateFields || []);
-        setPlaceholderAnchors(draft.placeholderAnchors || []);
+        setPlaceholderVariables(normalizePlaceholderVariables(draft.placeholderVariables));
+        setPlaceholderAnchors(applyPlaceholderAnchors([], draft.placeholderAnchors || []));
         setFillFields(draft.fillFields || []);
         setMaterialFiles(draft.materialFiles || []);
         setSelectedFieldId(draft.selectedFieldId || draft.fillFields?.[0]?.id || "");
@@ -290,6 +305,7 @@ export default function App() {
         templateFile: getDraftTemplateFile(),
         filledTemplateFile: getDraftFilledTemplateFile(),
         templateFields,
+        placeholderVariables,
         placeholderAnchors,
         fillFields,
         materialFiles,
@@ -310,6 +326,7 @@ export default function App() {
     fillFields,
     fillPreviewPage,
     materialFiles,
+    placeholderVariables,
     placeholderAnchors,
     selectedProjectKnowledgeBaseIds,
     selectedGlobalKnowledgeBaseIds,
@@ -360,7 +377,12 @@ export default function App() {
     setFilledTemplateFile(null);
   }
 
-  function syncAnnotatedOfficeDocument(fieldsSnapshot, sourceOfficeDocId = templateOfficeDocId, anchorsSnapshot = placeholderAnchorsRef.current) {
+  function syncAnnotatedOfficeDocument(
+    fieldsSnapshot,
+    sourceOfficeDocId = templateOfficeDocId,
+    anchorsSnapshot = placeholderAnchorsRef.current,
+    variablesSnapshot = placeholderVariablesRef.current,
+  ) {
     if (!sourceOfficeDocId || !templateFile?.buffer) return;
     const officeDocId = sourceOfficeDocId;
     const sourcePreviewId = templateFile.previewId;
@@ -380,6 +402,7 @@ export default function App() {
           activeWorkspace: "annotate",
           templateFile: getDraftTemplateFile({ ...templateFile, buffer }),
           templateFields: fieldsSnapshot,
+          placeholderVariables: variablesSnapshot,
           placeholderAnchors: anchorsSnapshot,
           fillFields,
           materialFiles,
@@ -430,6 +453,7 @@ export default function App() {
           templateFile: getDraftTemplateFile(),
           filledTemplateFile: filledFile,
           templateFields,
+          placeholderVariables: placeholderVariablesRef.current,
           placeholderAnchors: placeholderAnchorsRef.current,
           fillFields: fieldsSnapshot,
           materialFiles,
@@ -461,6 +485,7 @@ export default function App() {
     annotatedTemplateBufferRef.current = null;
     setTemplateFile(null);
     setTemplateFields([]);
+    setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
@@ -594,6 +619,7 @@ export default function App() {
       supported: isDocx,
     });
     setTemplateFields([]);
+    setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
@@ -671,19 +697,62 @@ export default function App() {
     syncAnnotatedOfficeDocument(nextFields);
   }
 
-  function applyPlaceholderAnchors(result) {
+  function addPlaceholderVariable() {
+    const nextVariables = [...placeholderVariables, createPlaceholderVariable(`字段${placeholderVariables.length + 1}`, placeholderVariables)];
+    setPlaceholderVariables(nextVariables);
+    setAnnotateSidePanelMode("placeholders");
+    setSaveState("dirty");
+  }
+
+  function renamePlaceholderVariable(variableId, name) {
+    const nextVariables = placeholderVariables.map((variable) =>
+      variable.id === variableId
+        ? {
+            ...variable,
+            name: normalizePlaceholderName(name),
+            token: buildPlaceholderToken(name),
+          }
+        : variable,
+    );
+    setPlaceholderVariables(nextVariables);
+    setSaveState("dirty");
+  }
+
+  function removePlaceholderVariable(variableId) {
+    const anchorCount = placeholderAnchors.filter((anchor) => anchor.variableId === variableId).length;
+    if (anchorCount > 0 && !window.confirm(`该字段已插入 ${anchorCount} 处。删除后不会删除 Word 中已有占位符文字，但模板元数据不再管理这些位置。确认删除？`)) {
+      return;
+    }
+    const nextVariables = placeholderVariables.filter((variable) => variable.id !== variableId);
+    const nextAnchors = placeholderAnchors.filter((anchor) => anchor.variableId !== variableId);
+    setPlaceholderVariables(nextVariables);
+    setPlaceholderAnchors(nextAnchors);
+    setSaveState("dirty");
+  }
+
+  function insertPlaceholderVariable(variable) {
+    const name = normalizePlaceholderName(variable?.name);
+    const normalized = { ...variable, name, token: buildPlaceholderToken(name) };
+    if (!normalized.name || !normalized.token) {
+      window.alert("请先填写字段名称。");
+      return;
+    }
+    const anchorIndex = getNextPlaceholderAnchorIndex(placeholderAnchorsRef.current, normalized.id);
+    requestOnlyOfficeInsertPlaceholderVariable(normalized, anchorIndex);
+    setAnnotateSidePanelMode("placeholders");
+  }
+
+  function applyPlaceholderAnchorResult(result) {
     if (!result?.ok) {
       window.alert(result?.error || "占位符变量设置失败。");
       return;
     }
-    const nextAnchors = applyDetectedPlaceholders(placeholderAnchorsRef.current, result.anchors || []);
+    const incomingAnchors = result.anchor ? [result.anchor] : result.anchors || [];
+    const nextAnchors = applyPlaceholderAnchors(placeholderAnchorsRef.current, incomingAnchors);
     setPlaceholderAnchors(nextAnchors);
     setAnnotateSidePanelMode("placeholders");
     setSaveState("dirty");
-    syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors);
-    if (nextAnchors.length === 0) {
-      window.alert("未找到支持的占位符。当前已实装：{{项目名称}}。");
-    }
+    syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors, placeholderVariablesRef.current);
   }
 
   function removeTemplateField(fieldId) {
@@ -699,6 +768,7 @@ export default function App() {
   function clearAnnotations() {
     clearPreviewMarkers();
     setTemplateFields([]);
+    setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
     setAnnotateSidePanelMode("fields");
     setSelectedTemplateFieldId("");
@@ -773,6 +843,7 @@ export default function App() {
       confirmedCount: normalizedTemplateFields.filter((field) => field.status === "已标注").length,
       typeSummary: summarizeFieldTypes(normalizedTemplateFields),
       fields: normalizedTemplateFields,
+      placeholderVariables,
       placeholderAnchors,
       fileBuffer,
     };
@@ -794,6 +865,7 @@ export default function App() {
       activeWorkspace: "annotate",
       templateFile: getDraftTemplateFile({ ...templateFile, buffer: fileBuffer, size: formatFileSize(fileBuffer.byteLength) }),
       templateFields: normalizedTemplateFields,
+      placeholderVariables,
       placeholderAnchors,
       fillFields,
       materialFiles,
@@ -813,7 +885,8 @@ export default function App() {
     const templateFieldsToUse = (templateToUse.fields || []).map(normalizeTemplateFieldForRuntime);
     const mappedFields = createFillFieldsFromTemplate(templateFieldsToUse);
     setTemplateFields(templateFieldsToUse);
-    setPlaceholderAnchors(templateToUse.placeholderAnchors || []);
+    setPlaceholderVariables(normalizePlaceholderVariables(templateToUse.placeholderVariables));
+    setPlaceholderAnchors(applyPlaceholderAnchors([], templateToUse.placeholderAnchors || []));
     clearFilledTemplateDraft();
     if (templateToUse.fileBuffer) {
       annotatedTemplateBufferRef.current = null;
@@ -829,6 +902,7 @@ export default function App() {
       setAnnotatePreviewPage(1);
     } else {
       setTemplateFile(null);
+      setPlaceholderVariables(normalizePlaceholderVariables());
       setPlaceholderAnchors([]);
       setSaveState("no-file");
     }
@@ -846,7 +920,8 @@ export default function App() {
     const templateToEdit = storedTemplate ?? template;
     const fields = (templateToEdit.fields || []).map(normalizeTemplateFieldForRuntime);
     setTemplateFields(fields);
-    setPlaceholderAnchors(templateToEdit.placeholderAnchors || []);
+    setPlaceholderVariables(normalizePlaceholderVariables(templateToEdit.placeholderVariables));
+    setPlaceholderAnchors(applyPlaceholderAnchors([], templateToEdit.placeholderAnchors || []));
     clearFilledTemplateDraft();
     setFillFieldPageMap({});
     if (templateToEdit.fileBuffer) {
@@ -863,6 +938,7 @@ export default function App() {
       setSaveState("saved");
     } else {
       setTemplateFile(null);
+      setPlaceholderVariables(normalizePlaceholderVariables());
       setPlaceholderAnchors([]);
       setSaveState("no-file");
     }
@@ -1373,6 +1449,7 @@ export default function App() {
               <AnnotateWorkspace
                 templateFile={templateFile}
                 fields={templateFields}
+                placeholderVariables={placeholderVariables}
                 placeholderAnchors={placeholderAnchors}
                 sidePanelMode={annotateSidePanelMode}
                 selectedField={selectedTemplateField}
@@ -1393,7 +1470,13 @@ export default function App() {
                 onRemoveField={removeTemplateField}
                 onAddInputPoint={addInputPointForTemplateField}
                 onInputPointCaptured={applyTemplateInputPoint}
-                onPlaceholderAnchorsDetected={applyPlaceholderAnchors}
+                onAddPlaceholderVariable={addPlaceholderVariable}
+                onRenamePlaceholderVariable={renamePlaceholderVariable}
+                onDeletePlaceholderVariable={removePlaceholderVariable}
+                onInsertPlaceholderVariable={insertPlaceholderVariable}
+                onPlaceholderAnchorsDetected={applyPlaceholderAnchorResult}
+                onPlaceholderAnchorInserted={applyPlaceholderAnchorResult}
+                onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}
                 onOfficeDocumentReady={setTemplateOfficeDocId}
               />
             ) : (

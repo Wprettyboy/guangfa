@@ -99,6 +99,8 @@ function DocumentFrame({
   onUploadClick,
   onInputPointCaptured,
   onPlaceholderAnchorsDetected,
+  onPlaceholderAnchorInserted,
+  onOpenPlaceholderPanel,
   onOfficeDocumentReady,
   aiKnowledgeContext,
   trackRevisionsEnabled = true,
@@ -394,9 +396,18 @@ function DocumentFrame({
         onInputPointCaptured?.(data.result);
         return;
       }
+      if (data.action === "open-placeholder-panel") {
+        onOpenPlaceholderPanel?.();
+        return;
+      }
       if (data.action === "placeholder-anchors-detected") {
         console.log("[placeholder-anchors]", data.result);
         onPlaceholderAnchorsDetected?.(data.result);
+        return;
+      }
+      if (data.action === "placeholder-anchor-inserted") {
+        console.log("[placeholder-anchor]", data.result);
+        onPlaceholderAnchorInserted?.(data.result);
         return;
       }
       if (data.action === "field-bookmark" || data.action === "field-fill") {
@@ -431,7 +442,7 @@ function DocumentFrame({
     }
     window.addEventListener("message", handleOfficeAnnotation);
     return () => window.removeEventListener("message", handleOfficeAnnotation);
-  }, [activeOfficePreview?.id, mode, onFieldPagesChange, onInputPointCaptured, onPlaceholderAnchorsDetected, onSlotClick]);
+  }, [activeOfficePreview?.id, mode, onFieldPagesChange, onInputPointCaptured, onOpenPlaceholderPanel, onPlaceholderAnchorInserted, onPlaceholderAnchorsDetected, onSlotClick]);
 
   function jumpToPage(pageNumber) {
     if (!isReady) return;
