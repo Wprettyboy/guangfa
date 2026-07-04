@@ -390,12 +390,13 @@
 
     restoreSelectionState(selection.selectionState);
     try {
+      const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
+      restoreSelectionState(selection.selectionState);
       if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
       manager.AddBookmark(bookmarkName);
-      const selectedText = readBookmarkedText(manager, bookmarkName) || selection.text;
       const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
       const page = pageInfo.page || selection.page || 1;
-      const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
+      saveOnlyOfficeDocument("complex-fill-anchor");
       return postComplexFillResult("complex-fill-anchor-added", {
         ok: true,
         requestId,
@@ -405,7 +406,7 @@
           fieldId: anchor.fieldId || anchor.id,
           bookmarkName,
           page,
-          sourceText: selectedText,
+          sourceText: selection.text,
           fieldSummary: anchor.fieldSummary || "",
           index: Math.max(1, Number(anchor.index || 1) || 1),
           documentOrder: page * 1000000 + Math.max(1, Number(anchor.index || 1) || 1),
