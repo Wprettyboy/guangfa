@@ -34,7 +34,6 @@ function AnnotateWorkspace({
   onJumpPlaceholderAnchor,
   onDeletePlaceholderAnchor,
   onPlaceholderAnchorsDetected,
-  onPlaceholderAnchorInserted,
   onOpenPlaceholderPanel,
   onOfficeDocumentReady,
   placeholderVariables = [],
@@ -103,7 +102,6 @@ function AnnotateWorkspace({
           onUploadClick={() => fileInputRef.current?.click()}
           onInputPointCaptured={onInputPointCaptured}
           onPlaceholderAnchorsDetected={onPlaceholderAnchorsDetected}
-          onPlaceholderAnchorInserted={onPlaceholderAnchorInserted}
           onOpenPlaceholderPanel={onOpenPlaceholderPanel}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />

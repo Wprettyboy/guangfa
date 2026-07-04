@@ -241,12 +241,10 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
   return new Promise((resolve) => {
     let done = false;
     let firstFailure = null;
-    let failureTimer = null;
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
-      if (failureTimer) window.clearTimeout(failureTimer);
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -259,9 +257,6 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
         return;
       }
       firstFailure ||= data.result;
-      if (!failureTimer) {
-        failureTimer = window.setTimeout(() => finish(firstFailure), 2300);
-      }
     };
     const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段插入命令。" }), 8000);
     window.addEventListener("message", handleMessage);
