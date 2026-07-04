@@ -14,6 +14,10 @@ import {
   normalizeKnowledgeBaseIds,
 } from "./services/templates.js";
 import {
+  readWorkspaceSession,
+  saveWorkspaceSession,
+} from "./services/workspaceSession.js";
+import {
   postKnowledgeBase,
   postKnowledgeDocument,
   readKnowledgeBases,
@@ -102,21 +106,22 @@ import {
 gsap.registerPlugin(useGSAP);
 
 export default function App() {
-  const [activeModule, setActiveModule] = useState("workspace");
-  const [activeWorkspace, setActiveWorkspace] = useState("annotate");
-  const [workspaceNavOpen, setWorkspaceNavOpen] = useState(true);
-  const [settingsNavOpen, setSettingsNavOpen] = useState(true);
+  const [initialSession] = useState(readWorkspaceSession);
+  const [activeModule, setActiveModule] = useState(initialSession.activeModule || "workspace");
+  const [activeWorkspace, setActiveWorkspace] = useState(initialSession.activeWorkspace || "annotate");
+  const [workspaceNavOpen, setWorkspaceNavOpen] = useState(initialSession.workspaceNavOpen !== false);
+  const [settingsNavOpen, setSettingsNavOpen] = useState(initialSession.settingsNavOpen !== false);
   const [templateFile, setTemplateFile] = useState(initialTemplateFile);
   const [templateFields, setTemplateFields] = useState(initialTemplateFields);
   const [placeholderVariables, setPlaceholderVariables] = useState(() => normalizePlaceholderVariables());
   const [placeholderAnchors, setPlaceholderAnchors] = useState([]);
-  const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState("fields");
+  const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState(initialSession.annotateSidePanelMode || "fields");
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
-  const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState(initialTemplateFields[0]?.id ?? "");
+  const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState(initialSession.selectedTemplateFieldId || initialTemplateFields[0]?.id || "");
   const [brushActive, setBrushActive] = useState(false);
   const [brushType, setBrushType] = useState("填空");
-  const [annotatePreviewPage, setAnnotatePreviewPage] = useState(1);
-  const [fillPreviewPage, setFillPreviewPage] = useState(1);
+  const [annotatePreviewPage, setAnnotatePreviewPage] = useState(initialSession.annotatePreviewPage || 1);
+  const [fillPreviewPage, setFillPreviewPage] = useState(initialSession.fillPreviewPage || 1);
   const [fillOfficeDocId, setFillOfficeDocId] = useState("");
   const [filledTemplateFile, setFilledTemplateFile] = useState(null);
   const [fillFieldPageMap, setFillFieldPageMap] = useState({});
@@ -124,8 +129,8 @@ export default function App() {
   const [templateLibrary, setTemplateLibrary] = useState([]);
   const [fillFields, setFillFields] = useState(initialFillFields);
   const [materialFiles, setMaterialFiles] = useState([]);
-  const [selectedFieldId, setSelectedFieldId] = useState("F-002");
-  const [citationFieldId, setCitationFieldId] = useState("F-002");
+  const [selectedFieldId, setSelectedFieldId] = useState(initialSession.selectedFieldId || "F-002");
+  const [citationFieldId, setCitationFieldId] = useState(initialSession.citationFieldId || "F-002");
   const [showCitations, setShowCitations] = useState(true);
   const [draftReady, setDraftReady] = useState(false);
   const [generatingAll, setGeneratingAll] = useState(false);
@@ -252,12 +257,14 @@ export default function App() {
         setMaterialFiles(draft.materialFiles || []);
         setSelectedFieldId(draft.selectedFieldId || draft.fillFields?.[0]?.id || "");
         setCitationFieldId(draft.citationFieldId || draft.fillFields?.[0]?.id || "");
+        setSelectedTemplateFieldId(draft.selectedTemplateFieldId || draft.templateFields?.[0]?.id || "");
         setAnnotatePreviewPage(draft.annotatePreviewPage || 1);
         setFillPreviewPage(draft.fillPreviewPage || 1);
+        setAnnotateSidePanelMode(draft.annotateSidePanelMode || initialSession.annotateSidePanelMode || "fields");
         setSelectedProjectKnowledgeBaseIds(normalizeKnowledgeBaseIds(draft.selectedProjectKnowledgeBaseIds ?? draft.selectedProjectKnowledgeBaseId));
         setSelectedGlobalKnowledgeBaseIds(normalizeKnowledgeBaseIds(draft.selectedGlobalKnowledgeBaseIds ?? draft.selectedGlobalKnowledgeBaseId));
-        setActiveWorkspace(draft.activeWorkspace || "fill");
-        setActiveModule("workspace");
+        setActiveWorkspace(draft.activeWorkspace || initialSession.activeWorkspace || "fill");
+        setActiveModule(draft.activeModule || initialSession.activeModule || "workspace");
       }
       setDraftReady(true);
     });
@@ -302,10 +309,40 @@ export default function App() {
 
   useEffect(() => {
     if (!draftReady) return;
+    saveWorkspaceSession({
+      activeModule,
+      activeWorkspace,
+      annotateSidePanelMode,
+      annotatePreviewPage,
+      fillPreviewPage,
+      selectedTemplateFieldId,
+      selectedFieldId,
+      citationFieldId,
+      workspaceNavOpen,
+      settingsNavOpen,
+    });
+  }, [
+    activeModule,
+    activeWorkspace,
+    annotatePreviewPage,
+    annotateSidePanelMode,
+    citationFieldId,
+    draftReady,
+    fillPreviewPage,
+    selectedFieldId,
+    selectedTemplateFieldId,
+    settingsNavOpen,
+    workspaceNavOpen,
+  ]);
+
+  useEffect(() => {
+    if (!draftReady) return;
     if (!templateFile?.buffer) return;
     const timeout = window.setTimeout(() => {
       saveDraftState({
         activeWorkspace,
+        activeModule,
+        annotateSidePanelMode,
         templateFile: getDraftTemplateFile(),
         filledTemplateFile: getDraftFilledTemplateFile(),
         templateFields,
@@ -313,6 +350,7 @@ export default function App() {
         placeholderAnchors,
         fillFields,
         materialFiles,
+        selectedTemplateFieldId,
         selectedFieldId,
         citationFieldId,
         annotatePreviewPage,
@@ -324,6 +362,8 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [
     activeWorkspace,
+    activeModule,
+    annotateSidePanelMode,
     annotatePreviewPage,
     citationFieldId,
     draftReady,
@@ -334,6 +374,7 @@ export default function App() {
     placeholderAnchors,
     selectedProjectKnowledgeBaseIds,
     selectedGlobalKnowledgeBaseIds,
+    selectedTemplateFieldId,
     selectedFieldId,
     templateFields,
     templateFile,
@@ -407,13 +448,16 @@ export default function App() {
         );
         console.log("[annotate] synced highlighted docx", { id: officeDocId, bytes: buffer.byteLength });
         await saveDraftState({
+          activeModule,
           activeWorkspace: "annotate",
+          annotateSidePanelMode,
           templateFile: getDraftTemplateFile({ ...templateFile, buffer }),
           templateFields: fieldsSnapshot,
           placeholderVariables: variablesSnapshot,
           placeholderAnchors: anchorsSnapshot,
           fillFields,
           materialFiles,
+          selectedTemplateFieldId,
           selectedFieldId,
           citationFieldId,
           annotatePreviewPage,
@@ -457,7 +501,9 @@ export default function App() {
         filledTemplateDraftFileRef.current = filledFile;
         setFilledTemplateFile(filledFile);
         await saveDraftState({
+          activeModule,
           activeWorkspace: "fill",
+          annotateSidePanelMode,
           templateFile: getDraftTemplateFile(),
           filledTemplateFile: filledFile,
           templateFields,
@@ -465,6 +511,7 @@ export default function App() {
           placeholderAnchors: placeholderAnchorsRef.current,
           fillFields: fieldsSnapshot,
           materialFiles,
+          selectedTemplateFieldId,
           selectedFieldId,
           citationFieldId,
           annotatePreviewPage,
@@ -904,13 +951,16 @@ export default function App() {
     setSelectedFieldId(normalizedTemplateFields[0]?.id ?? "");
     setCitationFieldId(normalizedTemplateFields[0]?.id ?? "");
     await saveDraftState({
+      activeModule,
       activeWorkspace: "annotate",
+      annotateSidePanelMode,
       templateFile: getDraftTemplateFile({ ...templateFile, buffer: fileBuffer, size: formatFileSize(fileBuffer.byteLength) }),
       templateFields: normalizedTemplateFields,
       placeholderVariables,
       placeholderAnchors,
       fillFields,
       materialFiles,
+      selectedTemplateFieldId,
       selectedFieldId,
       citationFieldId,
       annotatePreviewPage,
