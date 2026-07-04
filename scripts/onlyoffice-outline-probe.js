@@ -207,40 +207,12 @@
 
   function clearTextHighlightFromCurrentSelection() {
     const api = getEditorApi();
-    const directResult = clearTextHighlightByTextProperties();
     if (api && typeof api.put_LineHighLight === "function") {
       api.put_LineHighLight(false, 255, 255, 255);
       if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
-      return { ok: true, source: directResult.ok ? "direct-text-pr+put-line-highlight" : "put-line-highlight", directResult };
+      return { ok: true, source: "put-line-highlight" };
     }
-    return directResult.ok ? directResult : { ok: true, skipped: true, reason: "line-highlight-api-unavailable", directResult };
-  }
-
-  function clearTextHighlightByTextProperties() {
-    const logicDocument = getLogicDocument();
-    const TextPrClass = window.AscCommonWord?.ParaTextPr;
-    const highlightNone = window.AscCommonWord?.highlight_None;
-    if (!logicDocument || !TextPrClass || typeof logicDocument.AddToParagraph !== "function" || highlightNone === undefined) {
-      return { ok: false, error: "direct-highlight-api-unavailable" };
-    }
-    let actionStarted = false;
-    try {
-      if (typeof logicDocument.StartAction === "function") {
-        logicDocument.StartAction(window.AscDFH?.historydescription_Document_SetTextHighlightNone);
-        actionStarted = true;
-      }
-      logicDocument.AddToParagraph(new TextPrClass({ HighLight: highlightNone }));
-      safeCall(logicDocument, "Recalculate", null);
-      safeCall(logicDocument, "UpdateInterface", null);
-      safeCall(logicDocument, "UpdateSelection", null);
-      return { ok: true, source: "direct-text-pr-highlight-none" };
-    } catch (error) {
-      return { ok: false, error: error?.message || "direct-highlight-clear-failed" };
-    } finally {
-      if (actionStarted && typeof logicDocument.FinalizeAction === "function") {
-        try { logicDocument.FinalizeAction(); } catch {}
-      }
-    }
+    return { ok: true, skipped: true, reason: "line-highlight-api-unavailable" };
   }
 
   function saveOnlyOfficeDocument(trigger) {

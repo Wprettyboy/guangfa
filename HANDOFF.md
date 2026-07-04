@@ -219,7 +219,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `extractOnlyOfficeVisiblePage()`：读取当前可见页，优先 DOM/编辑器可见页接口。
   - `highlightOnlyOfficeSelection(selectionState)`：恢复选区并调用高亮。
   - `applyTextHighlightToCurrentSelection(options)`：调用 `api.put_LineHighLight(true, r, g, b)` 给当前选区加高亮；不传 options 时默认黄色。
-  - `clearTextHighlightFromCurrentSelection()`：优先通过 `AscCommonWord.ParaTextPr({ HighLight: AscCommonWord.highlight_None })` 清除当前选区文字高亮，并用 `api.put_LineHighLight(false, 255, 255, 255)` 兜底。
+  - `clearTextHighlightFromCurrentSelection()`：调用 `api.put_LineHighLight(false, 255, 255, 255)` 清除当前选区高亮。
   - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，并给该选区加浅蓝高亮后回传 `{ anchor }`。
   - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补浅蓝高亮。
   - `deleteComplexFillAnchor(payload)`：先选中 `GF_CF_` 书签范围，调用 `api.put_LineHighLight(false, ...)` 清除高亮，再调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除书签并保留原文内容；如果书签范围无法选中则返回失败。
