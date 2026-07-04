@@ -377,7 +377,7 @@ function readOnlyOfficePageNumber(payload) {
 }
 
 function loadOnlyOfficeApi(serverUrl) {
-  const scriptUrl = `${String(serverUrl || "").replace(/\/$/, "")}/web-apps/apps/api/documents/api.js?gf=20`;
+  const scriptUrl = `${String(serverUrl || "").replace(/\/$/, "")}/web-apps/apps/api/documents/api.js?gf=21`;
   const existing = [...document.scripts].find((script) => script.src === scriptUrl);
   if (window.DocsAPI?.DocEditor) return Promise.resolve();
   if (existing) {

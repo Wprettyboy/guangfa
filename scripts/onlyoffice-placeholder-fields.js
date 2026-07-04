@@ -230,6 +230,11 @@
   function applyInsertedPlaceholderHighlight() {
     const api = getEditorApi();
     try {
+      if (api && typeof api.SetMarkerFormat === "function") {
+        api.SetMarkerFormat(true, true, 229, 231, 235);
+        if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
+        return { ok: true, color: "E5E7EB", source: "set-marker-format" };
+      }
       if (api && typeof api.put_LineHighLight === "function") {
         api.put_LineHighLight(true, 229, 231, 235);
         if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
