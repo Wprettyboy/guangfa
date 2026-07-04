@@ -764,6 +764,7 @@ export default function App() {
   function addPlaceholderVariable() {
     const nextVariables = [...placeholderVariables, createPlaceholderVariable(`字段${placeholderVariables.length + 1}`, placeholderVariables)];
     setPlaceholderVariables(nextVariables);
+    persistPlaceholderVariableDraft(nextVariables);
     setAnnotateSidePanelMode("placeholders");
     setSaveState("dirty");
   }
@@ -779,6 +780,7 @@ export default function App() {
         : variable,
     );
     setPlaceholderVariables(nextVariables);
+    persistPlaceholderVariableDraft(nextVariables);
     setSaveState("dirty");
   }
 
@@ -791,7 +793,21 @@ export default function App() {
     const nextAnchors = placeholderAnchors.filter((anchor) => anchor.variableId !== variableId);
     setPlaceholderVariables(nextVariables);
     setPlaceholderAnchors(nextAnchors);
+    persistPlaceholderVariableDraft(nextVariables, nextAnchors);
     setSaveState("dirty");
+  }
+
+  function persistPlaceholderVariableDraft(nextVariables, nextAnchors = placeholderAnchorsRef.current) {
+    placeholderVariablesRef.current = nextVariables;
+    placeholderAnchorsRef.current = nextAnchors;
+    if (!draftAutosaveSnapshotRef.current) return;
+    const nextSnapshot = {
+      ...draftAutosaveSnapshotRef.current,
+      placeholderVariables: nextVariables,
+      placeholderAnchors: nextAnchors,
+    };
+    draftAutosaveSnapshotRef.current = nextSnapshot;
+    saveDraftState(nextSnapshot);
   }
 
   function insertPlaceholderVariable(variable) {
