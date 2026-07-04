@@ -218,10 +218,10 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `extractOnlyOfficePage(selectionState)`：从选区状态、编辑器 API 或逻辑文档推断当前页。
   - `extractOnlyOfficeVisiblePage()`：读取当前可见页，优先 DOM/编辑器可见页接口。
   - `highlightOnlyOfficeSelection(selectionState)`：恢复选区并调用高亮。
-  - `applyTextHighlightToCurrentSelection(options)`：调用 `api.put_LineHighLight(true, r, g, b)` 给当前选区加高亮；不传 options 时默认黄色。
+  - `applyTextHighlightToCurrentSelection(options)`：优先调用 OnlyOffice 工具栏高亮同源接口 `api.SetMarkerFormat(true, true, r, g, b)` 给当前选区加高亮，失败时兜底 `api.put_LineHighLight(true, r, g, b)`；不传 options 时默认黄色。
   - `clearTextHighlightFromCurrentSelection()`：调用 `api.put_LineHighLight(false, 255, 255, 255)` 清除当前选区高亮。
   - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，先恢复用户真实选区并调用高亮工具，再基于同一选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，最后触发保存并回传 `{ anchor }`。
-  - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补浅蓝高亮。
+  - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补灰色高亮。
   - `deleteComplexFillAnchor(payload)`：调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除 `GF_CF_` 书签，保留原文内容，并尝试清除该选区高亮。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
@@ -257,7 +257,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。
 - `logicDocument.Recalculate()`、`UpdateInterface()`、`UpdateSelection()`：插入或删除后刷新文档状态和 UI。
 - `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
-- `api.put_LineHighLight(true, r, g, b)`：给当前选区加高亮。
+- `api.SetMarkerFormat(true, true, r, g, b)`：OnlyOffice 工具栏高亮按钮同源接口，给当前选区套用指定高亮色。
+- `api.put_LineHighLight(true, r, g, b)`：给当前选区加高亮，可作为 `SetMarkerFormat` 不可用时的兜底。
 - `api.asc_ShowDocumentOutline()` / `api.asc_GetDocumentOutlineManager()`：打开并读取文档大纲管理器。
 - `api.asc_SetTrackRevisions(enabled)` / `api.asc_setTrackRevisions(enabled)` / `SetTrackRevisions(enabled)`：设置修订模式。
 - `AscWord.CParagraphBookmark` / `AscCommonWord.CParagraphBookmark`：创建书签开始/结束节点。

@@ -1,5 +1,5 @@
 (function () {
-  const complexFillHighlightColor = { r: 217, g: 234, b: 255, color: "D9EAFF" };
+  const complexFillHighlightColor = { r: 211, g: 211, b: 211, color: "D3D3D3" };
 
   function getApplication() {
     try {
@@ -197,6 +197,16 @@
     const r = Number.isFinite(Number(options.r)) ? Number(options.r) : 255;
     const g = Number.isFinite(Number(options.g)) ? Number(options.g) : 255;
     const b = Number.isFinite(Number(options.b)) ? Number(options.b) : 0;
+    if (api && typeof api.SetMarkerFormat === "function") {
+      try {
+        api.SetMarkerFormat(true, true, r, g, b);
+        window.setTimeout(function () {
+          try { api.SetMarkerFormat(false); } catch {}
+        }, 0);
+        if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
+        return { ok: true, color: options.color || "FFFF00", source: "set-marker-format" };
+      } catch {}
+    }
     if (api && typeof api.put_LineHighLight === "function") {
       api.put_LineHighLight(true, r, g, b);
       if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
