@@ -222,7 +222,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `clearTextHighlightFromCurrentSelection()`：调用 `api.put_LineHighLight(false, 255, 255, 255)` 清除当前选区高亮。
   - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，并给该选区加浅蓝高亮后回传 `{ anchor }`。
   - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补浅蓝高亮。
-  - `deleteComplexFillAnchor(payload)`：先选中 `GF_CF_` 书签范围，调用 `api.put_LineHighLight(false, ...)` 清除高亮，再调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除书签并保留原文内容；如果书签范围无法选中则返回失败。
+  - `deleteComplexFillAnchor(payload)`：调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除 `GF_CF_` 书签，保留原文内容，并尝试清除该选区高亮。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。

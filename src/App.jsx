@@ -1032,18 +1032,14 @@ export default function App() {
     });
   }
 
-  async function deleteComplexFillAnchor(anchor) {
+  function deleteComplexFillAnchor(anchor) {
     if (!anchor?.bookmarkName) return;
-    setAnnotateSidePanelMode("complex-fill");
-    const result = await requestOnlyOfficeDeleteComplexFillAnchor(anchor);
-    if (result?.timeout || !result?.ok) {
-      window.alert(result?.error || "OnlyOffice 未能删除该复杂类填充书签。");
-      return;
-    }
     const nextAnchors = complexFillAnchorsRef.current.filter((current) => current.bookmarkName !== anchor.bookmarkName);
     setComplexFillAnchors(nextAnchors);
     updateComplexFillDraftSnapshot(complexFillFieldsRef.current, nextAnchors);
+    setAnnotateSidePanelMode("complex-fill");
     setSaveState("dirty");
+    requestOnlyOfficeDeleteComplexFillAnchor(anchor).catch(() => {});
   }
 
   function removeTemplateField(fieldId) {

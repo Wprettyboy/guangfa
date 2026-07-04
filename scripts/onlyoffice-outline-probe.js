@@ -428,25 +428,16 @@
     const requestId = payload.requestId || "";
     const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
     const manager = getBookmarkManager();
+    const selected = selectBookmarkRange(manager, bookmarkName);
     if (!manager || !bookmarkName) {
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, error: "复杂类填充书签接口不可用" });
     }
     if (!hasBookmark(manager, bookmarkName)) {
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, error: "未找到对应复杂类填充书签" });
     }
-    const selected = selectBookmarkRange(manager, bookmarkName);
-    if (!selected.ok || !selected.selected) {
-      return postComplexFillResult("complex-fill-anchor-deleted", {
-        ...selected,
-        ok: false,
-        requestId,
-        error: selected.error || "未能选中对应复杂类填充书签范围，已停止删除。",
-      });
-    }
     try {
       const highlight = clearTextHighlightFromCurrentSelection();
       removeBookmark(manager, bookmarkName);
-      saveOnlyOfficeDocument("complex-fill-anchor-delete");
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: true, requestId, bookmarkName, page: selected.page || 1, highlight });
     } catch (error) {
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page || 1, error: error?.message || "复杂类填充书签删除失败" });
