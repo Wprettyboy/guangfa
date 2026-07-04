@@ -244,7 +244,7 @@
       }
 
       const bookmarkId = manager.GetNewBookmarkId();
-      const tempParagraph = new Paragraph(currentParagraph.GetParent ? currentParagraph.GetParent() : null);
+      const tempParagraph = new Paragraph();
       const run = new ParaRun(tempParagraph, false);
       run.AddText(text);
 
