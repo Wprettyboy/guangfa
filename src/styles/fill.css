@@ -282,6 +282,34 @@
   min-height: 150px;
 }
 
+.placeholder-panel-section.standalone {
+  flex: 1;
+}
+
+.placeholder-summary {
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  padding: 12px;
+  border-bottom: 1px solid #eef2f7;
+  background: #f8fbff;
+}
+
+.placeholder-summary strong,
+.placeholder-summary span {
+  display: block;
+}
+
+.placeholder-summary strong {
+  color: #25324a;
+  font-size: 14px;
+}
+
+.placeholder-summary span {
+  color: #6d7b91;
+  font-size: 12px;
+}
+
 .placeholder-anchor-list {
   display: grid;
   max-height: 190px;

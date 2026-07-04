@@ -143,8 +143,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### 占位符变量自动设置
 
-- 定制组件新增“自动字段设置”，当前只识别白名单占位符：`{{项目名称}}`、`{{采购人}}`、`{{采购代理机构}}`、`{{项目编号}}`、`{{日期}}`、`{{供应商}}`。
-- 占位符变量模块独立于旧模板字段：前端状态为 `placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`。
+- 定制组件新增“自动字段设置”，当前只实装并识别 `{{项目名称}}` 占位符。
+- 占位符变量模块独立于旧模板字段：前端状态为 `placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`，右侧面板也与字段属性/字段列表互斥显示。
 - `src/features/placeholders/definitions.js` 维护占位符白名单；`src/features/placeholders/applyDetectedPlaceholders.js` 只负责整理检测结果。
 - `scripts/onlyoffice-placeholder-fields.js` 使用 OnlyOffice 搜索接口精确查找占位符文本，校验选区后写入唯一 `GF_PH_` 书签并回传锚点；后续定位应依赖书签，不依赖页码、行号或旧字段选区。
 

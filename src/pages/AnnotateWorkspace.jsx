@@ -29,6 +29,8 @@ function AnnotateWorkspace({
   onPlaceholderAnchorsDetected,
   onOfficeDocumentReady,
   placeholderAnchors = [],
+  sidePanelMode = "fields",
+  onSidePanelModeChange,
 }) {
   const fileInputRef = useRef(null);
   const panelRef = useRef(null);
@@ -72,6 +74,8 @@ function AnnotateWorkspace({
     event.target.value = "";
   }
 
+  const showPlaceholderPanel = sidePanelMode === "placeholders";
+
   return (
     <div className="work-grid annotate-grid">
       <section className="document-card">
@@ -95,6 +99,13 @@ function AnnotateWorkspace({
       </section>
 
       <aside className="right-panel field-panel" ref={panelRef}>
+        {showPlaceholderPanel ? (
+          <PlaceholderPanel
+            anchors={placeholderAnchors}
+            onBack={() => onSidePanelModeChange?.("fields")}
+          />
+        ) : (
+          <>
         <div className="panel-section">
           <div className="panel-title">
             <h2>字段属性</h2>
@@ -119,32 +130,6 @@ function AnnotateWorkspace({
             onChange={onUpdateField}
             onAddInputPoint={() => selectedField && onAddInputPoint?.(selectedField.id)}
           />
-        </div>
-        <div className="panel-section placeholder-panel-section">
-          <div className="panel-title">
-            <h2>占位符变量</h2>
-            <div className="panel-actions">
-              <span className="soft-count">总计 {placeholderAnchors.length} 个</span>
-            </div>
-          </div>
-          <div className="placeholder-anchor-list">
-            {placeholderAnchors.length === 0 ? (
-              <div className="empty-state compact">
-                <Highlighter size={16} />
-                <span>点击定制组件里的自动字段设置</span>
-              </div>
-            ) : (
-              placeholderAnchors.map((anchor, index) => (
-                <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
-                  <span className="row-index">{index + 1}</span>
-                  <div>
-                    <strong>{anchor.label}</strong>
-                    <span>{anchor.token} · 第 {anchor.page || 1} 页 · {anchor.bookmarkName}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
         </div>
         <div className="panel-section grow-section">
           <div className="panel-title">
@@ -208,7 +193,46 @@ function AnnotateWorkspace({
             )}
           </div>
         </div>
+          </>
+        )}
       </aside>
+    </div>
+  );
+}
+
+function PlaceholderPanel({ anchors, onBack }) {
+  const projectNameAnchors = anchors.filter((anchor) => anchor.key === "projectName");
+  return (
+    <div className="panel-section placeholder-panel-section standalone">
+      <div className="panel-title">
+        <h2>自动字段设置</h2>
+        <div className="panel-actions">
+          <span className="soft-count">项目名称 {projectNameAnchors.length} 个</span>
+          <button className="text-button" type="button" onClick={onBack}>返回字段标注</button>
+        </div>
+      </div>
+      <div className="placeholder-summary">
+        <strong>项目名称</strong>
+        <span>支持占位符：{"{{项目名称}}"}</span>
+      </div>
+      <div className="placeholder-anchor-list">
+        {projectNameAnchors.length === 0 ? (
+          <div className="empty-state compact">
+            <Highlighter size={16} />
+            <span>模板中暂无 {"{{项目名称}}"} 占位符</span>
+          </div>
+        ) : (
+          projectNameAnchors.map((anchor, index) => (
+            <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
+              <span className="row-index">{index + 1}</span>
+              <div>
+                <strong>{anchor.label}</strong>
+                <span>{anchor.token} · 第 {anchor.page || 1} 页 · {anchor.bookmarkName}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

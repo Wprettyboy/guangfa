@@ -97,6 +97,7 @@ export default function App() {
   const [templateFile, setTemplateFile] = useState(initialTemplateFile);
   const [templateFields, setTemplateFields] = useState(initialTemplateFields);
   const [placeholderAnchors, setPlaceholderAnchors] = useState([]);
+  const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState("fields");
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
   const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState(initialTemplateFields[0]?.id ?? "");
   const [brushActive, setBrushActive] = useState(false);
@@ -461,6 +462,7 @@ export default function App() {
     setTemplateFile(null);
     setTemplateFields([]);
     setPlaceholderAnchors([]);
+    setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
     setAnnotatePreviewPage(1);
@@ -593,6 +595,7 @@ export default function App() {
     });
     setTemplateFields([]);
     setPlaceholderAnchors([]);
+    setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
     setAnnotatePreviewPage(1);
@@ -619,6 +622,7 @@ export default function App() {
     const nextField = createAnnotatedField(slot, getNextFieldNumber(templateFields), fieldType);
     const nextFields = [...templateFields, nextField];
     setTemplateFields(nextFields);
+    setAnnotateSidePanelMode("fields");
     setSelectedTemplateFieldId(nextField.id);
     setSaveState("dirty");
     requestOnlyOfficeAddFieldBookmark(nextField);
@@ -674,10 +678,11 @@ export default function App() {
     }
     const nextAnchors = applyDetectedPlaceholders(placeholderAnchorsRef.current, result.anchors || []);
     setPlaceholderAnchors(nextAnchors);
+    setAnnotateSidePanelMode("placeholders");
     setSaveState("dirty");
     syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors);
     if (nextAnchors.length === 0) {
-      window.alert("未找到支持的占位符。请在模板中使用 {{项目名称}}、{{采购人}}、{{日期}} 等占位符。");
+      window.alert("未找到支持的占位符。当前已实装：{{项目名称}}。");
     }
   }
 
@@ -695,6 +700,7 @@ export default function App() {
     clearPreviewMarkers();
     setTemplateFields([]);
     setPlaceholderAnchors([]);
+    setAnnotateSidePanelMode("fields");
     setSelectedTemplateFieldId("");
     setSaveState("dirty");
   }
@@ -1368,6 +1374,7 @@ export default function App() {
                 templateFile={templateFile}
                 fields={templateFields}
                 placeholderAnchors={placeholderAnchors}
+                sidePanelMode={annotateSidePanelMode}
                 selectedField={selectedTemplateField}
                 selectedFieldId={selectedTemplateFieldId}
                 brushActive={brushActive}
@@ -1377,7 +1384,11 @@ export default function App() {
                 onSaveTemplate={saveTemplate}
                 onPreviewPageChange={setAnnotatePreviewPage}
                 onSlotClick={markSlot}
-                onSelectField={setSelectedTemplateFieldId}
+                onSelectField={(fieldId) => {
+                  setAnnotateSidePanelMode("fields");
+                  setSelectedTemplateFieldId(fieldId);
+                }}
+                onSidePanelModeChange={setAnnotateSidePanelMode}
                 onUpdateField={updateTemplateField}
                 onRemoveField={removeTemplateField}
                 onAddInputPoint={addInputPointForTemplateField}
