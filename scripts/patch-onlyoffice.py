@@ -38,12 +38,12 @@ html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister,
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 html = re.sub(r'\s*<script src="guangfa-placeholder-fields\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=62"></script>\n<script src="guangfa-placeholder-fields.js?gf=7"></script>\n</body>')
-html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=7"', html)
-if 'urlArgs: "gf=7"' not in html:
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=62"></script>\n<script src="guangfa-placeholder-fields.js?gf=17"></script>\n</body>')
+html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=8"', html)
+if 'urlArgs: "gf=8"' not in html:
     html = html.replace(
         "var require = {\n            waitSeconds: 30,",
-        'var require = {\n            waitSeconds: 30,\n            urlArgs: "gf=7",',
+        'var require = {\n            waitSeconds: 30,\n            urlArgs: "gf=8",',
     )
 write_patched(index, html)
 
@@ -61,7 +61,7 @@ for api in [
 ]:
     if api.exists():
         text = api.read_text(encoding="utf-8")
-        next_text = re.sub(r'var params = "\?_dc=9\.4\.0-129(?:-gf\d+)?";', 'var params = "?_dc=9.4.0-129-gf6";', text)
+        next_text = re.sub(r'var params = "\?_dc=9\.4\.0-129(?:-gf\d+)?";', 'var params = "?_dc=9.4.0-129-gf17";', text)
         if next_text != text:
             api.chmod(0o644)
             api.write_text(next_text, encoding="utf-8")
@@ -80,7 +80,7 @@ if sw.exists():
 
 toolbar = Path("/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/app/controller/Toolbar.js")
 toolbar_text = toolbar.read_text(encoding="utf-8")
-custom_panel_html = """<section class="panel" data-tab="custom-components" role="tabpanel" aria-labelledby="custom-components"><div class="group"><button type="button" class="btn btn-text-default x-huge" style="min-width:96px;margin:9px 6px;" onclick="window.parent.postMessage({source:'guangfa-onlyoffice-custom',action:'toggle-content-audit'}, '*')">内容审查</button><button type="button" class="btn btn-text-default x-huge" style="min-width:96px;margin:9px 6px;" onclick="if(window.guangfaPostOnlyOfficeOutline)window.guangfaPostOnlyOfficeOutline();window.parent.postMessage({source:'guangfa-onlyoffice-custom',action:'toggle-outline-audit'}, '*')">大纲审查</button><button type="button" class="btn btn-text-default x-huge" style="min-width:96px;margin:9px 6px;" onclick="if(window.guangfaPostOnlyOfficeSelection)window.guangfaPostOnlyOfficeSelection();else window.parent.postMessage({source:'guangfa-onlyoffice-custom',action:'annotate-selection',selection:{ok:false,error:'选区脚本未加载'}}, '*')">标注字段</button><button type="button" class="btn btn-text-default x-huge" style="min-width:110px;margin:9px 6px;" onclick="window.parent.postMessage({source:'guangfa-onlyoffice-custom',action:'open-placeholder-panel'}, '*')">自动字段设置</button></div></section>"""
+custom_panel_html = """<section class="panel" data-tab="custom-components" role="tabpanel" aria-labelledby="custom-components"><div class="group"><button type="button" class="btn btn-text-default x-huge" style="min-width:96px;margin:9px 6px;" onclick="window.top.postMessage({source:'guangfa-onlyoffice-custom',action:'toggle-content-audit'}, '*')">内容审查</button><button type="button" class="btn btn-text-default x-huge" style="min-width:96px;margin:9px 6px;" onclick="if(window.guangfaPostOnlyOfficeOutline)window.guangfaPostOnlyOfficeOutline();window.top.postMessage({source:'guangfa-onlyoffice-custom',action:'toggle-outline-audit'}, '*')">大纲审查</button><button type="button" class="btn btn-text-default x-huge" style="min-width:96px;margin:9px 6px;" onclick="if(window.guangfaPostOnlyOfficeSelection)window.guangfaPostOnlyOfficeSelection();else window.top.postMessage({source:'guangfa-onlyoffice-custom',action:'annotate-selection',selection:{ok:false,error:'选区脚本未加载'}}, '*')">标注字段</button><button type="button" class="btn btn-text-default x-huge" style="min-width:110px;margin:9px 6px;" onclick="window.top.postMessage({source:'guangfa-onlyoffice-custom',action:'open-placeholder-panel'}, '*')">自动字段设置</button></div></section>"""
 custom_tab = """            // guangfa: local custom tab placeholder.
             if (me.toolbar.getTab && !me.toolbar.getTab('custom-components')) {
                 tab = {caption: '定制组件', action: 'custom-components', extcls: config.isEdit ? 'canedit' : '', dataHintTitle: 'G'};
