@@ -1,6 +1,7 @@
 const templateDbName = "tender-agent-template-db";
 
 const templateStoreName = "templates";
+const currentDraftVersion = 2;
 
 async function openTemplateDb() {
   return new Promise((resolve, reject) => {
@@ -112,7 +113,11 @@ async function readDraftState() {
     const response = await fetch("/api/draft");
     if (!response.ok) return null;
     const draft = await response.json();
-    return deserializeDraft(draft);
+    const restoredDraft = deserializeDraft(draft);
+    if (!restoredDraft && draft?.templateFile?.fileBase64) {
+      await clearDraftState();
+    }
+    return restoredDraft;
   } catch {
     return null;
   }
@@ -151,6 +156,7 @@ function serializeDraft(draft) {
   };
   return {
     ...cleanDraft,
+    draftVersion: currentDraftVersion,
     templateFile: cleanDraft.templateFile
       ? {
           ...cleanDraft.templateFile,
@@ -171,6 +177,7 @@ function serializeDraft(draft) {
 
 function deserializeDraft(draft) {
   if (!draft?.templateFile?.fileBase64) return null;
+  if (draft.draftVersion !== currentDraftVersion) return null;
   return {
     ...draft,
     templateFields: sanitizeTemplateFields(draft.templateFields),

@@ -575,6 +575,7 @@ export default function App() {
 
   function startNewAnnotatedTemplate() {
     clearDraftState();
+    draftAutosaveSnapshotRef.current = null;
     annotatedTemplateBufferRef.current = null;
     setTemplateFile(null);
     setTemplateFields([]);
@@ -702,6 +703,8 @@ export default function App() {
     if (!file) return;
     const isDocx = /\.(docx)$/i.test(file.name);
     const buffer = isDocx ? await file.arrayBuffer() : null;
+    await clearDraftState();
+    draftAutosaveSnapshotRef.current = null;
     annotatedTemplateBufferRef.current = null;
     clearFilledTemplateDraft();
     setTemplateFile({
