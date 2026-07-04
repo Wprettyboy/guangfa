@@ -794,7 +794,7 @@ export default function App() {
     }
     const anchorIndex = getNextPlaceholderAnchorIndex(placeholderAnchorsRef.current, normalized.id);
     requestOnlyOfficeInsertPlaceholderVariable(normalized, anchorIndex).then((result) => {
-      if (result?.timeout) window.alert(result.error || "OnlyOffice 未响应自动字段插入命令，请确认左侧文档已加载完成。");
+      if (result?.timeout || result?.ok === false) window.alert(result.error || "OnlyOffice 未响应自动字段插入命令，请确认左侧文档已加载完成。");
     });
     setAnnotateSidePanelMode("placeholders");
   }
@@ -835,7 +835,6 @@ export default function App() {
 
   function applyPlaceholderAnchorResult(result) {
     if (!result?.ok) {
-      window.alert(result?.error || "占位符变量设置失败。");
       return;
     }
     const incomingAnchors = result.anchor ? [result.anchor] : result.anchors || [];
