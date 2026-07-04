@@ -144,6 +144,19 @@
     }
   }
 
+  function applyInsertedPlaceholderHighlight() {
+    const api = getEditorApi();
+    try {
+      if (api && typeof api.put_LineHighLight === "function") {
+        api.put_LineHighLight(true, 229, 231, 235);
+        return { ok: true, color: "E5E7EB", source: "line-highlight" };
+      }
+    } catch (error) {
+      return { ok: false, error: error?.message || "占位符灰色底纹设置失败" };
+    }
+    return { ok: true, skipped: true, reason: "line-highlight-api-unavailable" };
+  }
+
   function saveDocument(trigger) {
     const api = getEditorApi();
     try {
@@ -180,6 +193,7 @@
 
     const selectResult = selectInsertedText(variable.token);
     if (!selectResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: selectResult.error, selectedText: selectResult.selectedText });
+    const highlightResult = applyInsertedPlaceholderHighlight();
 
     try {
       if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
@@ -197,6 +211,7 @@
           page,
           index: variable.anchorIndex,
           documentOrder: page * 1000000 + variable.anchorIndex,
+          highlight: highlightResult,
         },
       });
     } catch (error) {

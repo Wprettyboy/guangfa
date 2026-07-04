@@ -242,15 +242,12 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
         ) : variables.map((variable) => {
           const count = anchors.filter((anchor) => anchor.variableId === variable.id).length;
           return (
-            <div className="placeholder-variable-card" key={variable.id}>
+            <button className="placeholder-variable-card" type="button" key={variable.id} onClick={() => onInsertVariable?.(variable)} title={`插入 ${variable.token}`}>
               <div className="placeholder-card-copy">
                 <strong>{variable.name}</strong>
-                <span>{variable.token} · 已插入 {count} 处</span>
+                <span>已插入 {count} 处</span>
               </div>
-              <button className="tool-button mini-button" type="button" onClick={() => onInsertVariable?.(variable)}>
-                插入
-              </button>
-            </div>
+            </button>
           );
         })}
       </div>
