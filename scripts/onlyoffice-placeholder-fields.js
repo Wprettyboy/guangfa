@@ -1,5 +1,6 @@
 (function () {
   const handledRequestIds = new Set();
+  let fallbackBookmarkIdSeed = 0;
 
   function safeCall(target, name, fallback, ...args) {
     try {
@@ -200,6 +201,24 @@
     return textPr;
   }
 
+  function removePlaceholderBookmark(manager, bookmarkName) {
+    try {
+      if (typeof manager?.asc_RemoveBookmark === "function") return manager.asc_RemoveBookmark(bookmarkName);
+      if (typeof manager?.RemoveBookmark === "function") return manager.RemoveBookmark(bookmarkName);
+    } catch {}
+    return false;
+  }
+
+  function createPlaceholderBookmarkId(manager) {
+    try {
+      if (typeof manager?.GetNewBookmarkId === "function") {
+        return manager.GetNewBookmarkId();
+      }
+    } catch {}
+    fallbackBookmarkIdSeed += 1;
+    return String(Date.now()) + String(fallbackBookmarkIdSeed).padStart(4, "0");
+  }
+
   function insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager) {
     const logicDocument = getLogicDocument();
     const Paragraph = window.AscWord?.Paragraph;
@@ -207,7 +226,7 @@
     const BookmarkClass = window.AscWord?.CParagraphBookmark || window.AscCommonWord?.CParagraphBookmark;
     const SelectedContent = window.AscCommonWord?.CSelectedContent;
     const SelectedElement = window.AscCommonWord?.CSelectedElement;
-    if (!logicDocument || !manager || typeof manager.GetNewBookmarkId !== "function") {
+    if (!logicDocument || !manager) {
       return { ok: false, error: "OnlyOffice 书签生成接口不可用" };
     }
     if (
@@ -243,7 +262,7 @@
         return { ok: false, error: "OnlyOffice 当前光标位置不可用" };
       }
 
-      const bookmarkId = manager.GetNewBookmarkId();
+      const bookmarkId = createPlaceholderBookmarkId(manager);
       const tempParagraph = new Paragraph();
       const run = new ParaRun(tempParagraph, false);
       run.AddText(text);
@@ -452,7 +471,7 @@
       return postInsertedResult({ ok: false, requestId, error: "字段名称为空，无法插入占位符。" });
     }
     const manager = getBookmarkManager();
-    if (!manager || typeof manager.GetNewBookmarkId !== "function") {
+    if (!manager) {
       return postInsertedResult({ ok: false, requestId, error: "OnlyOffice 书签接口不可用" });
     }
 
@@ -460,8 +479,7 @@
     if (requestId) handledRequestIds.add(requestId);
 
     try {
-      if (typeof manager.asc_RemoveBookmark === "function") manager.asc_RemoveBookmark(bookmarkName);
-      else if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
+      removePlaceholderBookmark(manager, bookmarkName);
       const insertResult = insertFormattedBookmarkedPlaceholder(variable.token, bookmarkName, manager);
       if (!insertResult.ok) {
         return postInsertedResult({ ok: false, requestId, bookmarkName, error: insertResult.error || "自动字段标签生成失败" });
