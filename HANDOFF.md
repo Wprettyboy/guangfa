@@ -68,6 +68,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ### 填充工作台高频区
 
 - `src/features/docx/fill/FieldControls.jsx`：字段卡片、AI 填充按钮、编辑/确认、依据原文展示。
+- `src/features/docx/fill/FillCommonToolbar.jsx`：填充工作台顶部公共工具条，承载上传资料、一键填充、导出和知识库选择。
+- `src/features/docx/fill/OtherFieldFillPanel.jsx`：旧模板字段/其他类型字段填充列表。
 - `src/features/docx/fill/helpers.js`：填充字段类型、写入模式、输入点/选区判断等前端辅助。
 - `src/features/docx/fill/previewAndExport.js`：填充工作台的浏览器预览写入、DOM 选区/空白定位。
 - `src/features/docx/fill/docxXmlFill.js`：填充导出兜底的 DOCX XML 回写、修订痕迹、选择/日期/标签写入。
@@ -83,8 +85,10 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/docx/preview/`：PDF/页面布局/大纲搜索等预览辅助模块。
 - `src/features/docx/structure/docxStructure.js`：DOCX 结构解析。
 - `scripts/onlyoffice-outline-probe.js`：注入 OnlyOffice 的桥接脚本，负责大纲、选区、页码、标注、输入点、保存、回填等消息。
-- `src/features/placeholders/variables.js`：自动字段设置的变量/Token/锚点归一化工具，独立于旧模板字段。
-- `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，只负责把右侧变量卡片插入当前光标/选区并写入 `GF_PH_` 书签。
+- `src/features/placeholders/variables.js`：自动字段设置的变量/Token/锚点归一化、排序和填充卡片聚合工具，独立于旧模板字段。
+- `src/features/placeholders/fill.js`：自动字段填充的 AI 请求字段构造、返回值归一化和写入失败状态辅助。
+- `src/features/placeholders/PlaceholderFillCards.jsx`：填充工作台的自动字段卡片列表，只展示已有插入位置的字段。
+- `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，负责 `GF_PH_` 书签插入、跳转、删除和按书签替换填充值。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
@@ -187,6 +191,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
 - `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
 - `requestOnlyOfficeDeletePlaceholderAnchor(anchor)`：发送 `delete-placeholder-anchor`，等待 `placeholder-anchor-deleted` 回传。
+- `requestOnlyOfficeFillPlaceholderVariable(variableFill, options)`：发送 `fill-placeholder-variable`，让注入脚本按 `GF_PH_` 书签替换自动字段填充值，并等待 `placeholder-variable-filled` 回传。
 - `readOnlyOfficePageNumber(payload)`：把 OnlyOffice 返回的页码 payload 归一成正整数页码。
 
 #### Payload 与文档同步函数
@@ -217,13 +222,15 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/onlyoffice-placeholder-fields.js`
   - `getEditorApi()`、`getLogicDocument()`：同上，用于取得编辑器 API 和逻辑文档。
   - `getBookmarkManager()`：优先 `api.asc_GetBookmarksManager()`，其次 `logicDocument.GetBookmarksManager()`。
-  - `insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager)`：使用 OnlyOffice 段落、run、`CSelectedContent` 和 `CParagraphBookmark` 生成带书签的内联文本。
+  - `insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager)`：使用 OnlyOffice 段落、run、`CSelectedContent` 和 `CParagraphBookmark` 生成带书签的内联标签文本。
+  - `insertBookmarkedInlineText(text, bookmarkName, manager, options)`：复用 OnlyOffice 内联插入能力，按需保留标签样式或使用文档当前样式。
   - `hasPlaceholderBookmark(manager, bookmarkName)`：优先 `asc_HaveBookmark`，其次 `HaveBookmark`。
   - `goToPlaceholderBookmark(manager, bookmarkName)`：优先 `asc_GoToBookmark`，其次 `GoToBookmark`。
   - `selectPlaceholderBookmark(bookmarkName)`：检查书签、跳转书签，并尝试 `asc_SelectBookmark` / `SelectBookmark` 选中范围。
   - `removeSelectedTextForReplacement()`：优先 `logicDocument.RemoveBeforePaste()` 删除当前选区，其次 `logicDocument.Remove(...)`。
   - `deletePlaceholderAnchor(payload)`：按书签定位并删除当前书签文本，再调用 `asc_RemoveBookmark` / `RemoveBookmark`。
   - `insertPlaceholderVariable(payload)`：生成书签名，插入带书签文本，确认书签可见后回传锚点信息。
+  - `fillPlaceholderVariable(payload)`：遍历自动字段锚点，按书签选中、替换文本并重新保留同名书签。
 
 #### 当前已用到的 OnlyOffice API 能力
 

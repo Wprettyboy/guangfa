@@ -272,6 +272,48 @@ function requestOnlyOfficeDeletePlaceholderAnchor(anchor) {
   return requestOnlyOfficePlaceholderAnchorAction("delete-placeholder-anchor", "placeholder-anchor-deleted", anchor);
 }
 
+function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
+  const anchors = Array.isArray(variableFill?.anchors) ? variableFill.anchors : [];
+  const requestId = `placeholder-fill-${Date.now()}-${++onlyOfficePlaceholderRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || Math.max(12000, anchors.length * 4000));
+  const message = {
+    source: "guangfa-parent",
+    action: "fill-placeholder-variable",
+    requestId,
+    variable: {
+      id: variableFill?.id,
+      name: variableFill?.name,
+      token: variableFill?.token,
+    },
+    value: variableFill?.value || "",
+    anchors,
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    let firstFailure = null;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "placeholder-variable-filled") return;
+      if (data.result?.requestId !== requestId) return;
+      if (data.result?.ok) {
+        finish(data.result);
+        return;
+      }
+      firstFailure ||= data.result;
+    };
+    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段填充命令。" }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 8);
+  });
+}
+
 function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) {
   const requestId = `placeholder-${Date.now()}-${++onlyOfficePlaceholderRequestSeq}`;
   const message = {
@@ -414,6 +456,7 @@ export {
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeFillPlaceholderVariable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectPlaceholderAnchor,
 };

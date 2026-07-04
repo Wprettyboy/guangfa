@@ -98,12 +98,66 @@ function updatePlaceholderAnchorPage(anchors = [], bookmarkName, page) {
   return changed ? applyPlaceholderAnchors([], nextAnchors) : anchors;
 }
 
+function comparePlaceholderAnchors(left, right) {
+  return (
+    (Number(left?.documentOrder) || 0) - (Number(right?.documentOrder) || 0) ||
+    getPlaceholderAnchorPage(left) - getPlaceholderAnchorPage(right) ||
+    (Number(left?.index) || 0) - (Number(right?.index) || 0) ||
+    String(left?.bookmarkName || "").localeCompare(String(right?.bookmarkName || ""))
+  );
+}
+
+function getPlaceholderAnchorPage(anchor) {
+  const page = Number(anchor?.page);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function labelPlaceholderAnchorPages(anchors = []) {
+  return anchors.map((anchor) => {
+    const page = getPlaceholderAnchorPage(anchor);
+    return {
+      ...anchor,
+      page,
+      pageLabel: `第 ${page} 页`,
+    };
+  });
+}
+
+function buildPlaceholderFillCards(variables = [], anchors = [], fills = {}) {
+  const normalizedAnchors = applyPlaceholderAnchors([], anchors);
+  return normalizePlaceholderVariables(variables)
+    .map((variable) => {
+      const variableAnchors = labelPlaceholderAnchorPages(
+        normalizedAnchors.filter((anchor) => anchor.variableId === variable.id).sort(comparePlaceholderAnchors),
+      );
+      if (variableAnchors.length === 0) return null;
+      const fill = fills[variable.id] || {};
+      return {
+        ...variable,
+        anchors: variableAnchors,
+        insertedCount: variableAnchors.length,
+        value: String(fill.value || ""),
+        status: fill.status || "未填充",
+        confidence: Number(fill.confidence || 0),
+        source: fill.source || "待上传资料后生成",
+        evidence: fill.evidence || "",
+        sourceSnippetText: fill.sourceSnippetText || "",
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => comparePlaceholderAnchors(left.anchors[0], right.anchors[0]) || left.name.localeCompare(right.name));
+}
+
 export {
   applyPlaceholderAnchors,
   buildPlaceholderToken,
+  buildPlaceholderFillCards,
+  comparePlaceholderAnchors,
   createPlaceholderVariable,
   defaultPlaceholderVariables,
   getNextPlaceholderAnchorIndex,
+  getPlaceholderAnchorPage,
+  labelPlaceholderAnchorPages,
   normalizePlaceholderName,
   normalizePlaceholderVariable,
   normalizePlaceholderVariables,

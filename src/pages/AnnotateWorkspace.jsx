@@ -7,6 +7,7 @@ import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
 import { DocumentFrame } from "../features/docx/runtime.jsx";
+import { comparePlaceholderAnchors, labelPlaceholderAnchorPages } from "../features/placeholders/variables.js";
 import { getFillModeLabel, getTemplateFieldSourceText, normalizeFieldCategory, normalizeFillMode } from "../utils/fields.js";
 import { inferTemplateCategory, normalizeTemplateCategory } from "../utils/templates.js";
 
@@ -340,31 +341,6 @@ function PlaceholderPanel({
       ) : null}
     </div>
   );
-}
-
-function comparePlaceholderAnchors(left, right) {
-  return (
-    (Number(left?.documentOrder) || 0) - (Number(right?.documentOrder) || 0) ||
-    getPlaceholderAnchorPage(left) - getPlaceholderAnchorPage(right) ||
-    (Number(left?.index) || 0) - (Number(right?.index) || 0) ||
-    String(left?.bookmarkName || "").localeCompare(String(right?.bookmarkName || ""))
-  );
-}
-
-function getPlaceholderAnchorPage(anchor) {
-  const page = Number(anchor?.page);
-  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-}
-
-function labelPlaceholderAnchorPages(anchors) {
-  return anchors.map((anchor) => {
-    const page = getPlaceholderAnchorPage(anchor);
-    return {
-      ...anchor,
-      page,
-      pageLabel: `第 ${page} 页`,
-    };
-  });
 }
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onClose }) {

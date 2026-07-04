@@ -156,6 +156,10 @@
   }
 
   function insertFormattedBookmarkedPlaceholder(text, bookmarkName, manager) {
+    return insertBookmarkedInlineText(text, bookmarkName, manager, { placeholderStyle: true });
+  }
+
+  function insertBookmarkedInlineText(text, bookmarkName, manager, options) {
     const logicDocument = getLogicDocument();
     const Paragraph = window.AscWord?.Paragraph;
     const ParaRun = window.AscWord?.ParaRun || window.AscCommonWord?.ParaRun;
@@ -207,7 +211,7 @@
       if (currentTextPr && typeof currentTextPr.Copy === "function" && typeof run.SetPr === "function") {
         run.SetPr(currentTextPr.Copy());
       }
-      const placeholderTextPr = createPlaceholderTextPr();
+      const placeholderTextPr = options?.placeholderStyle === false ? null : createPlaceholderTextPr();
       if (placeholderTextPr && typeof run.ApplyPr === "function") {
         run.ApplyPr(placeholderTextPr);
       }
@@ -229,7 +233,7 @@
       safeCall(logicDocument, "UpdateInterface", null);
       safeCall(logicDocument, "UpdateSelection", null);
       safeCall(manager, "Update", null);
-      return { ok: true, source: "selected-content-bookmark-run", style: "highlight+bold+color" };
+      return { ok: true, source: "selected-content-bookmark-run", style: placeholderTextPr ? "highlight+bold+color" : "document-current-style" };
     } catch (error) {
       return { ok: false, error: error?.message || "自动字段标签生成失败" };
     } finally {
@@ -366,6 +370,57 @@
     }
   }
 
+  function fillPlaceholderAnchor(anchor, value) {
+    const bookmarkName = String(anchor?.bookmarkName || "");
+    const manager = getBookmarkManager();
+    if (!manager || !bookmarkName) {
+      return { ok: false, bookmarkName, error: "OnlyOffice 书签填充接口不可用" };
+    }
+    const selected = selectPlaceholderBookmark(bookmarkName);
+    if (!selected.ok) return selected;
+    try {
+      removePlaceholderBookmark(manager, bookmarkName);
+      const insertResult = insertBookmarkedInlineText(value, bookmarkName, manager, { placeholderStyle: false });
+      if (!insertResult.ok) {
+        return { ok: false, bookmarkName, page: selected.page, error: insertResult.error || "自动字段填充值写入失败" };
+      }
+      const bookmarkResult = selectPlaceholderBookmark(bookmarkName);
+      return {
+        ok: true,
+        bookmarkName,
+        page: bookmarkResult.page || selected.page || currentSelectionPage(),
+        source: insertResult.source,
+      };
+    } catch (error) {
+      return { ok: false, bookmarkName, page: selected.page, error: error?.message || "自动字段填充值写入失败" };
+    }
+  }
+
+  function fillPlaceholderVariable(payload = {}) {
+    const requestId = payload.requestId || "";
+    const value = normalizeSelectionText(payload.value);
+    const anchors = Array.isArray(payload.anchors) ? payload.anchors : payload.anchor ? [payload.anchor] : [];
+    if (!value) {
+      return postPlaceholderResult("placeholder-variable-filled", { ok: false, requestId, error: "自动字段填充值为空。" });
+    }
+    if (anchors.length === 0) {
+      return postPlaceholderResult("placeholder-variable-filled", { ok: false, requestId, error: "当前字段没有可填充的书签。" });
+    }
+    const results = anchors.map(function (anchor) {
+      return fillPlaceholderAnchor(anchor, value);
+    });
+    const failed = results.filter(function (result) { return !result.ok; });
+    return postPlaceholderResult("placeholder-variable-filled", {
+      ok: failed.length === 0,
+      requestId,
+      value,
+      count: results.length - failed.length,
+      failed: failed.length,
+      results,
+      error: failed[0]?.error || "",
+    });
+  }
+
   function insertPlaceholderVariable(payload = {}) {
     const variable = normalizeVariable(payload.variable || payload);
     const requestId = payload.requestId || "";
@@ -430,6 +485,7 @@
   window.guangfaInsertPlaceholderVariable = insertPlaceholderVariable;
   window.guangfaJumpToPlaceholderAnchor = jumpToPlaceholderAnchor;
   window.guangfaDeletePlaceholderAnchor = deletePlaceholderAnchor;
+  window.guangfaFillPlaceholderVariable = fillPlaceholderVariable;
 
   window.addEventListener("message", function (event) {
     const data = event.data || {};
@@ -441,6 +497,9 @@
     }
     if (data.source === "guangfa-parent" && data.action === "delete-placeholder-anchor") {
       deletePlaceholderAnchor(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "fill-placeholder-variable") {
+      fillPlaceholderVariable(data);
     }
   });
 })();

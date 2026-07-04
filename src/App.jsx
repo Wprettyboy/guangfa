@@ -49,6 +49,7 @@ import {
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeFillPlaceholderVariable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectPlaceholderAnchor,
 } from "./features/docx/office/bridge.jsx";
@@ -61,12 +62,20 @@ import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
 import {
   applyPlaceholderAnchors,
   buildPlaceholderToken,
+  buildPlaceholderFillCards,
   createPlaceholderVariable,
   getNextPlaceholderAnchorIndex,
   normalizePlaceholderName,
   normalizePlaceholderVariables,
   updatePlaceholderAnchorPage,
 } from "./features/placeholders/variables.js";
+import {
+  createEditedPlaceholderFill,
+  createManualPlaceholderFill,
+  createPlaceholderFillError,
+  markPlaceholderFillFailure,
+  requestPlaceholderAiFill,
+} from "./features/placeholders/fill.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -117,6 +126,7 @@ export default function App() {
   const [templateFields, setTemplateFields] = useState(initialTemplateFields);
   const [placeholderVariables, setPlaceholderVariables] = useState(() => normalizePlaceholderVariables());
   const [placeholderAnchors, setPlaceholderAnchors] = useState([]);
+  const [placeholderFills, setPlaceholderFills] = useState({});
   const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState(initialSession.annotateSidePanelMode || "fields");
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
   const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState(initialSession.selectedTemplateFieldId || initialTemplateFields[0]?.id || "");
@@ -153,10 +163,16 @@ export default function App() {
   const draftAutosaveSnapshotRef = useRef(null);
   const placeholderVariablesRef = useRef(placeholderVariables);
   const placeholderAnchorsRef = useRef(placeholderAnchors);
+  const placeholderFillsRef = useRef(placeholderFills);
   const enrichedFillFields = useMemo(
     () => mergeFillFieldsWithTemplate(fillFields, templateFields),
     [fillFields, templateFields],
   );
+  const placeholderFillCards = useMemo(
+    () => buildPlaceholderFillCards(placeholderVariables, placeholderAnchors, placeholderFills),
+    [placeholderAnchors, placeholderFills, placeholderVariables],
+  );
+  const placeholderFillCardsRef = useRef(placeholderFillCards);
   const enrichedFillFieldsRef = useRef(enrichedFillFields);
   const fillValueSignature = useMemo(
     () => enrichedFillFields.map((field) => `${field.id}:${field.value || ""}:${field.amountValue || ""}:${field.choiceValue || ""}:${field.source || ""}`).join("|"),
@@ -210,6 +226,14 @@ export default function App() {
     placeholderVariablesRef.current = placeholderVariables;
   }, [placeholderVariables]);
 
+  useEffect(() => {
+    placeholderFillsRef.current = placeholderFills;
+  }, [placeholderFills]);
+
+  useEffect(() => {
+    placeholderFillCardsRef.current = placeholderFillCards;
+  }, [placeholderFillCards]);
+
   const selectedTemplateField = templateFields.find((field) => field.id === selectedTemplateFieldId);
   const workspaceTitle =
     activeModule === "template-management"
@@ -256,6 +280,7 @@ export default function App() {
         setTemplateFields(draft.templateFields || []);
         setPlaceholderVariables(normalizePlaceholderVariables(draft.placeholderVariables));
         setPlaceholderAnchors(applyPlaceholderAnchors([], draft.placeholderAnchors || []));
+        setPlaceholderFills(draft.placeholderFills || {});
         setFillFields(draft.fillFields || []);
         setMaterialFiles(draft.materialFiles || []);
         setSelectedFieldId(draft.selectedFieldId || draft.fillFields?.[0]?.id || "");
@@ -349,6 +374,7 @@ export default function App() {
           templateFields,
           placeholderVariables,
           placeholderAnchors,
+          placeholderFills,
           fillFields,
           materialFiles,
           selectedTemplateFieldId,
@@ -372,6 +398,7 @@ export default function App() {
     materialFiles,
     placeholderVariables,
     placeholderAnchors,
+    placeholderFills,
     selectedProjectKnowledgeBaseIds,
     selectedGlobalKnowledgeBaseIds,
     selectedTemplateFieldId,
@@ -464,6 +491,7 @@ export default function App() {
           templateFields: fieldsSnapshot,
           placeholderVariables: variablesSnapshot,
           placeholderAnchors: anchorsSnapshot,
+          placeholderFills: placeholderFillsRef.current,
           fillFields,
           materialFiles,
           selectedTemplateFieldId,
@@ -518,6 +546,7 @@ export default function App() {
           templateFields,
           placeholderVariables: placeholderVariablesRef.current,
           placeholderAnchors: placeholderAnchorsRef.current,
+          placeholderFills: placeholderFillsRef.current,
           fillFields: fieldsSnapshot,
           materialFiles,
           selectedTemplateFieldId,
@@ -551,6 +580,7 @@ export default function App() {
     setTemplateFields([]);
     setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
+    setPlaceholderFills({});
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
@@ -685,6 +715,7 @@ export default function App() {
     setTemplateFields([]);
     setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
+    setPlaceholderFills({});
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
@@ -883,6 +914,7 @@ export default function App() {
     setTemplateFields([]);
     setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
+    setPlaceholderFills({});
     setAnnotateSidePanelMode("fields");
     setSelectedTemplateFieldId("");
     setSaveState("dirty");
@@ -981,6 +1013,7 @@ export default function App() {
       templateFields: normalizedTemplateFields,
       placeholderVariables,
       placeholderAnchors,
+      placeholderFills,
       fillFields,
       materialFiles,
       selectedTemplateFieldId,
@@ -1002,6 +1035,7 @@ export default function App() {
     setTemplateFields(templateFieldsToUse);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToUse.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToUse.placeholderAnchors || []));
+    setPlaceholderFills({});
     clearFilledTemplateDraft();
     if (templateToUse.fileBuffer) {
       annotatedTemplateBufferRef.current = null;
@@ -1019,6 +1053,7 @@ export default function App() {
       setTemplateFile(null);
       setPlaceholderVariables(normalizePlaceholderVariables());
       setPlaceholderAnchors([]);
+      setPlaceholderFills({});
       setSaveState("no-file");
     }
     setFillFields(mappedFields);
@@ -1037,6 +1072,7 @@ export default function App() {
     setTemplateFields(fields);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToEdit.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToEdit.placeholderAnchors || []));
+    setPlaceholderFills({});
     clearFilledTemplateDraft();
     setFillFieldPageMap({});
     if (templateToEdit.fileBuffer) {
@@ -1055,6 +1091,7 @@ export default function App() {
       setTemplateFile(null);
       setPlaceholderVariables(normalizePlaceholderVariables());
       setPlaceholderAnchors([]);
+      setPlaceholderFills({});
       setSaveState("no-file");
     }
     setSelectedTemplateFieldId(fields[0]?.id ?? "");
@@ -1169,6 +1206,99 @@ export default function App() {
       evidence: writeResult?.error || "未收到 OnlyOffice 写入回执，请确认填充预览已打开并重新尝试。",
       sourceSnippetText: field.sourceSnippetText || "",
     };
+  }
+
+  function setPlaceholderFill(variableId, fill) {
+    setPlaceholderFills((fills) => {
+      const nextFills = {
+        ...fills,
+        [variableId]: {
+          ...(fills[variableId] || {}),
+          ...fill,
+        },
+      };
+      placeholderFillsRef.current = nextFills;
+      return nextFills;
+    });
+  }
+
+  async function fillPlaceholderWithAI(variableId) {
+    const card = placeholderFillCardsRef.current.find((item) => item.id === variableId);
+    if (!card) return;
+    setPlaceholderFill(variableId, { status: "生成中" });
+    try {
+      const appliedFill = await requestPlaceholderAiFill(card, {
+        materials: materialFiles,
+        knowledgeOptions: {
+          enabled: selectedProjectKnowledgeBaseIds.length > 0,
+          projectId: currentProjectId,
+          kbIds: [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
+          topK: knowledgeTopK,
+        },
+      });
+      let nextFill = appliedFill;
+      if (appliedFill.value.trim()) {
+        const writeResult = await requestOnlyOfficeFillPlaceholderVariable({
+          ...card,
+          value: appliedFill.value,
+        });
+        if (writeResult?.ok === false) nextFill = markPlaceholderFillFailure(appliedFill, writeResult);
+      }
+      setPlaceholderFill(variableId, nextFill);
+    } catch (error) {
+      setPlaceholderFill(variableId, createPlaceholderFillError(error, placeholderFillsRef.current[variableId]?.value || ""));
+    }
+  }
+
+  async function applyPlaceholderFillValue(variableId) {
+    const card = placeholderFillCardsRef.current.find((item) => item.id === variableId);
+    const currentFill = placeholderFillsRef.current[variableId] || {};
+    const value = String(currentFill.value || "").trim();
+    if (!card || !value) return;
+    setPlaceholderFill(variableId, { status: "生成中" });
+    const writeResult = await requestOnlyOfficeFillPlaceholderVariable({ ...card, value });
+    setPlaceholderFill(
+      variableId,
+      writeResult?.ok === false
+        ? markPlaceholderFillFailure({ ...currentFill, value }, writeResult)
+        : createManualPlaceholderFill(value, currentFill),
+    );
+  }
+
+  function updatePlaceholderFillValue(variableId, value) {
+    setPlaceholderFill(variableId, createEditedPlaceholderFill(value));
+  }
+
+  async function generateAllPlaceholderFills() {
+    const pendingCards = placeholderFillCardsRef.current.filter((card) => card.status !== "已确认" && card.status !== "生成中");
+    if (pendingCards.length === 0 || generatingAll) return;
+    setGeneratingAll(true);
+    setBulkFillProgress({ current: 0, total: pendingCards.length });
+    try {
+      for (let index = 0; index < pendingCards.length; index += 1) {
+        setBulkFillProgress({ current: index + 1, total: pendingCards.length });
+        await fillPlaceholderWithAI(pendingCards[index].id);
+      }
+    } finally {
+      setGeneratingAll(false);
+      setBulkFillProgress({ current: 0, total: 0 });
+    }
+  }
+
+  function jumpToPlaceholderFillAnchor(anchor) {
+    requestOnlyOfficeSelectPlaceholderAnchor(anchor).then((result) => {
+      if (result?.timeout || !result?.ok) {
+        window.alert(result?.error || "OnlyOffice 未能定位该自动字段书签。");
+        return;
+      }
+      const page = Math.max(1, Number(result.page || anchor?.page) || 1);
+      setFillPreviewPage(page);
+      const nextAnchors = updatePlaceholderAnchorPage(placeholderAnchorsRef.current, result.bookmarkName || anchor.bookmarkName, page);
+      if (nextAnchors !== placeholderAnchorsRef.current) {
+        placeholderAnchorsRef.current = nextAnchors;
+        setPlaceholderAnchors(nextAnchors);
+      }
+    });
   }
 
   async function fillFieldWithAI(fieldId, fieldsSnapshot = enrichedFillFields, options = {}) {
@@ -1596,6 +1726,7 @@ export default function App() {
             ) : (
               <FillWorkspace
                 fields={enrichedFillFields}
+                placeholderCards={placeholderFillCards}
                 templateFile={fillPreviewFile}
                 sourceTemplateFile={templateFile}
                 selectedFieldId={selectedFieldId}
@@ -1611,6 +1742,11 @@ export default function App() {
                 onOfficeDocumentReady={setFillOfficeDocId}
                 onGenerate={generateField}
                 onGenerateAll={generateAllFields}
+                onGeneratePlaceholder={fillPlaceholderWithAI}
+                onGenerateAllPlaceholders={generateAllPlaceholderFills}
+                onUpdatePlaceholderValue={updatePlaceholderFillValue}
+                onApplyPlaceholderValue={applyPlaceholderFillValue}
+                onJumpPlaceholderAnchor={jumpToPlaceholderFillAnchor}
                 generatingAll={generatingAll}
                 bulkFillProgress={bulkFillProgress}
                 knowledgeBases={knowledgeBases}

@@ -135,6 +135,64 @@
   grid-auto-rows: max-content;
 }
 
+.fill-type-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 0;
+  border-top: 1px solid #edf2f7;
+}
+
+.fill-type-tab {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d7e0ec;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #55647b;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.fill-type-tab span {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.fill-type-tab.active {
+  border-color: #9ec2ff;
+  background: #e8f1ff;
+  color: #0f63e9;
+}
+
+.fill-type-tab.active span {
+  background: #ffffff;
+  color: #0f63e9;
+}
+
+.fill-panel-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.other-fill-panel {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .field-panel {
   display: flex;
   flex-direction: column;
