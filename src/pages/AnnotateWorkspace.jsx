@@ -37,14 +37,17 @@ function AnnotateWorkspace({
   onDeletePlaceholderAnchor,
   onOpenPlaceholderPanel,
   onOpenComplexFillPanel,
+  onAddComplexFillField,
+  onUpdateComplexFillField,
+  onDeleteComplexFillField,
   onCreateComplexFillAnchor,
-  onUpdateComplexFillItem,
-  onJumpComplexFillItem,
-  onDeleteComplexFillItem,
+  onJumpComplexFillAnchor,
+  onDeleteComplexFillAnchor,
   onOfficeDocumentReady,
   placeholderVariables = [],
   placeholderAnchors = [],
-  complexFillItems = [],
+  complexFillFields = [],
+  complexFillAnchors = [],
   sidePanelMode = "fields",
 }) {
   const fileInputRef = useRef(null);
@@ -118,14 +121,17 @@ function AnnotateWorkspace({
       <aside className="right-panel field-panel" ref={panelRef}>
         {showComplexFillPanel ? (
           <ComplexFillPanel
-            items={complexFillItems}
+            fields={complexFillFields}
+            anchors={complexFillAnchors}
             saveState={saveState}
             templateCategory={templateCategory}
             onTemplateCategoryChange={setTemplateCategory}
+            onAddField={onAddComplexFillField}
+            onUpdateField={onUpdateComplexFillField}
+            onDeleteField={onDeleteComplexFillField}
             onCreateAnchor={onCreateComplexFillAnchor}
-            onUpdateItem={onUpdateComplexFillItem}
-            onJumpItem={onJumpComplexFillItem}
-            onDeleteItem={onDeleteComplexFillItem}
+            onJumpAnchor={onJumpComplexFillAnchor}
+            onDeleteAnchor={onDeleteComplexFillAnchor}
             onSaveTemplate={onSaveTemplate}
           />
         ) : showPlaceholderPanel ? (

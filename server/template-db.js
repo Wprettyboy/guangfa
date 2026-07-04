@@ -133,16 +133,25 @@ function replaceTemplatesInDatabase(database, templates) {
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const insertComplexFillItem = database.prepare(`
-      INSERT INTO template_complex_fill_items (
-        template_id, id, bookmark_name, page, source_text, field_summary,
-        format_requirement, content_requirement, document_order, sort_order,
+    const insertComplexFillField = database.prepare(`
+      INSERT INTO template_complex_fill_fields (
+        template_id, id, field_summary, format_requirement, content_requirement,
+        sort_order, payload_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertComplexFillAnchor = database.prepare(`
+      INSERT INTO template_complex_fill_anchors (
+        template_id, id, field_id, field_summary, bookmark_name, page,
+        source_text, anchor_index, document_order, sort_order,
         payload_json, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    database.exec("DELETE FROM template_complex_fill_items");
+    database.exec("DELETE FROM template_complex_fill_anchors");
+    database.exec("DELETE FROM template_complex_fill_fields");
+    if (tableExists(database, "template_complex_fill_items")) database.exec("DELETE FROM template_complex_fill_items");
     database.exec("DELETE FROM template_placeholder_anchors");
     database.exec("DELETE FROM template_placeholder_variables");
     database.exec("DELETE FROM template_fields");
@@ -229,19 +238,33 @@ function replaceTemplatesInDatabase(database, templates) {
         );
       });
 
-      normalized.complexFillItems.forEach((item, itemIndex) => {
-        insertComplexFillItem.run(
+      normalized.complexFillFields.forEach((field, fieldIndex) => {
+        insertComplexFillField.run(
           normalized.id,
-          String(item.id || `CF-${String(itemIndex + 1).padStart(3, "0")}`),
-          String(item.bookmarkName || ""),
-          numberOrDefault(item.page, 1),
-          textOrNull(item.sourceText),
-          textOrNull(item.fieldSummary || item.description),
-          textOrNull(item.formatRequirement),
-          textOrNull(item.contentRequirement),
-          numberOrDefault(item.documentOrder, numberOrDefault(item.page, 1) * 1000000 + itemIndex + 1),
-          itemIndex,
-          JSON.stringify(item),
+          String(field.id || `CF-${String(fieldIndex + 1).padStart(3, "0")}`),
+          textOrNull(field.fieldSummary || field.description),
+          textOrNull(field.formatRequirement),
+          textOrNull(field.contentRequirement),
+          fieldIndex,
+          JSON.stringify(field),
+          normalized.createdAt,
+          now,
+        );
+      });
+
+      normalized.complexFillAnchors.forEach((anchor, anchorIndex) => {
+        insertComplexFillAnchor.run(
+          normalized.id,
+          String(anchor.id || `CFA-${String(anchorIndex + 1).padStart(3, "0")}`),
+          String(anchor.fieldId || anchor.id || ""),
+          textOrNull(anchor.fieldSummary || anchor.description),
+          String(anchor.bookmarkName || ""),
+          numberOrDefault(anchor.page, 1),
+          textOrNull(anchor.sourceText),
+          numberOrDefault(anchor.index || anchor.anchorIndex, anchorIndex + 1),
+          numberOrDefault(anchor.documentOrder, numberOrDefault(anchor.page, 1) * 1000000 + anchorIndex + 1),
+          anchorIndex,
+          JSON.stringify(anchor),
           normalized.createdAt,
           now,
         );
@@ -265,7 +288,11 @@ function readTemplatesFromDatabase(database, templateId = "") {
   const fieldsStatement = database.prepare("SELECT * FROM template_fields WHERE template_id = ? ORDER BY sort_order, document_order, id");
   const variablesStatement = database.prepare("SELECT * FROM template_placeholder_variables WHERE template_id = ? ORDER BY sort_order, id");
   const anchorsStatement = database.prepare("SELECT * FROM template_placeholder_anchors WHERE template_id = ? ORDER BY document_order, anchor_index, bookmark_name");
-  const complexFillStatement = database.prepare("SELECT * FROM template_complex_fill_items WHERE template_id = ? ORDER BY document_order, sort_order, id");
+  const complexFieldStatement = database.prepare("SELECT * FROM template_complex_fill_fields WHERE template_id = ? ORDER BY sort_order, id");
+  const complexAnchorStatement = database.prepare("SELECT * FROM template_complex_fill_anchors WHERE template_id = ? ORDER BY document_order, anchor_index, bookmark_name");
+  const legacyComplexStatement = tableExists(database, "template_complex_fill_items")
+    ? database.prepare("SELECT * FROM template_complex_fill_items WHERE template_id = ? ORDER BY document_order, sort_order, id")
+    : null;
   const rows = templateId ? templateRows.all(templateId) : templateRows.all();
 
   return rows.map((row) => {
@@ -273,7 +300,9 @@ function readTemplatesFromDatabase(database, templateId = "") {
     const fields = fieldsStatement.all(row.id).map(rowToField);
     const placeholderVariables = variablesStatement.all(row.id).map(rowToPlaceholderVariable);
     const placeholderAnchors = anchorsStatement.all(row.id).map(rowToPlaceholderAnchor);
-    const complexFillItems = complexFillStatement.all(row.id).map(rowToComplexFillItem);
+    const legacyComplexFillItems = legacyComplexStatement ? legacyComplexStatement.all(row.id).map(rowToLegacyComplexFillItem) : [];
+    const complexFillFields = complexFieldStatement.all(row.id).map(rowToComplexFillField);
+    const complexFillAnchors = complexAnchorStatement.all(row.id).map(rowToComplexFillAnchor);
     const template = {
       ...extra,
       id: row.id,
@@ -296,7 +325,8 @@ function readTemplatesFromDatabase(database, templateId = "") {
       fields,
       placeholderVariables,
       placeholderAnchors,
-      complexFillItems,
+      complexFillFields: complexFillFields.length > 0 ? complexFillFields : legacyComplexFillItems,
+      complexFillAnchors: complexFillAnchors.length > 0 ? complexFillAnchors : legacyComplexFillItems,
     };
     if (row.file_base64) template.fileBase64 = row.file_base64;
     return template;
@@ -348,17 +378,45 @@ function rowToPlaceholderAnchor(row) {
   };
 }
 
-function rowToComplexFillItem(row) {
+function rowToComplexFillField(row) {
+  const field = parseJson(row.payload_json, {});
+  return {
+    ...field,
+    id: row.id,
+    fieldSummary: row.field_summary ?? field.fieldSummary,
+    formatRequirement: row.format_requirement ?? field.formatRequirement,
+    contentRequirement: row.content_requirement ?? field.contentRequirement,
+  };
+}
+
+function rowToComplexFillAnchor(row) {
+  const anchor = parseJson(row.payload_json, {});
+  return {
+    ...anchor,
+    id: row.id,
+    fieldId: row.field_id,
+    fieldSummary: row.field_summary ?? anchor.fieldSummary,
+    bookmarkName: row.bookmark_name,
+    page: row.page,
+    sourceText: row.source_text ?? anchor.sourceText,
+    index: row.anchor_index,
+    documentOrder: row.document_order ?? anchor.documentOrder,
+  };
+}
+
+function rowToLegacyComplexFillItem(row) {
   const item = parseJson(row.payload_json, {});
   return {
     ...item,
     id: row.id,
+    fieldId: item.fieldId || row.id,
     bookmarkName: row.bookmark_name,
     page: row.page,
     sourceText: row.source_text ?? item.sourceText,
     fieldSummary: row.field_summary ?? item.fieldSummary,
     formatRequirement: row.format_requirement ?? item.formatRequirement,
     contentRequirement: row.content_requirement ?? item.contentRequirement,
+    index: item.index || item.anchorIndex || Number(row.sort_order || 0) + 1,
     documentOrder: row.document_order ?? item.documentOrder,
   };
 }
@@ -373,7 +431,9 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
   const fields = Array.isArray(template.fields) ? template.fields : [];
   const placeholderVariables = Array.isArray(template.placeholderVariables) ? template.placeholderVariables : [];
   const placeholderAnchors = Array.isArray(template.placeholderAnchors) ? template.placeholderAnchors.filter((anchor) => anchor?.bookmarkName) : [];
-  const complexFillItems = Array.isArray(template.complexFillItems) ? template.complexFillItems.filter((item) => item?.bookmarkName) : [];
+  const legacyComplexFillItems = Array.isArray(template.complexFillItems) ? template.complexFillItems : [];
+  const complexFillFields = Array.isArray(template.complexFillFields) ? template.complexFillFields : legacyComplexFillItems;
+  const complexFillAnchors = Array.isArray(template.complexFillAnchors) ? template.complexFillAnchors.filter((anchor) => anchor?.bookmarkName) : legacyComplexFillItems.filter((item) => item?.bookmarkName);
   return {
     id: templateId,
     libraryId,
@@ -392,7 +452,8 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
     fields,
     placeholderVariables,
     placeholderAnchors,
-    complexFillItems,
+    complexFillFields,
+    complexFillAnchors,
     confirmedCount: Number(template.confirmedCount ?? fields.filter((field) => field.status === "已标注").length),
     typeSummary: Array.isArray(template.typeSummary) ? template.typeSummary : [],
     createdAt: Number(template.createdAt || template.savedAtMs || now),
@@ -424,6 +485,8 @@ function stripTemplateStorageColumns(template) {
     fields,
     placeholderVariables,
     placeholderAnchors,
+    complexFillFields,
+    complexFillAnchors,
     complexFillItems,
     ...extra
   } = template || {};
@@ -448,6 +511,10 @@ function setSchemaMeta(database, key, value) {
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, value);
+}
+
+function tableExists(database, tableName) {
+  return Boolean(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
 }
 
 function stableId(prefix, value) {
@@ -589,15 +656,29 @@ CREATE TABLE IF NOT EXISTS template_placeholder_anchors (
   FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS template_complex_fill_items (
+CREATE TABLE IF NOT EXISTS template_complex_fill_fields (
   template_id TEXT NOT NULL,
   id TEXT NOT NULL,
-  bookmark_name TEXT NOT NULL,
-  page INTEGER DEFAULT 1,
-  source_text TEXT,
   field_summary TEXT,
   format_requirement TEXT,
   content_requirement TEXT,
+  sort_order INTEGER DEFAULT 0,
+  payload_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (template_id, id),
+  FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS template_complex_fill_anchors (
+  template_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  field_id TEXT NOT NULL,
+  field_summary TEXT,
+  bookmark_name TEXT NOT NULL,
+  page INTEGER DEFAULT 1,
+  source_text TEXT,
+  anchor_index INTEGER DEFAULT 1,
   document_order INTEGER DEFAULT 0,
   sort_order INTEGER DEFAULT 0,
   payload_json TEXT NOT NULL,
@@ -613,7 +694,8 @@ CREATE INDEX IF NOT EXISTS idx_templates_type ON templates(type_id);
 CREATE INDEX IF NOT EXISTS idx_template_fields_template ON template_fields(template_id);
 CREATE INDEX IF NOT EXISTS idx_placeholder_variables_template ON template_placeholder_variables(template_id);
 CREATE INDEX IF NOT EXISTS idx_placeholder_anchors_template ON template_placeholder_anchors(template_id);
-CREATE INDEX IF NOT EXISTS idx_complex_fill_items_template ON template_complex_fill_items(template_id);
+CREATE INDEX IF NOT EXISTS idx_complex_fill_fields_template ON template_complex_fill_fields(template_id);
+CREATE INDEX IF NOT EXISTS idx_complex_fill_anchors_template ON template_complex_fill_anchors(template_id);
 `;
 
 export {

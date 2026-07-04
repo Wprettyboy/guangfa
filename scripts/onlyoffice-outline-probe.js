@@ -356,7 +356,7 @@
 
   function addComplexFillAnchor(payload = {}) {
     const requestId = payload.requestId || "";
-    const item = payload.item || payload.anchor || {};
+    const anchor = payload.anchor || payload.item || {};
     const selection = extractOnlyOfficeSelection();
     if (!selection.ok || !selection.text) {
       return postComplexFillResult("complex-fill-anchor-added", {
@@ -368,7 +368,7 @@
 
     const logicDocument = getLogicDocument();
     const manager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
-    const bookmarkName = getComplexFillBookmarkName(item);
+    const bookmarkName = getComplexFillBookmarkName(anchor);
     if (!manager || !bookmarkName) {
       return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, error: "复杂类填充书签接口不可用" });
     }
@@ -383,15 +383,15 @@
       return postComplexFillResult("complex-fill-anchor-added", {
         ok: true,
         requestId,
-        item: {
-          id: item.id,
+        anchor: {
+          id: anchor.id,
+          fieldId: anchor.fieldId || anchor.id,
           bookmarkName,
           page,
           sourceText: selectedText,
-          fieldSummary: item.fieldSummary || "",
-          formatRequirement: item.formatRequirement || "",
-          contentRequirement: item.contentRequirement || "",
-          documentOrder: page * 1000000 + Math.max(1, Number(item.order || item.index || 1) || 1),
+          fieldSummary: anchor.fieldSummary || "",
+          index: Math.max(1, Number(anchor.index || 1) || 1),
+          documentOrder: page * 1000000 + Math.max(1, Number(anchor.index || 1) || 1),
         },
       });
     } catch (error) {
@@ -401,14 +401,14 @@
 
   function selectComplexFillAnchor(payload = {}) {
     const requestId = payload.requestId || "";
-    const bookmarkName = String(payload.bookmarkName || payload.item?.bookmarkName || "");
+    const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
     const result = selectBookmarkRange(getBookmarkManager(), bookmarkName);
     return postComplexFillResult("complex-fill-anchor-selected", { ...result, requestId });
   }
 
   function deleteComplexFillAnchor(payload = {}) {
     const requestId = payload.requestId || "";
-    const bookmarkName = String(payload.bookmarkName || payload.item?.bookmarkName || "");
+    const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
     const manager = getBookmarkManager();
     const selected = selectBookmarkRange(manager, bookmarkName);
     if (!manager || !bookmarkName) {

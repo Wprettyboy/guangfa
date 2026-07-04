@@ -82,12 +82,15 @@ import {
   requestPlaceholderAiFill,
 } from "./features/placeholders/fill.js";
 import {
-  applyComplexFillItems,
-  createComplexFillItemDraft,
-  isComplexFillItemComplete,
-  normalizeComplexFillItem,
-  normalizeComplexFillItems,
-  updateComplexFillItemPage,
+  applyComplexFillAnchors,
+  buildComplexFillStateFromTemplate,
+  createComplexFillAnchorDraft,
+  createComplexFillField,
+  isComplexFillFieldComplete,
+  normalizeComplexFillField,
+  normalizeComplexFillFields,
+  normalizeComplexFillAnchors,
+  updateComplexFillAnchorPage,
 } from "./features/complex-fill/anchors.js";
 import {
   createAnnotatedField,
@@ -139,7 +142,8 @@ export default function App() {
   const [templateFields, setTemplateFields] = useState(initialTemplateFields);
   const [placeholderVariables, setPlaceholderVariables] = useState(() => normalizePlaceholderVariables());
   const [placeholderAnchors, setPlaceholderAnchors] = useState([]);
-  const [complexFillItems, setComplexFillItems] = useState([]);
+  const [complexFillFields, setComplexFillFields] = useState([]);
+  const [complexFillAnchors, setComplexFillAnchors] = useState([]);
   const [placeholderFills, setPlaceholderFills] = useState({});
   const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState(initialSession.annotateSidePanelMode || "fields");
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
@@ -177,7 +181,8 @@ export default function App() {
   const draftAutosaveSnapshotRef = useRef(null);
   const placeholderVariablesRef = useRef(placeholderVariables);
   const placeholderAnchorsRef = useRef(placeholderAnchors);
-  const complexFillItemsRef = useRef(complexFillItems);
+  const complexFillFieldsRef = useRef(complexFillFields);
+  const complexFillAnchorsRef = useRef(complexFillAnchors);
   const placeholderFillsRef = useRef(placeholderFills);
   const enrichedFillFields = useMemo(
     () => mergeFillFieldsWithTemplate(fillFields, templateFields),
@@ -238,8 +243,12 @@ export default function App() {
   }, [placeholderAnchors]);
 
   useEffect(() => {
-    complexFillItemsRef.current = complexFillItems;
-  }, [complexFillItems]);
+    complexFillFieldsRef.current = complexFillFields;
+  }, [complexFillFields]);
+
+  useEffect(() => {
+    complexFillAnchorsRef.current = complexFillAnchors;
+  }, [complexFillAnchors]);
 
   useEffect(() => {
     placeholderVariablesRef.current = placeholderVariables;
@@ -298,10 +307,12 @@ export default function App() {
         setFilledTemplateFile(draftToRestore.filledTemplateFile || null);
         filledTemplateBufferRef.current = draftToRestore.filledTemplateFile?.buffer ? draftToRestore.filledTemplateFile.buffer.slice(0) : null;
         filledTemplateDraftFileRef.current = draftToRestore.filledTemplateFile || null;
+        const complexFillState = buildComplexFillStateFromTemplate(draftToRestore);
         setTemplateFields(draftToRestore.templateFields || []);
         setPlaceholderVariables(normalizePlaceholderVariables(draftToRestore.placeholderVariables));
         setPlaceholderAnchors(applyPlaceholderAnchors([], draftToRestore.placeholderAnchors || []));
-        setComplexFillItems(normalizeComplexFillItems(draftToRestore.complexFillItems));
+        setComplexFillFields(complexFillState.fields);
+        setComplexFillAnchors(complexFillState.anchors);
         setPlaceholderFills(draftToRestore.placeholderFills || {});
         setFillFields(draftToRestore.fillFields || []);
         setMaterialFiles(draftToRestore.materialFiles || []);
@@ -396,7 +407,8 @@ export default function App() {
           templateFields,
           placeholderVariables,
           placeholderAnchors,
-          complexFillItems,
+          complexFillFields,
+          complexFillAnchors,
           placeholderFills,
           fillFields,
           materialFiles,
@@ -422,7 +434,8 @@ export default function App() {
     materialFiles,
     placeholderVariables,
     placeholderAnchors,
-    complexFillItems,
+    complexFillFields,
+    complexFillAnchors,
     placeholderFills,
     selectedProjectKnowledgeBaseIds,
     selectedGlobalKnowledgeBaseIds,
@@ -489,7 +502,8 @@ export default function App() {
     sourceOfficeDocId = templateOfficeDocId,
     anchorsSnapshot = placeholderAnchorsRef.current,
     variablesSnapshot = placeholderVariablesRef.current,
-    complexItemsSnapshot = complexFillItemsRef.current,
+    complexFieldsSnapshot = complexFillFieldsRef.current,
+    complexAnchorsSnapshot = complexFillAnchorsRef.current,
   ) {
     if (!sourceOfficeDocId || !templateFile?.buffer) return;
     const officeDocId = sourceOfficeDocId;
@@ -518,7 +532,8 @@ export default function App() {
           templateFields: fieldsSnapshot,
           placeholderVariables: variablesSnapshot,
           placeholderAnchors: anchorsSnapshot,
-          complexFillItems: complexItemsSnapshot,
+          complexFillFields: complexFieldsSnapshot,
+          complexFillAnchors: complexAnchorsSnapshot,
           placeholderFills: placeholderFillsRef.current,
           fillFields,
           materialFiles,
@@ -577,7 +592,8 @@ export default function App() {
           templateFields,
           placeholderVariables: placeholderVariablesRef.current,
           placeholderAnchors: placeholderAnchorsRef.current,
-          complexFillItems: complexFillItemsRef.current,
+          complexFillFields: complexFillFieldsRef.current,
+          complexFillAnchors: complexFillAnchorsRef.current,
           placeholderFills: placeholderFillsRef.current,
           fillFields: fieldsSnapshot,
           materialFiles,
@@ -613,7 +629,8 @@ export default function App() {
     setTemplateFields([]);
     setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
-    setComplexFillItems([]);
+    setComplexFillFields([]);
+    setComplexFillAnchors([]);
     setPlaceholderFills({});
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
@@ -751,7 +768,8 @@ export default function App() {
     setTemplateFields([]);
     setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
-    setComplexFillItems([]);
+    setComplexFillFields([]);
+    setComplexFillAnchors([]);
     setPlaceholderFills({});
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
@@ -934,23 +952,61 @@ export default function App() {
     setSaveState("dirty");
   }
 
-  function updateComplexFillDraftSnapshot(nextItems) {
-    complexFillItemsRef.current = nextItems;
+  function updateComplexFillDraftSnapshot(nextFields = complexFillFieldsRef.current, nextAnchors = complexFillAnchorsRef.current) {
+    complexFillFieldsRef.current = nextFields;
+    complexFillAnchorsRef.current = nextAnchors;
     if (!draftAutosaveSnapshotRef.current) return;
     draftAutosaveSnapshotRef.current = {
       ...draftAutosaveSnapshotRef.current,
-      complexFillItems: nextItems,
+      complexFillFields: nextFields,
+      complexFillAnchors: nextAnchors,
     };
   }
 
-  function createComplexFillAnchor() {
-    const draftItem = createComplexFillItemDraft(complexFillItemsRef.current);
+  function addComplexFillField() {
+    const nextFields = [...complexFillFieldsRef.current, createComplexFillField(complexFillFieldsRef.current)];
+    setComplexFillFields(nextFields);
+    updateComplexFillDraftSnapshot(nextFields);
     setAnnotateSidePanelMode("complex-fill");
-    requestOnlyOfficeAddComplexFillAnchor(draftItem).then((result) => {
+    setSaveState("dirty");
+  }
+
+  function updateComplexFillField(fieldId, patch) {
+    const nextFields = complexFillFieldsRef.current.map((field, index) =>
+      field.id === fieldId ? normalizeComplexFillField({ ...field, ...patch }, index + 1, field) : field,
+    );
+    setComplexFillFields(nextFields);
+    updateComplexFillDraftSnapshot(nextFields);
+    setAnnotateSidePanelMode("complex-fill");
+    setSaveState("dirty");
+  }
+
+  function deleteComplexFillField(fieldId) {
+    const anchorCount = complexFillAnchorsRef.current.filter((anchor) => anchor.fieldId === fieldId).length;
+    if (anchorCount > 0 && !window.confirm(`该字段已建立 ${anchorCount} 处选区书签。删除后不会删除 Word 中原文，但模板元数据不再管理这些位置。确认删除？`)) {
+      return;
+    }
+    const nextFields = complexFillFieldsRef.current.filter((field) => field.id !== fieldId);
+    const nextAnchors = complexFillAnchorsRef.current.filter((anchor) => anchor.fieldId !== fieldId);
+    setComplexFillFields(nextFields);
+    setComplexFillAnchors(nextAnchors);
+    updateComplexFillDraftSnapshot(nextFields, nextAnchors);
+    setAnnotateSidePanelMode("complex-fill");
+    setSaveState("dirty");
+  }
+
+  function createComplexFillAnchor(field) {
+    if (!isComplexFillFieldComplete(field)) {
+      window.alert("请先在维护字段里填写字段简述、格式要求、内容要求。");
+      return;
+    }
+    const draftAnchor = createComplexFillAnchorDraft(field, complexFillAnchorsRef.current);
+    setAnnotateSidePanelMode("complex-fill");
+    requestOnlyOfficeAddComplexFillAnchor(draftAnchor).then((result) => {
       if (result?.ok) {
-        const nextItems = applyComplexFillItems(complexFillItemsRef.current, [result.item]);
-        setComplexFillItems(nextItems);
-        updateComplexFillDraftSnapshot(nextItems);
+        const nextAnchors = applyComplexFillAnchors(complexFillAnchorsRef.current, [result.anchor || result.item]);
+        setComplexFillAnchors(nextAnchors);
+        updateComplexFillDraftSnapshot(complexFillFieldsRef.current, nextAnchors);
         setSaveState("dirty");
         return;
       }
@@ -958,42 +1014,32 @@ export default function App() {
     });
   }
 
-  function updateComplexFillItem(itemId, patch) {
-    const nextItems = complexFillItemsRef.current.map((item, index) =>
-      item.id === itemId ? normalizeComplexFillItem({ ...item, ...patch }, index + 1, item) : item,
-    );
-    setComplexFillItems(nextItems);
-    updateComplexFillDraftSnapshot(nextItems);
+  function jumpToComplexFillAnchor(anchor) {
     setAnnotateSidePanelMode("complex-fill");
-    setSaveState("dirty");
-  }
-
-  function jumpToComplexFillItem(item) {
-    setAnnotateSidePanelMode("complex-fill");
-    requestOnlyOfficeSelectComplexFillAnchor(item).then((result) => {
+    requestOnlyOfficeSelectComplexFillAnchor(anchor).then((result) => {
       if (result?.timeout || !result?.ok) {
         window.alert(result?.error || "OnlyOffice 未能定位该复杂类填充书签。");
         return;
       }
-      const page = Math.max(1, Number(result.page || item?.page) || 1);
+      const page = Math.max(1, Number(result.page || anchor?.page) || 1);
       setAnnotatePreviewPage(page);
-      const nextItems = updateComplexFillItemPage(complexFillItemsRef.current, result.bookmarkName || item.bookmarkName, page);
-      if (nextItems !== complexFillItemsRef.current) {
-        setComplexFillItems(nextItems);
-        updateComplexFillDraftSnapshot(nextItems);
+      const nextAnchors = updateComplexFillAnchorPage(complexFillAnchorsRef.current, result.bookmarkName || anchor.bookmarkName, page);
+      if (nextAnchors !== complexFillAnchorsRef.current) {
+        setComplexFillAnchors(nextAnchors);
+        updateComplexFillDraftSnapshot(complexFillFieldsRef.current, nextAnchors);
         setSaveState("dirty");
       }
     });
   }
 
-  function deleteComplexFillItem(item) {
-    if (!item?.bookmarkName) return;
-    const nextItems = complexFillItemsRef.current.filter((current) => current.bookmarkName !== item.bookmarkName);
-    setComplexFillItems(nextItems);
-    updateComplexFillDraftSnapshot(nextItems);
+  function deleteComplexFillAnchor(anchor) {
+    if (!anchor?.bookmarkName) return;
+    const nextAnchors = complexFillAnchorsRef.current.filter((current) => current.bookmarkName !== anchor.bookmarkName);
+    setComplexFillAnchors(nextAnchors);
+    updateComplexFillDraftSnapshot(complexFillFieldsRef.current, nextAnchors);
     setAnnotateSidePanelMode("complex-fill");
     setSaveState("dirty");
-    requestOnlyOfficeDeleteComplexFillAnchor(item).catch(() => {});
+    requestOnlyOfficeDeleteComplexFillAnchor(anchor).catch(() => {});
   }
 
   function removeTemplateField(fieldId) {
@@ -1011,7 +1057,8 @@ export default function App() {
     setTemplateFields([]);
     setPlaceholderVariables(normalizePlaceholderVariables());
     setPlaceholderAnchors([]);
-    setComplexFillItems([]);
+    setComplexFillFields([]);
+    setComplexFillAnchors([]);
     setPlaceholderFills({});
     setAnnotateSidePanelMode("fields");
     setSelectedTemplateFieldId("");
@@ -1033,17 +1080,17 @@ export default function App() {
     const setupIssues = templateFields
       .map((field) => ({ field, issue: getFieldSetupIssue(field) }))
       .filter((item) => item.issue);
-    const incompleteComplexFillItems = complexFillItems.filter((item) => !isComplexFillItemComplete(item));
+    const incompleteComplexFillFields = complexFillFields.filter((field) => !isComplexFillFieldComplete(field));
     const hasPendingFields = templateFields.some((field) => field.status !== "已标注");
-    const hasTemplateMarkers = templateFields.length > 0 || placeholderAnchors.length > 0 || complexFillItems.length > 0;
-    const isComplete = hasTemplateMarkers && invalidFields.length === 0 && setupIssues.length === 0 && incompleteComplexFillItems.length === 0 && !hasPendingFields;
+    const hasTemplateMarkers = templateFields.length > 0 || placeholderAnchors.length > 0 || complexFillAnchors.length > 0;
+    const isComplete = hasTemplateMarkers && invalidFields.length === 0 && setupIssues.length === 0 && incompleteComplexFillFields.length === 0 && !hasPendingFields;
 
     if (!isComplete) {
       setSaveState("incomplete");
       if (setupIssues.length > 0) {
         window.alert(`有 ${setupIssues.length} 个字段缺少稳定写入位置：\n${setupIssues.slice(0, 6).map(({ field, issue }) => `- ${getTemplateFieldSourceText(field) || field.name || field.id}：${issue}`).join("\n")}`);
-      } else if (incompleteComplexFillItems.length > 0) {
-        window.alert(`有 ${incompleteComplexFillItems.length} 个复杂类填充字段未完善：\n${incompleteComplexFillItems.slice(0, 6).map((item) => `- ${item.fieldSummary || item.sourceText || item.id}：请填写字段简述、格式要求、内容要求`).join("\n")}`);
+      } else if (incompleteComplexFillFields.length > 0) {
+        window.alert(`有 ${incompleteComplexFillFields.length} 个复杂类填充字段未完善：\n${incompleteComplexFillFields.slice(0, 6).map((field) => `- ${field.fieldSummary || field.id}：请填写字段简述、格式要求、内容要求`).join("\n")}`);
       }
       return;
     }
@@ -1071,7 +1118,8 @@ export default function App() {
     }
 
     const normalizedTemplateFields = templateFields.map(normalizeTemplateFieldForRuntime);
-    const normalizedComplexFillItems = normalizeComplexFillItems(complexFillItems);
+    const normalizedComplexFillFields = normalizeComplexFillFields(complexFillFields);
+    const normalizedComplexFillAnchors = normalizeComplexFillAnchors(complexFillAnchors);
 
     const savedTemplate = {
       id: `TPL-${Date.now()}`,
@@ -1090,7 +1138,8 @@ export default function App() {
       fields: normalizedTemplateFields,
       placeholderVariables,
       placeholderAnchors,
-      complexFillItems: normalizedComplexFillItems,
+      complexFillFields: normalizedComplexFillFields,
+      complexFillAnchors: normalizedComplexFillAnchors,
       fileBuffer,
     };
 
@@ -1105,8 +1154,10 @@ export default function App() {
     }
 
     setTemplateFields(normalizedTemplateFields);
-    setComplexFillItems(normalizedComplexFillItems);
-    complexFillItemsRef.current = normalizedComplexFillItems;
+    setComplexFillFields(normalizedComplexFillFields);
+    setComplexFillAnchors(normalizedComplexFillAnchors);
+    complexFillFieldsRef.current = normalizedComplexFillFields;
+    complexFillAnchorsRef.current = normalizedComplexFillAnchors;
     setFillFields(createFillFieldsFromTemplate(normalizedTemplateFields, fillFields));
     setSelectedFieldId(normalizedTemplateFields[0]?.id ?? "");
     setCitationFieldId(normalizedTemplateFields[0]?.id ?? "");
@@ -1118,7 +1169,8 @@ export default function App() {
       templateFields: normalizedTemplateFields,
       placeholderVariables,
       placeholderAnchors,
-      complexFillItems: normalizedComplexFillItems,
+      complexFillFields: normalizedComplexFillFields,
+      complexFillAnchors: normalizedComplexFillAnchors,
       placeholderFills,
       fillFields,
       materialFiles,
@@ -1139,11 +1191,13 @@ export default function App() {
     const storedTemplate = await readStoredTemplate(template.id);
     const templateToUse = storedTemplate ?? template;
     const templateFieldsToUse = (templateToUse.fields || []).map(normalizeTemplateFieldForRuntime);
+    const complexFillState = buildComplexFillStateFromTemplate(templateToUse);
     const mappedFields = createFillFieldsFromTemplate(templateFieldsToUse);
     setTemplateFields(templateFieldsToUse);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToUse.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToUse.placeholderAnchors || []));
-    setComplexFillItems(normalizeComplexFillItems(templateToUse.complexFillItems));
+    setComplexFillFields(complexFillState.fields);
+    setComplexFillAnchors(complexFillState.anchors);
     setPlaceholderFills({});
     clearFilledTemplateDraft();
     if (templateToUse.fileBuffer) {
@@ -1163,7 +1217,8 @@ export default function App() {
       setTemplateFile(null);
       setPlaceholderVariables(normalizePlaceholderVariables());
       setPlaceholderAnchors([]);
-      setComplexFillItems([]);
+      setComplexFillFields([]);
+      setComplexFillAnchors([]);
       setPlaceholderFills({});
       setSaveState("no-file");
     }
@@ -1182,10 +1237,12 @@ export default function App() {
     const storedTemplate = await readStoredTemplate(template.id);
     const templateToEdit = storedTemplate ?? template;
     const fields = (templateToEdit.fields || []).map(normalizeTemplateFieldForRuntime);
+    const complexFillState = buildComplexFillStateFromTemplate(templateToEdit);
     setTemplateFields(fields);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToEdit.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToEdit.placeholderAnchors || []));
-    setComplexFillItems(normalizeComplexFillItems(templateToEdit.complexFillItems));
+    setComplexFillFields(complexFillState.fields);
+    setComplexFillAnchors(complexFillState.anchors);
     setPlaceholderFills({});
     clearFilledTemplateDraft();
     setFillFieldPageMap({});
@@ -1206,7 +1263,8 @@ export default function App() {
       setTemplateFile(null);
       setPlaceholderVariables(normalizePlaceholderVariables());
       setPlaceholderAnchors([]);
-      setComplexFillItems([]);
+      setComplexFillFields([]);
+      setComplexFillAnchors([]);
       setPlaceholderFills({});
       setSaveState("no-file");
     }
@@ -1812,7 +1870,8 @@ export default function App() {
                 fields={templateFields}
                 placeholderVariables={placeholderVariables}
                 placeholderAnchors={placeholderAnchors}
-                complexFillItems={complexFillItems}
+                complexFillFields={complexFillFields}
+                complexFillAnchors={complexFillAnchors}
                 sidePanelMode={annotateSidePanelMode}
                 selectedField={selectedTemplateField}
                 selectedFieldId={selectedTemplateFieldId}
@@ -1839,10 +1898,12 @@ export default function App() {
                 onDeletePlaceholderAnchor={deletePlaceholderAnchor}
                 onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}
                 onOpenComplexFillPanel={() => setAnnotateSidePanelMode("complex-fill")}
+                onAddComplexFillField={addComplexFillField}
+                onUpdateComplexFillField={updateComplexFillField}
+                onDeleteComplexFillField={deleteComplexFillField}
                 onCreateComplexFillAnchor={createComplexFillAnchor}
-                onUpdateComplexFillItem={updateComplexFillItem}
-                onJumpComplexFillItem={jumpToComplexFillItem}
-                onDeleteComplexFillItem={deleteComplexFillItem}
+                onJumpComplexFillAnchor={jumpToComplexFillAnchor}
+                onDeleteComplexFillAnchor={deleteComplexFillAnchor}
                 onOfficeDocumentReady={setTemplateOfficeDocId}
               />
             ) : (

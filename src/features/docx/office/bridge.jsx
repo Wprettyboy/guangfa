@@ -315,29 +315,29 @@ function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
   });
 }
 
-function requestOnlyOfficeAddComplexFillAnchor(item) {
+function requestOnlyOfficeAddComplexFillAnchor(anchor) {
   return requestOnlyOfficeComplexFillAction(
     "add-complex-fill-anchor",
     "complex-fill-anchor-added",
-    { item },
+    { anchor },
     "OnlyOffice 未响应复杂类填充书签建立命令。",
   );
 }
 
-function requestOnlyOfficeSelectComplexFillAnchor(item) {
+function requestOnlyOfficeSelectComplexFillAnchor(anchor) {
   return requestOnlyOfficeComplexFillAction(
     "select-complex-fill-anchor",
     "complex-fill-anchor-selected",
-    { bookmarkName: item?.bookmarkName, item },
+    { bookmarkName: anchor?.bookmarkName, anchor },
     "OnlyOffice 未响应复杂类填充书签定位命令。",
   );
 }
 
-function requestOnlyOfficeDeleteComplexFillAnchor(item) {
+function requestOnlyOfficeDeleteComplexFillAnchor(anchor) {
   return requestOnlyOfficeComplexFillAction(
     "delete-complex-fill-anchor",
     "complex-fill-anchor-deleted",
-    { bookmarkName: item?.bookmarkName, item },
+    { bookmarkName: anchor?.bookmarkName, anchor },
     "OnlyOffice 未响应复杂类填充书签删除命令。",
   );
 }
