@@ -342,7 +342,26 @@ function requestOnlyOfficeDeleteComplexFillAnchor(anchor) {
   );
 }
 
-function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeoutError) {
+function requestOnlyOfficeFillComplexFillField(complexFill, options = {}) {
+  const anchors = Array.isArray(complexFill?.anchors) ? complexFill.anchors : [];
+  const timeoutMs = Number(options.timeoutMs || Math.max(12000, anchors.length * 5000));
+  return requestOnlyOfficeComplexFillAction(
+    "fill-complex-fill-field",
+    "complex-fill-field-filled",
+    {
+      field: {
+        id: complexFill?.id,
+        fieldSummary: complexFill?.fieldSummary,
+      },
+      value: complexFill?.value || "",
+      anchors,
+    },
+    "OnlyOffice 未响应复杂类填充写入命令。",
+    timeoutMs,
+  );
+}
+
+function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeoutError, timeoutMs = 8000) {
   const requestId = `complex-fill-${Date.now()}-${++onlyOfficeComplexFillRequestSeq}`;
   const message = {
     source: "guangfa-parent",
@@ -375,7 +394,7 @@ function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeo
         failureTimer = window.setTimeout(() => finish(firstFailure), 700);
       }
     };
-    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), 8000);
+    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), timeoutMs);
     window.addEventListener("message", handleMessage);
     postAllOnlyOfficeFrames(message, 8);
   });
@@ -525,6 +544,7 @@ export {
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeFillComplexFillField,
   requestOnlyOfficeFillPlaceholderVariable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectComplexFillAnchor,

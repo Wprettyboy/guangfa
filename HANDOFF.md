@@ -191,6 +191,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeAddComplexFillAnchor(anchor)`：发送 `add-complex-fill-anchor`，让注入脚本读取 OnlyOffice 当前真实选区并创建 `GF_CF_` 选区书签，回传书签名、页码和选区原文。
 - `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，按 `GF_CF_` 书签定位并选中对应范围，回传动态页码。
 - `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，只移除对应 `GF_CF_` 书签，不删除书签范围内的文档文字。
+- `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，让注入脚本按 `GF_CF_` 书签替换选区内容并保留同名书签。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
 - `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
 - `requestOnlyOfficeDeletePlaceholderAnchor(anchor)`：发送 `delete-placeholder-anchor`，等待 `placeholder-anchor-deleted` 回传。
@@ -223,6 +224,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，先恢复用户真实选区并调用高亮工具，再基于同一选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，最后触发保存并回传 `{ anchor }`。
   - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补灰色高亮。
   - `deleteComplexFillAnchor(payload)`：调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除 `GF_CF_` 书签，保留原文内容，并尝试清除该选区高亮。
+  - `fillComplexFillField(payload)`：按 `GF_CF_` 书签选中范围，使用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留同名书签。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。

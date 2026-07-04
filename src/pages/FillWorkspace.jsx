@@ -5,12 +5,14 @@ import OtherFieldFillPanel from "../features/docx/fill/OtherFieldFillPanel.jsx";
 import { exportFilledDocx } from "../features/docx/fill/docxXmlFill.js";
 import { requestOnlyOfficeDocumentDownloadAs } from "../features/docx/office/bridge.jsx";
 import { DocumentFrame, getFillFieldDisplayPage } from "../features/docx/runtime.jsx";
+import ComplexFillCards from "../features/complex-fill/ComplexFillCards.jsx";
 import PlaceholderFillCards from "../features/placeholders/PlaceholderFillCards.jsx";
 import { buildExportFileName, downloadDocxBuffer } from "../utils/files.js";
 
 function FillWorkspace({
   fields,
   placeholderCards = [],
+  complexFillCards = [],
   templateFile,
   sourceTemplateFile,
   selectedFieldId,
@@ -31,6 +33,11 @@ function FillWorkspace({
   onUpdatePlaceholderValue,
   onApplyPlaceholderValue,
   onJumpPlaceholderAnchor,
+  onGenerateComplexFill,
+  onGenerateAllComplexFills,
+  onUpdateComplexFillValue,
+  onApplyComplexFillValue,
+  onJumpComplexFillAnchor,
   generatingAll,
   bulkFillProgress,
   knowledgeBases,
@@ -59,27 +66,35 @@ function FillWorkspace({
     (count, card) => count + card.anchors.filter((anchor) => Number(anchor.page) === Number(currentPage)).length,
     0,
   );
+  const currentPageComplexFillCount = complexFillCards.reduce(
+    (count, card) => count + card.anchors.filter((anchor) => Number(anchor.page) === Number(currentPage)).length,
+    0,
+  );
   const activeTemplateName = baseTemplateFile?.name ?? "未选择模板";
   const fillableCount = fields.filter((field) => field.status !== "已确认" && field.status !== "生成中").length;
   const placeholderFillableCount = placeholderCards.filter((card) => card.status !== "已确认" && card.status !== "生成中").length;
-  const activeFillableCount = activeFillType === "auto" ? placeholderFillableCount : fillableCount;
+  const complexFillableCount = complexFillCards.filter((card) => card.status !== "已确认" && card.status !== "生成中").length;
+  const activeFillableCount = activeFillType === "auto" ? placeholderFillableCount : activeFillType === "complex" ? complexFillableCount : fillableCount;
   const bulkProgressText = generatingAll && bulkFillProgress?.total
     ? `${bulkFillProgress.current}/${bulkFillProgress.total}`
     : "";
-  const currentPageCount = activeFillType === "auto" ? currentPagePlaceholderCount : pageFields.length;
+  const currentPageCount = activeFillType === "auto" ? currentPagePlaceholderCount : activeFillType === "complex" ? currentPageComplexFillCount : pageFields.length;
   const generateAllLabel = `一键填充${activeFillableCount > 0 ? ` ${activeFillableCount}` : ""}`;
 
   useEffect(() => {
-    if (activeFillType === "auto" && placeholderCards.length === 0 && fields.length > 0) setActiveFillType("other");
-    if (activeFillType === "other" && fields.length === 0 && placeholderCards.length > 0) setActiveFillType("auto");
-  }, [activeFillType, fields.length, placeholderCards.length]);
+    const counts = { auto: placeholderCards.length, complex: complexFillCards.length, other: fields.length };
+    if (counts[activeFillType] > 0) return;
+    const nextType = ["auto", "complex", "other"].find((type) => counts[type] > 0);
+    if (nextType) setActiveFillType(nextType);
+  }, [activeFillType, complexFillCards.length, fields.length, placeholderCards.length]);
 
   const tabItems = useMemo(
     () => [
       { id: "auto", label: "自动字段填充", count: placeholderCards.length },
+      { id: "complex", label: "复杂类填充", count: complexFillCards.length },
       { id: "other", label: "其他类型填充", count: fields.length },
     ],
-    [fields.length, placeholderCards.length],
+    [complexFillCards.length, fields.length, placeholderCards.length],
   );
 
   async function handleMaterialChange(event) {
@@ -133,6 +148,10 @@ function FillWorkspace({
   function generateAllCurrentType() {
     if (activeFillType === "auto") {
       onGenerateAllPlaceholders?.();
+      return;
+    }
+    if (activeFillType === "complex") {
+      onGenerateAllComplexFills?.();
       return;
     }
     onGenerateAll?.();
@@ -226,6 +245,16 @@ function FillWorkspace({
                 onUpdateValue={onUpdatePlaceholderValue}
                 onApplyValue={onApplyPlaceholderValue}
                 onJumpAnchor={onJumpPlaceholderAnchor}
+              />
+            ) : activeFillType === "complex" ? (
+              <ComplexFillCards
+                cards={complexFillCards}
+                currentPage={currentPage}
+                generatingAll={generatingAll}
+                onGenerate={onGenerateComplexFill}
+                onUpdateValue={onUpdateComplexFillValue}
+                onApplyValue={onApplyComplexFillValue}
+                onJumpAnchor={onJumpComplexFillAnchor}
               />
             ) : (
               <OtherFieldFillPanel

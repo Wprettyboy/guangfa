@@ -53,6 +53,7 @@ import {
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeFillComplexFillField,
   requestOnlyOfficeFillPlaceholderVariable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectComplexFillAnchor,
@@ -92,6 +93,14 @@ import {
   normalizeComplexFillAnchors,
   updateComplexFillAnchorPage,
 } from "./features/complex-fill/anchors.js";
+import {
+  buildComplexFillCards,
+  createEditedComplexFill,
+  createManualComplexFill,
+  createComplexFillError,
+  markComplexFillFailure,
+  requestComplexFillAiFill,
+} from "./features/complex-fill/fill.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -145,6 +154,7 @@ export default function App() {
   const [complexFillFields, setComplexFillFields] = useState([]);
   const [complexFillAnchors, setComplexFillAnchors] = useState([]);
   const [placeholderFills, setPlaceholderFills] = useState({});
+  const [complexFillFills, setComplexFillFills] = useState({});
   const [annotateSidePanelMode, setAnnotateSidePanelMode] = useState(initialSession.annotateSidePanelMode || "fields");
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
   const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState(initialSession.selectedTemplateFieldId || initialTemplateFields[0]?.id || "");
@@ -184,6 +194,7 @@ export default function App() {
   const complexFillFieldsRef = useRef(complexFillFields);
   const complexFillAnchorsRef = useRef(complexFillAnchors);
   const placeholderFillsRef = useRef(placeholderFills);
+  const complexFillFillsRef = useRef(complexFillFills);
   const enrichedFillFields = useMemo(
     () => mergeFillFieldsWithTemplate(fillFields, templateFields),
     [fillFields, templateFields],
@@ -192,7 +203,12 @@ export default function App() {
     () => buildPlaceholderFillCards(placeholderVariables, placeholderAnchors, placeholderFills),
     [placeholderAnchors, placeholderFills, placeholderVariables],
   );
+  const complexFillCards = useMemo(
+    () => buildComplexFillCards(complexFillFields, complexFillAnchors, complexFillFills),
+    [complexFillAnchors, complexFillFields, complexFillFills],
+  );
   const placeholderFillCardsRef = useRef(placeholderFillCards);
+  const complexFillCardsRef = useRef(complexFillCards);
   const enrichedFillFieldsRef = useRef(enrichedFillFields);
   const fillValueSignature = useMemo(
     () => enrichedFillFields.map((field) => `${field.id}:${field.value || ""}:${field.amountValue || ""}:${field.choiceValue || ""}:${field.source || ""}`).join("|"),
@@ -259,8 +275,16 @@ export default function App() {
   }, [placeholderFills]);
 
   useEffect(() => {
+    complexFillFillsRef.current = complexFillFills;
+  }, [complexFillFills]);
+
+  useEffect(() => {
     placeholderFillCardsRef.current = placeholderFillCards;
   }, [placeholderFillCards]);
+
+  useEffect(() => {
+    complexFillCardsRef.current = complexFillCards;
+  }, [complexFillCards]);
 
   const selectedTemplateField = templateFields.find((field) => field.id === selectedTemplateFieldId);
   const workspaceTitle =
@@ -314,6 +338,7 @@ export default function App() {
         setComplexFillFields(complexFillState.fields);
         setComplexFillAnchors(complexFillState.anchors);
         setPlaceholderFills(draftToRestore.placeholderFills || {});
+        setComplexFillFills(draftToRestore.complexFillFills || {});
         setFillFields(draftToRestore.fillFields || []);
         setMaterialFiles(draftToRestore.materialFiles || []);
         setSelectedFieldId(draftToRestore.selectedFieldId || draftToRestore.fillFields?.[0]?.id || "");
@@ -410,6 +435,7 @@ export default function App() {
           complexFillFields,
           complexFillAnchors,
           placeholderFills,
+          complexFillFills,
           fillFields,
           materialFiles,
           selectedTemplateFieldId,
@@ -437,6 +463,7 @@ export default function App() {
     complexFillFields,
     complexFillAnchors,
     placeholderFills,
+    complexFillFills,
     selectedProjectKnowledgeBaseIds,
     selectedGlobalKnowledgeBaseIds,
     selectedTemplateFieldId,
@@ -535,6 +562,7 @@ export default function App() {
           complexFillFields: complexFieldsSnapshot,
           complexFillAnchors: complexAnchorsSnapshot,
           placeholderFills: placeholderFillsRef.current,
+          complexFillFills: complexFillFillsRef.current,
           fillFields,
           materialFiles,
           selectedTemplateFieldId,
@@ -595,6 +623,7 @@ export default function App() {
           complexFillFields: complexFillFieldsRef.current,
           complexFillAnchors: complexFillAnchorsRef.current,
           placeholderFills: placeholderFillsRef.current,
+          complexFillFills: complexFillFillsRef.current,
           fillFields: fieldsSnapshot,
           materialFiles,
           selectedTemplateFieldId,
@@ -632,6 +661,7 @@ export default function App() {
     setComplexFillFields([]);
     setComplexFillAnchors([]);
     setPlaceholderFills({});
+    setComplexFillFills({});
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
@@ -771,6 +801,7 @@ export default function App() {
     setComplexFillFields([]);
     setComplexFillAnchors([]);
     setPlaceholderFills({});
+    setComplexFillFills({});
     setAnnotateSidePanelMode("fields");
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
@@ -1060,6 +1091,7 @@ export default function App() {
     setComplexFillFields([]);
     setComplexFillAnchors([]);
     setPlaceholderFills({});
+    setComplexFillFills({});
     setAnnotateSidePanelMode("fields");
     setSelectedTemplateFieldId("");
     setSaveState("dirty");
@@ -1172,6 +1204,7 @@ export default function App() {
       complexFillFields: normalizedComplexFillFields,
       complexFillAnchors: normalizedComplexFillAnchors,
       placeholderFills,
+      complexFillFills,
       fillFields,
       materialFiles,
       selectedTemplateFieldId,
@@ -1199,6 +1232,7 @@ export default function App() {
     setComplexFillFields(complexFillState.fields);
     setComplexFillAnchors(complexFillState.anchors);
     setPlaceholderFills({});
+    setComplexFillFills({});
     clearFilledTemplateDraft();
     if (templateToUse.fileBuffer) {
       annotatedTemplateBufferRef.current = null;
@@ -1220,6 +1254,7 @@ export default function App() {
       setComplexFillFields([]);
       setComplexFillAnchors([]);
       setPlaceholderFills({});
+      setComplexFillFills({});
       setSaveState("no-file");
     }
     setFillFields(mappedFields);
@@ -1244,6 +1279,7 @@ export default function App() {
     setComplexFillFields(complexFillState.fields);
     setComplexFillAnchors(complexFillState.anchors);
     setPlaceholderFills({});
+    setComplexFillFills({});
     clearFilledTemplateDraft();
     setFillFieldPageMap({});
     if (templateToEdit.fileBuffer) {
@@ -1266,6 +1302,7 @@ export default function App() {
       setComplexFillFields([]);
       setComplexFillAnchors([]);
       setPlaceholderFills({});
+      setComplexFillFills({});
       setSaveState("no-file");
     }
     setSelectedTemplateFieldId(fields[0]?.id ?? "");
@@ -1471,6 +1508,107 @@ export default function App() {
       if (nextAnchors !== placeholderAnchorsRef.current) {
         placeholderAnchorsRef.current = nextAnchors;
         setPlaceholderAnchors(nextAnchors);
+      }
+    });
+  }
+
+  function setComplexFillFill(fieldId, fill) {
+    setComplexFillFills((fills) => {
+      const nextFills = {
+        ...fills,
+        [fieldId]: {
+          ...(fills[fieldId] || {}),
+          ...fill,
+        },
+      };
+      complexFillFillsRef.current = nextFills;
+      return nextFills;
+    });
+  }
+
+  async function fillComplexFillWithAI(fieldId, options = {}) {
+    const card = complexFillCardsRef.current.find((item) => item.id === fieldId);
+    if (!card) return null;
+    setComplexFillFill(fieldId, { status: "生成中" });
+    try {
+      const appliedFill = await requestComplexFillAiFill(card, {
+        materials: materialFiles,
+        knowledgeOptions: {
+          enabled: selectedProjectKnowledgeBaseIds.length > 0,
+          projectId: currentProjectId,
+          kbIds: [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
+          topK: knowledgeTopK,
+        },
+      });
+      let nextFill = appliedFill;
+      let writeSucceeded = false;
+      if (appliedFill.value.trim()) {
+        const writeResult = await requestOnlyOfficeFillComplexFillField({
+          ...card,
+          value: appliedFill.value,
+        });
+        writeSucceeded = writeResult?.ok !== false;
+        if (!writeSucceeded) nextFill = markComplexFillFailure(appliedFill, writeResult);
+      }
+      setComplexFillFill(fieldId, nextFill);
+      if (writeSucceeded && options.syncDocument !== false) queueFilledOfficeDocumentSync();
+      return nextFill;
+    } catch (error) {
+      const errorFill = createComplexFillError(error, complexFillFillsRef.current[fieldId]?.value || "");
+      setComplexFillFill(fieldId, errorFill);
+      return errorFill;
+    }
+  }
+
+  async function applyComplexFillValue(fieldId) {
+    const card = complexFillCardsRef.current.find((item) => item.id === fieldId);
+    const currentFill = complexFillFillsRef.current[fieldId] || {};
+    const value = String(currentFill.value || "").trim();
+    if (!card || !value) return;
+    setComplexFillFill(fieldId, { status: "生成中" });
+    const writeResult = await requestOnlyOfficeFillComplexFillField({ ...card, value });
+    setComplexFillFill(
+      fieldId,
+      writeResult?.ok === false
+        ? markComplexFillFailure({ ...currentFill, value }, writeResult)
+        : createManualComplexFill(value, currentFill),
+    );
+    if (writeResult?.ok !== false) queueFilledOfficeDocumentSync();
+  }
+
+  function updateComplexFillValue(fieldId, value) {
+    setComplexFillFill(fieldId, createEditedComplexFill(value));
+  }
+
+  async function generateAllComplexFills() {
+    const pendingCards = complexFillCardsRef.current.filter((card) => card.status !== "已确认" && card.status !== "生成中");
+    if (pendingCards.length === 0 || generatingAll) return;
+    setGeneratingAll(true);
+    setBulkFillProgress({ current: 0, total: pendingCards.length });
+    try {
+      for (let index = 0; index < pendingCards.length; index += 1) {
+        setBulkFillProgress({ current: index + 1, total: pendingCards.length });
+        await fillComplexFillWithAI(pendingCards[index].id, { syncDocument: false });
+      }
+      queueFilledOfficeDocumentSync();
+    } finally {
+      setGeneratingAll(false);
+      setBulkFillProgress({ current: 0, total: 0 });
+    }
+  }
+
+  function jumpToComplexFillAnchorFromFill(anchor) {
+    requestOnlyOfficeSelectComplexFillAnchor(anchor).then((result) => {
+      if (result?.timeout || !result?.ok) {
+        window.alert(result?.error || "OnlyOffice 未能定位该复杂类填充书签。");
+        return;
+      }
+      const page = Math.max(1, Number(result.page || anchor?.page) || 1);
+      setFillPreviewPage(page);
+      const nextAnchors = updateComplexFillAnchorPage(complexFillAnchorsRef.current, result.bookmarkName || anchor.bookmarkName, page);
+      if (nextAnchors !== complexFillAnchorsRef.current) {
+        complexFillAnchorsRef.current = nextAnchors;
+        setComplexFillAnchors(nextAnchors);
       }
     });
   }
@@ -1910,6 +2048,7 @@ export default function App() {
               <FillWorkspace
                 fields={enrichedFillFields}
                 placeholderCards={placeholderFillCards}
+                complexFillCards={complexFillCards}
                 templateFile={fillPreviewFile}
                 sourceTemplateFile={templateFile}
                 selectedFieldId={selectedFieldId}
@@ -1930,6 +2069,11 @@ export default function App() {
                 onUpdatePlaceholderValue={updatePlaceholderFillValue}
                 onApplyPlaceholderValue={applyPlaceholderFillValue}
                 onJumpPlaceholderAnchor={jumpToPlaceholderFillAnchor}
+                onGenerateComplexFill={fillComplexFillWithAI}
+                onGenerateAllComplexFills={generateAllComplexFills}
+                onUpdateComplexFillValue={updateComplexFillValue}
+                onApplyComplexFillValue={applyComplexFillValue}
+                onJumpComplexFillAnchor={jumpToComplexFillAnchorFromFill}
                 generatingAll={generatingAll}
                 bulkFillProgress={bulkFillProgress}
                 knowledgeBases={knowledgeBases}

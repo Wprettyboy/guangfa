@@ -1,5 +1,6 @@
 (function () {
   const complexFillHighlightColor = { r: 211, g: 211, b: 211, color: "D3D3D3" };
+  let fallbackBookmarkIdSeed = 0;
 
   function getApplication() {
     try {
@@ -318,6 +319,82 @@
     return false;
   }
 
+  function createBookmarkId(manager) {
+    try {
+      if (typeof manager?.GetNewBookmarkId === "function") return manager.GetNewBookmarkId();
+    } catch {}
+    fallbackBookmarkIdSeed += 1;
+    return String(Date.now()) + String(fallbackBookmarkIdSeed).padStart(4, "0");
+  }
+
+  function insertBookmarkedPlainText(text, bookmarkName, manager) {
+    const logicDocument = getLogicDocument();
+    const Paragraph = window.AscWord?.Paragraph;
+    const ParaRun = window.AscWord?.ParaRun || window.AscCommonWord?.ParaRun;
+    const BookmarkClass = window.AscWord?.CParagraphBookmark || window.AscCommonWord?.CParagraphBookmark;
+    const SelectedContent = window.AscCommonWord?.CSelectedContent;
+    const SelectedElement = window.AscCommonWord?.CSelectedElement;
+    if (!logicDocument || !manager) return { ok: false, error: "OnlyOffice 书签写入接口不可用" };
+    if (
+      typeof Paragraph !== "function"
+      || typeof ParaRun !== "function"
+      || typeof BookmarkClass !== "function"
+      || typeof SelectedContent !== "function"
+      || typeof SelectedElement !== "function"
+    ) {
+      return { ok: false, error: "OnlyOffice 纯文本书签内容生成接口不可用" };
+    }
+
+    let actionStarted = false;
+    try {
+      const changeType = window.AscCommon?.changestype_Paragraph_AddText;
+      const isLocked = changeType && typeof logicDocument.IsSelectionLocked === "function"
+        ? logicDocument.IsSelectionLocked(changeType, null, false, safeCall(logicDocument, "IsFormFieldEditing", false))
+        : false;
+      if (isLocked) return { ok: false, error: "当前选区被锁定，无法写入复杂类填充内容。" };
+
+      const historyType = window.AscDFH?.historydescription_Document_AddTextWithProperties;
+      if (typeof logicDocument.StartAction === "function") {
+        logicDocument.StartAction(historyType);
+        actionStarted = true;
+      }
+
+      if (typeof logicDocument.RemoveBeforePaste === "function") logicDocument.RemoveBeforePaste();
+
+      const currentParagraph = typeof logicDocument.GetCurrentParagraph === "function" ? logicDocument.GetCurrentParagraph() : null;
+      if (!currentParagraph || typeof currentParagraph.GetCurrentAnchorPosition !== "function") {
+        return { ok: false, error: "OnlyOffice 当前光标位置不可用" };
+      }
+
+      const bookmarkId = createBookmarkId(manager);
+      const tempParagraph = new Paragraph();
+      const run = new ParaRun(tempParagraph, false);
+      run.AddText(String(text || ""));
+      tempParagraph.AddToContent(0, new BookmarkClass(true, bookmarkId, bookmarkName));
+      tempParagraph.AddToContent(1, run);
+      tempParagraph.AddToContent(2, new BookmarkClass(false, bookmarkId, bookmarkName));
+      safeCall(tempParagraph, "Correct_Content", null);
+
+      const selectedContent = new SelectedContent();
+      selectedContent.Add(new SelectedElement(tempParagraph, false));
+      selectedContent.EndCollect(logicDocument);
+      selectedContent.ForceInlineInsert();
+      selectedContent.PlaceCursorInLastInsertedRun(false);
+      const inserted = selectedContent.Insert(currentParagraph.GetCurrentAnchorPosition());
+      if (inserted === false) return { ok: false, error: "OnlyOffice 复杂类填充内容插入失败" };
+
+      safeCall(logicDocument, "Recalculate", null);
+      safeCall(logicDocument, "UpdateInterface", null);
+      safeCall(logicDocument, "UpdateSelection", null);
+      safeCall(manager, "Update", null);
+      return { ok: true, source: "selected-content-bookmark-run", style: "plain-text" };
+    } catch (error) {
+      return { ok: false, error: error?.message || "复杂类填充内容写入失败" };
+    } finally {
+      if (actionStarted) safeCall(logicDocument, "FinalizeAction", null);
+    }
+  }
+
   function restoreSelectionState(selectionState) {
     const logicDocument = getLogicDocument();
     if (!selectionState || !logicDocument || typeof logicDocument.SetSelectionState !== "function") return false;
@@ -453,6 +530,58 @@
     } catch (error) {
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page || 1, error: error?.message || "复杂类填充书签删除失败" });
     }
+  }
+
+  function fillComplexFillAnchor(anchor, value) {
+    const bookmarkName = String(anchor?.bookmarkName || "");
+    const manager = getBookmarkManager();
+    if (!manager || !bookmarkName) {
+      return { ok: false, bookmarkName, error: "复杂类填充书签接口不可用" };
+    }
+    const selected = selectBookmarkRange(manager, bookmarkName);
+    if (!selected.ok) return selected;
+    try {
+      removeBookmark(manager, bookmarkName);
+      const insertResult = insertBookmarkedPlainText(value, bookmarkName, manager);
+      if (!insertResult.ok) {
+        return { ok: false, bookmarkName, page: selected.page, error: insertResult.error || "复杂类填充内容写入失败" };
+      }
+      const bookmarkResult = selectBookmarkRange(manager, bookmarkName);
+      return {
+        ok: true,
+        bookmarkName,
+        page: bookmarkResult.page || selected.page || currentSelectionPage(),
+        source: insertResult.source,
+      };
+    } catch (error) {
+      return { ok: false, bookmarkName, page: selected.page, error: error?.message || "复杂类填充内容写入失败" };
+    }
+  }
+
+  function fillComplexFillField(payload = {}) {
+    const requestId = payload.requestId || "";
+    const value = String(payload.value || "").trim();
+    const anchors = Array.isArray(payload.anchors) ? payload.anchors : payload.anchor ? [payload.anchor] : [];
+    if (!value) {
+      return postComplexFillResult("complex-fill-field-filled", { ok: false, requestId, error: "复杂类填充值为空。" });
+    }
+    if (anchors.length === 0) {
+      return postComplexFillResult("complex-fill-field-filled", { ok: false, requestId, error: "当前复杂字段没有可填充的书签。" });
+    }
+    const results = anchors.map(function (anchor) {
+      return fillComplexFillAnchor(anchor, value);
+    });
+    const failed = results.filter(function (result) { return !result.ok; });
+    if (failed.length === 0) saveOnlyOfficeDocument("complex-fill-field");
+    return postComplexFillResult("complex-fill-field-filled", {
+      ok: failed.length === 0,
+      requestId,
+      value,
+      count: results.length - failed.length,
+      failed: failed.length,
+      results,
+      error: failed[0]?.error || "",
+    });
   }
 
   function selectFieldBookmark(field) {
@@ -1597,6 +1726,7 @@
   window.guangfaAddComplexFillAnchor = addComplexFillAnchor;
   window.guangfaSelectComplexFillAnchor = selectComplexFillAnchor;
   window.guangfaDeleteComplexFillAnchor = deleteComplexFillAnchor;
+  window.guangfaFillComplexFillField = fillComplexFillField;
   window.guangfaChoiceMarkerSelfTest = function () {
     const options = parseChoiceOptions("□第五章 评审办法（经评审的最低投标价法） □第五章 评审办法（综合评估法）");
     const target = findChoiceOption(options, { value: "综合评估法" });
@@ -1657,6 +1787,9 @@
     }
     if (data.source === "guangfa-parent" && data.action === "delete-complex-fill-anchor") {
       deleteComplexFillAnchor(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "fill-complex-fill-field") {
+      fillComplexFillField(data);
     }
     if (data.source === "guangfa-parent" && data.action === "fill-field-value") {
       const field = data.field || {};
