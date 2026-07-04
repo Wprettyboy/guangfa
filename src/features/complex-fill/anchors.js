@@ -53,9 +53,10 @@ function createComplexFillAnchorDraft(field, anchors = []) {
 }
 
 function normalizeComplexFillField(field = {}, order = 1, existing = null) {
+  const summarySource = field.fieldSummary ?? field.description ?? existing?.fieldSummary;
   return {
     id: String(field.id || existing?.id || `CF-${String(order).padStart(3, "0")}`),
-    fieldSummary: normalizeComplexFillText(field.fieldSummary ?? field.description ?? existing?.fieldSummary, 300) || `复杂字段${order}`,
+    fieldSummary: summarySource == null ? `复杂字段${order}` : normalizeComplexFillText(summarySource, 300),
     formatRequirement: normalizeComplexFillText(field.formatRequirement ?? existing?.formatRequirement, 1000),
     contentRequirement: normalizeComplexFillText(field.contentRequirement ?? existing?.contentRequirement, 1000),
     createdAt: Number(field.createdAt || existing?.createdAt || Date.now()),
