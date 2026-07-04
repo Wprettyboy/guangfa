@@ -284,6 +284,9 @@
 
 .placeholder-panel-section.standalone {
   flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .placeholder-summary {
@@ -328,11 +331,27 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+  min-height: 0;
+  overflow: hidden auto;
   padding: 12px;
+  align-content: start;
 }
 
 .placeholder-variable-list .empty-state {
   grid-column: 1 / -1;
+}
+
+.placeholder-variable-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.placeholder-variable-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d4e3;
+}
+
+.placeholder-variable-list::-webkit-scrollbar-track {
+  background: #f5f7fb;
 }
 
 .placeholder-variable-card {
