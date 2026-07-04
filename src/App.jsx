@@ -44,6 +44,7 @@ import {
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeGoToPage,
   requestOnlyOfficeInsertPlaceholderVariable,
 } from "./features/docx/office/bridge.jsx";
 import {
@@ -741,6 +742,13 @@ export default function App() {
     requestOnlyOfficeInsertPlaceholderVariable(normalized, anchorIndex).then((result) => {
       if (result?.timeout) window.alert(result.error || "OnlyOffice 未响应自动字段插入命令，请确认左侧文档已加载完成。");
     });
+    setAnnotateSidePanelMode("placeholders");
+  }
+
+  function jumpToPlaceholderAnchor(anchor) {
+    const page = Math.max(1, Number(anchor?.page) || 1);
+    setAnnotatePreviewPage(page);
+    requestOnlyOfficeGoToPage(page);
     setAnnotateSidePanelMode("placeholders");
   }
 
@@ -1476,6 +1484,7 @@ export default function App() {
                 onRenamePlaceholderVariable={renamePlaceholderVariable}
                 onDeletePlaceholderVariable={removePlaceholderVariable}
                 onInsertPlaceholderVariable={insertPlaceholderVariable}
+                onJumpPlaceholderAnchor={jumpToPlaceholderAnchor}
                 onPlaceholderAnchorsDetected={applyPlaceholderAnchorResult}
                 onPlaceholderAnchorInserted={applyPlaceholderAnchorResult}
                 onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}

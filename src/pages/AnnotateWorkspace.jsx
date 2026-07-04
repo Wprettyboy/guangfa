@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Highlighter, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Highlighter, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
 import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
@@ -31,6 +31,7 @@ function AnnotateWorkspace({
   onRenamePlaceholderVariable,
   onDeletePlaceholderVariable,
   onInsertPlaceholderVariable,
+  onJumpPlaceholderAnchor,
   onPlaceholderAnchorsDetected,
   onPlaceholderAnchorInserted,
   onOpenPlaceholderPanel,
@@ -117,6 +118,7 @@ function AnnotateWorkspace({
             onRenameVariable={onRenamePlaceholderVariable}
             onDeleteVariable={onDeletePlaceholderVariable}
             onInsertVariable={onInsertPlaceholderVariable}
+            onJumpAnchor={onJumpPlaceholderAnchor}
             onBack={() => onSidePanelModeChange?.("fields")}
           />
         ) : (
@@ -215,8 +217,17 @@ function AnnotateWorkspace({
   );
 }
 
-function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onBack }) {
+function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onJumpAnchor, onBack }) {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [collapsedVariables, setCollapsedVariables] = useState({});
+
+  function toggleVariable(variableId) {
+    setCollapsedVariables((current) => ({
+      ...current,
+      [variableId]: !(current[variableId] ?? false),
+    }));
+  }
+
   return (
     <div className="panel-section placeholder-panel-section standalone">
       <div className="panel-title">
@@ -232,7 +243,7 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
       </div>
       <div className="placeholder-summary">
         <strong>字段变量</strong>
-        <span>已插入 {anchors.length} 处，后续填充按书签定位。</span>
+        <span>已插入总数 {anchors.length} 处</span>
       </div>
       <div className="placeholder-variable-list">
         {variables.length === 0 ? (
@@ -241,34 +252,59 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
             <span>暂无字段变量，请先维护字段</span>
           </div>
         ) : variables.map((variable) => {
-          const count = anchors.filter((anchor) => anchor.variableId === variable.id).length;
+          const variableAnchors = anchors.filter((anchor) => anchor.variableId === variable.id).sort(comparePlaceholderAnchors);
+          const anchorRows = labelPlaceholderAnchorPages(variableAnchors);
+          const expanded = collapsedVariables[variable.id] !== true;
+          const listId = `placeholder-anchor-list-${variable.id}`;
           return (
-            <button className="placeholder-variable-card" type="button" key={variable.id} onClick={() => onInsertVariable?.(variable)} title={`插入 ${variable.token}`}>
-              <div className="placeholder-card-copy">
-                <strong>{variable.name}</strong>
-                <span>已插入 {count} 处</span>
+            <article className="placeholder-variable-card" key={variable.id}>
+              <div className="placeholder-card-header">
+                <strong title={variable.name}>{variable.name}</strong>
+                <button className="placeholder-insert-button" type="button" onClick={() => onInsertVariable?.(variable)} title={`插入 ${variable.token}`}>
+                  <Plus size={14} />
+                  插入字段
+                </button>
               </div>
-            </button>
+              <button
+                className="placeholder-card-toggle"
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={listId}
+                onClick={() => toggleVariable(variable.id)}
+              >
+                <span>已插入总数 {variableAnchors.length}</span>
+                {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+              </button>
+              {expanded ? (
+                <div className="placeholder-card-anchor-list" id={listId}>
+                  {anchorRows.length === 0 ? (
+                    <div className="placeholder-card-empty">暂无插入位置</div>
+                  ) : (
+                    <>
+                      <div className="placeholder-anchor-head">
+                        <span>序号</span>
+                        <span>书签</span>
+                        <span>页面</span>
+                      </div>
+                      {anchorRows.map((anchor, index) => (
+                        <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
+                          <span className="row-index">{index + 1}</span>
+                          <div className="placeholder-anchor-copy">
+                            <strong>{anchor.token}</strong>
+                            <span>{anchor.bookmarkName}</span>
+                          </div>
+                          <button className="placeholder-page-link" type="button" onClick={() => onJumpAnchor?.(anchor)}>
+                            {anchor.pageLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </article>
           );
         })}
-      </div>
-      <div className="placeholder-anchor-list">
-        {anchors.length === 0 ? (
-          <div className="empty-state compact">
-            <Highlighter size={16} />
-            <span>暂无已插入的自动字段</span>
-          </div>
-        ) : (
-          anchors.map((anchor, index) => (
-            <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
-              <span className="row-index">{index + 1}</span>
-              <div>
-                <strong>{anchor.variableName}</strong>
-                <span>{anchor.token} · 第 {anchor.page || 1} 页 · {anchor.bookmarkName}</span>
-              </div>
-            </div>
-          ))
-        )}
       </div>
       {maintenanceOpen ? (
         <PlaceholderMaintenanceModal
@@ -282,6 +318,51 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
       ) : null}
     </div>
   );
+}
+
+function comparePlaceholderAnchors(left, right) {
+  return (
+    (Number(left?.documentOrder) || 0) - (Number(right?.documentOrder) || 0) ||
+    getPlaceholderAnchorPage(left) - getPlaceholderAnchorPage(right) ||
+    (Number(left?.index) || 0) - (Number(right?.index) || 0) ||
+    String(left?.bookmarkName || "").localeCompare(String(right?.bookmarkName || ""))
+  );
+}
+
+function getPlaceholderAnchorPage(anchor) {
+  const page = Number(anchor?.page);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function labelPlaceholderAnchorPages(anchors) {
+  const pageCounts = new Map();
+  anchors.forEach((anchor) => {
+    const page = getPlaceholderAnchorPage(anchor);
+    pageCounts.set(page, (pageCounts.get(page) || 0) + 1);
+  });
+  const pageIndexes = new Map();
+  return anchors.map((anchor) => {
+    const page = getPlaceholderAnchorPage(anchor);
+    const pageIndex = (pageIndexes.get(page) || 0) + 1;
+    pageIndexes.set(page, pageIndex);
+    const suffix = pageCounts.get(page) > 1 ? ` ${toAlphaLabel(pageIndex)}` : "";
+    return {
+      ...anchor,
+      page,
+      pageLabel: `第 ${page} 页${suffix}`,
+    };
+  });
+}
+
+function toAlphaLabel(index) {
+  let value = Math.max(1, Number(index) || 1);
+  let label = "";
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(97 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return label;
 }
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onClose }) {

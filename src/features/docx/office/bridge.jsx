@@ -259,6 +259,15 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
   });
 }
 
+function requestOnlyOfficeGoToPage(page) {
+  const targetPage = Math.max(1, Number(page) || 1);
+  postAllOnlyOfficeFrames({
+    source: "guangfa-parent",
+    action: "go-to-page",
+    page: targetPage,
+  }, 2);
+}
+
 function postAllOnlyOfficeFrames(message, attempts = 8) {
   [...document.querySelectorAll("iframe")].forEach((frame) => {
     try {
@@ -360,5 +369,6 @@ export {
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeFillField,
+  requestOnlyOfficeGoToPage,
   requestOnlyOfficeInsertPlaceholderVariable,
 };

@@ -326,7 +326,7 @@
 
 .placeholder-variable-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   padding: 12px;
 }
@@ -338,16 +338,12 @@
 .placeholder-variable-card {
   display: grid;
   min-width: 0;
-  min-height: 78px;
-  gap: 6px;
-  align-items: start;
+  gap: 10px;
   padding: 12px;
   border: 1px solid #dfe7f2;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 6px 18px rgba(28, 43, 68, 0.06);
-  text-align: left;
-  cursor: pointer;
   transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
@@ -357,34 +353,68 @@
   transform: translateY(-1px);
 }
 
-.placeholder-card-copy {
-  display: grid;
-  gap: 8px;
+.placeholder-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
   min-width: 0;
 }
 
-.placeholder-card-copy strong,
-.placeholder-card-copy span {
-  display: block;
+.placeholder-card-header strong {
+  min-width: 0;
+  color: #25324a;
+  font-size: 15px;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.placeholder-card-copy strong {
-  color: #25324a;
-  font-size: 15px;
-  line-height: 1.3;
+.placeholder-insert-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #0f63e9;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
 }
 
-.placeholder-card-copy span {
-  width: fit-content;
-  max-width: 100%;
-  border-radius: 5px;
-  padding: 3px 6px;
+.placeholder-insert-button:hover {
+  border-color: #7fb0ff;
+  background: #e8f1ff;
+}
+
+.placeholder-card-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 8px;
   color: #60708a;
   background: #f1f5f9;
+  cursor: pointer;
   font-size: 12px;
+  font-weight: 700;
+}
+
+.placeholder-card-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .placeholder-maintenance-modal {
@@ -454,19 +484,45 @@
   white-space: nowrap;
 }
 
-.placeholder-anchor-list {
+.placeholder-card-anchor-list {
   display: grid;
-  max-height: 190px;
-  overflow: hidden auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #edf2f7;
+  border-radius: 7px;
+  background: #fbfcfe;
+}
+
+.placeholder-card-empty {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: #7a879a;
+  font-size: 12px;
+}
+
+.placeholder-anchor-head,
+.placeholder-anchor-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 86px;
+  gap: 8px;
+  align-items: center;
+}
+
+.placeholder-anchor-head {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #edf2f7;
+  color: #738096;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .placeholder-anchor-row {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 48px;
-  padding: 7px 12px;
+  min-height: 44px;
+  padding: 7px 8px;
   border-bottom: 1px solid #eef2f7;
   background: #ffffff;
 }
@@ -475,23 +531,48 @@
   border-bottom: 0;
 }
 
-.placeholder-anchor-row strong,
-.placeholder-anchor-row span {
+.placeholder-anchor-copy {
+  min-width: 0;
+}
+
+.placeholder-anchor-copy strong,
+.placeholder-anchor-copy span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.placeholder-anchor-row strong {
+.placeholder-anchor-copy strong {
   color: #25324a;
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.placeholder-anchor-row span {
+.placeholder-anchor-copy span {
   margin-top: 2px;
   color: #738096;
   font-size: 12px;
+}
+
+.placeholder-page-link {
+  justify-self: end;
+  max-width: 100%;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0 7px;
+  color: #0f63e9;
+  background: #e8f1ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder-page-link:hover {
+  background: #dbeafe;
 }
 
 .template-library-list {
