@@ -218,10 +218,11 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `extractOnlyOfficePage(selectionState)`：从选区状态、编辑器 API 或逻辑文档推断当前页。
   - `extractOnlyOfficeVisiblePage()`：读取当前可见页，优先 DOM/编辑器可见页接口。
   - `highlightOnlyOfficeSelection(selectionState)`：恢复选区并调用高亮。
-  - `applyTextHighlightToCurrentSelection()`：调用 `api.put_LineHighLight(true, r, g, b)` 给当前选区加高亮。
-  - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，并回传 `{ anchor }`。
-  - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签。
-  - `deleteComplexFillAnchor(payload)`：调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除 `GF_CF_` 书签，保留原文内容。
+  - `applyTextHighlightToCurrentSelection(options)`：调用 `api.put_LineHighLight(true, r, g, b)` 给当前选区加高亮；不传 options 时默认黄色。
+  - `clearTextHighlightFromCurrentSelection()`：调用 `api.put_LineHighLight(false, 255, 255, 255)` 清除当前选区高亮。
+  - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，并给该选区加浅蓝高亮后回传 `{ anchor }`。
+  - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补浅蓝高亮。
+  - `deleteComplexFillAnchor(payload)`：调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除 `GF_CF_` 书签，保留原文内容，并尝试清除该选区高亮。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。

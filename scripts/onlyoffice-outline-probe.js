@@ -1,4 +1,6 @@
 (function () {
+  const complexFillHighlightColor = { r: 217, g: 234, b: 255, color: "D9EAFF" };
+
   function getApplication() {
     try {
       return window.DE && typeof window.DE.getController === "function" ? window.DE : null;
@@ -190,12 +192,25 @@
     }
   }
 
-  function applyTextHighlightToCurrentSelection() {
+  function applyTextHighlightToCurrentSelection(options = {}) {
+    const api = getEditorApi();
+    const r = Number.isFinite(Number(options.r)) ? Number(options.r) : 255;
+    const g = Number.isFinite(Number(options.g)) ? Number(options.g) : 255;
+    const b = Number.isFinite(Number(options.b)) ? Number(options.b) : 0;
+    if (api && typeof api.put_LineHighLight === "function") {
+      api.put_LineHighLight(true, r, g, b);
+      if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
+      return { ok: true, color: options.color || "FFFF00", source: "put-line-highlight" };
+    }
+    return { ok: true, skipped: true, reason: "line-highlight-api-unavailable" };
+  }
+
+  function clearTextHighlightFromCurrentSelection() {
     const api = getEditorApi();
     if (api && typeof api.put_LineHighLight === "function") {
-      api.put_LineHighLight(true, 255, 255, 0);
+      api.put_LineHighLight(false, 255, 255, 255);
       if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
-      return { ok: true, color: "FFFF00", source: "put-line-highlight" };
+      return { ok: true, source: "put-line-highlight" };
     }
     return { ok: true, skipped: true, reason: "line-highlight-api-unavailable" };
   }
@@ -380,9 +395,11 @@
       const selectedText = readBookmarkedText(manager, bookmarkName) || selection.text;
       const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
       const page = pageInfo.page || selection.page || 1;
+      const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
       return postComplexFillResult("complex-fill-anchor-added", {
         ok: true,
         requestId,
+        highlight,
         anchor: {
           id: anchor.id,
           fieldId: anchor.fieldId || anchor.id,
@@ -403,7 +420,8 @@
     const requestId = payload.requestId || "";
     const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
     const result = selectBookmarkRange(getBookmarkManager(), bookmarkName);
-    return postComplexFillResult("complex-fill-anchor-selected", { ...result, requestId });
+    const highlight = result.ok ? applyTextHighlightToCurrentSelection(complexFillHighlightColor) : null;
+    return postComplexFillResult("complex-fill-anchor-selected", { ...result, requestId, highlight });
   }
 
   function deleteComplexFillAnchor(payload = {}) {
@@ -418,8 +436,9 @@
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, error: "未找到对应复杂类填充书签" });
     }
     try {
+      const highlight = clearTextHighlightFromCurrentSelection();
       removeBookmark(manager, bookmarkName);
-      return postComplexFillResult("complex-fill-anchor-deleted", { ok: true, requestId, bookmarkName, page: selected.page || 1 });
+      return postComplexFillResult("complex-fill-anchor-deleted", { ok: true, requestId, bookmarkName, page: selected.page || 1, highlight });
     } catch (error) {
       return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page || 1, error: error?.message || "复杂类填充书签删除失败" });
     }
