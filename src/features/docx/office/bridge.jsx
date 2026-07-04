@@ -227,7 +227,7 @@ function requestOnlyOfficeFillField(field, options = {}) {
 
 function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
   const requestId = `placeholder-${Date.now()}-${++onlyOfficePlaceholderRequestSeq}`;
-  postAllOnlyOfficeFrames({
+  const message = {
     source: "guangfa-parent",
     action: "insert-placeholder-variable",
     requestId,
@@ -237,17 +237,46 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
       token: variable.token,
       anchorIndex,
     },
-  }, 0);
-  return requestId;
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "placeholder-anchor-inserted") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段插入命令。" }), 8000);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 8);
+  });
 }
 
 function postAllOnlyOfficeFrames(message, attempts = 8) {
   [...document.querySelectorAll("iframe")].forEach((frame) => {
     try {
       frame.contentWindow?.postMessage(message, "*");
+      postFrameChildren(frame.contentWindow, message);
     } catch {}
   });
   if (attempts > 0) window.setTimeout(() => postAllOnlyOfficeFrames(message, attempts - 1), 250);
+}
+
+function postFrameChildren(frameWindow, message) {
+  try {
+    for (let index = 0; index < frameWindow.frames.length; index += 1) {
+      const child = frameWindow.frames[index];
+      child.postMessage(message, "*");
+      postFrameChildren(child, message);
+    }
+  } catch {}
 }
 
 function requestOnlyOfficeDocumentDownloadAs(fileType = "docx", timeoutMs = 20000) {

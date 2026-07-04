@@ -738,7 +738,9 @@ export default function App() {
       return;
     }
     const anchorIndex = getNextPlaceholderAnchorIndex(placeholderAnchorsRef.current, normalized.id);
-    requestOnlyOfficeInsertPlaceholderVariable(normalized, anchorIndex);
+    requestOnlyOfficeInsertPlaceholderVariable(normalized, anchorIndex).then((result) => {
+      if (result?.timeout) window.alert(result.error || "OnlyOffice 未响应自动字段插入命令，请确认左侧文档已加载完成。");
+    });
     setAnnotateSidePanelMode("placeholders");
   }
 

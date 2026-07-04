@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Highlighter, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
@@ -284,7 +285,7 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
 }
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onClose }) {
-  return (
+  return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="placeholder-maintenance-modal" role="dialog" aria-modal="true" aria-label="自动字段维护" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-title">
@@ -325,7 +326,8 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
           <button className="tool-button primary" type="button" onClick={onClose}>完成</button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

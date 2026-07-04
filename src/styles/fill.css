@@ -328,7 +328,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding: 0 12px 12px;
+  padding: 12px;
 }
 
 .placeholder-variable-list .empty-state {
@@ -388,8 +388,8 @@
 }
 
 .placeholder-maintenance-modal {
-  width: min(560px, 100%);
-  max-height: min(620px, 90vh);
+  width: min(860px, calc(100vw - 64px));
+  max-height: min(680px, calc(100vh - 64px));
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -409,17 +409,19 @@
 
 .placeholder-maintenance-list {
   display: grid;
-  gap: 10px;
+  border: 1px solid #dfe7f2;
+  border-bottom: 0;
 }
 
 .placeholder-maintenance-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 10px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid #e3e8f0;
-  background: #fbfdff;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 1fr) 36px;
+  gap: 12px;
+  align-items: center;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #dfe7f2;
+  background: #ffffff;
 }
 
 .placeholder-maintenance-row label {
@@ -443,7 +445,6 @@
 }
 
 .placeholder-maintenance-row em {
-  grid-column: 1 / -1;
   min-width: 0;
   color: #728097;
   font-size: 12px;

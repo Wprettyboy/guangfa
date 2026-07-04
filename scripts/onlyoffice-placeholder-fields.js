@@ -1,4 +1,6 @@
 (function () {
+  const handledRequestIds = new Set();
+
   function safeCall(target, name, fallback, ...args) {
     try {
       return target && typeof target[name] === "function" ? target[name](...args) : fallback;
@@ -175,6 +177,10 @@
   function insertPlaceholderVariable(payload = {}) {
     const variable = normalizeVariable(payload.variable || payload);
     const requestId = payload.requestId || "";
+    try { console.log("[guangfa-placeholder-insert]", requestId, variable); } catch {}
+    if (requestId && handledRequestIds.has(requestId)) {
+      return { ok: true, requestId, skipped: true, reason: "duplicate-request" };
+    }
     if (!variable.name || !variable.token) {
       return postInsertedResult({ ok: false, requestId, error: "字段名称为空，无法插入占位符。" });
     }
@@ -184,6 +190,7 @@
     }
 
     const bookmarkName = payload.bookmarkName || buildBookmarkName(variable.id, variable.anchorIndex);
+    if (requestId) handledRequestIds.add(requestId);
     const selectionState = safeCall(getLogicDocument(), "GetSelectionState", null);
     const removeResult = removeSelectedTextForReplacement();
     if (!removeResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: removeResult.error });
