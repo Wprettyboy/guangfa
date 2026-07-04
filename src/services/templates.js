@@ -148,6 +148,36 @@ async function clearDraftState() {
   }
 }
 
+function shouldRestoreDraftState(draft, templates = []) {
+  if (!draft?.templateFile?.buffer) return false;
+  if (draft.activeWorkspace === "annotate" && isDraftForStoredTemplate(draft, templates)) return false;
+  return true;
+}
+
+function shouldSaveWorkspaceDraft(draft, templates = []) {
+  if (!draft?.templateFile?.buffer) return false;
+  if (draft.activeWorkspace === "annotate" && storedTemplateMatchesFile(draft.templateFile, templates)) return false;
+  return true;
+}
+
+function isDraftForStoredTemplate(draft, templates = []) {
+  return storedTemplateMatchesFile(draft?.templateFile, templates);
+}
+
+function storedTemplateMatchesFile(file, templates = []) {
+  if (!file) return false;
+  const sourceTemplateId = String(file.sourceTemplateId || "");
+  const fileName = normalizeTemplateFileIdentity(file.fileName || file.name);
+  return templates.some((template) => {
+    if (sourceTemplateId && sourceTemplateId === String(template.id || "")) return true;
+    return fileName && fileName === normalizeTemplateFileIdentity(template.fileName || template.name);
+  });
+}
+
+function normalizeTemplateFileIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function serializeDraft(draft) {
   const cleanDraft = {
     ...draft,
@@ -296,6 +326,8 @@ export {
   readDraftState,
   saveDraftState,
   clearDraftState,
+  shouldRestoreDraftState,
+  shouldSaveWorkspaceDraft,
   serializeDraft,
   deserializeDraft,
   normalizeKnowledgeBaseIds,

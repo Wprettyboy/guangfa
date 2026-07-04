@@ -11,6 +11,8 @@ import {
   readDraftState,
   saveDraftState,
   clearDraftState,
+  shouldRestoreDraftState,
+  shouldSaveWorkspaceDraft,
   normalizeKnowledgeBaseIds,
 } from "./services/templates.js";
 import {
@@ -58,10 +60,6 @@ import {
   resolveOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
 } from "./features/docx/office/documentSync.js";
-import {
-  buildAutosavedAnnotateDraft,
-  buildAutosavedFillDraft,
-} from "./features/docx/office/draftAutosave.js";
 import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
 import {
   applyPlaceholderAnchors,
@@ -164,10 +162,7 @@ export default function App() {
   const fillSyncTimerRef = useRef(0);
   const fillPreviewPageLockRef = useRef(null);
   const templateFileRef = useRef(templateFile);
-  const templateOfficeDocIdRef = useRef(templateOfficeDocId);
-  const fillOfficeDocIdRef = useRef(fillOfficeDocId);
   const draftAutosaveSnapshotRef = useRef(null);
-  const draftAutosaveRunningRef = useRef(false);
   const placeholderVariablesRef = useRef(placeholderVariables);
   const placeholderAnchorsRef = useRef(placeholderAnchors);
   const placeholderFillsRef = useRef(placeholderFills);
@@ -226,14 +221,6 @@ export default function App() {
   }, [templateFile]);
 
   useEffect(() => {
-    templateOfficeDocIdRef.current = templateOfficeDocId;
-  }, [templateOfficeDocId]);
-
-  useEffect(() => {
-    fillOfficeDocIdRef.current = fillOfficeDocId;
-  }, [fillOfficeDocId]);
-
-  useEffect(() => {
     placeholderAnchorsRef.current = placeholderAnchors;
   }, [placeholderAnchors]);
 
@@ -284,30 +271,32 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([readStoredTemplates(), readDraftState()]).then(([templates, draft]) => {
+    Promise.all([readStoredTemplates(), readDraftState()]).then(async ([templates, draft]) => {
+      const draftToRestore = shouldRestoreDraftState(draft, templates) ? draft : null;
+      if (draft && !draftToRestore) await clearDraftState();
       if (cancelled) return;
       setTemplateLibrary(templates);
-      if (draft?.templateFile?.buffer) {
-        setTemplateFile(draft.templateFile);
-        setFilledTemplateFile(draft.filledTemplateFile || null);
-        filledTemplateBufferRef.current = draft.filledTemplateFile?.buffer ? draft.filledTemplateFile.buffer.slice(0) : null;
-        filledTemplateDraftFileRef.current = draft.filledTemplateFile || null;
-        setTemplateFields(draft.templateFields || []);
-        setPlaceholderVariables(normalizePlaceholderVariables(draft.placeholderVariables));
-        setPlaceholderAnchors(applyPlaceholderAnchors([], draft.placeholderAnchors || []));
-        setPlaceholderFills(draft.placeholderFills || {});
-        setFillFields(draft.fillFields || []);
-        setMaterialFiles(draft.materialFiles || []);
-        setSelectedFieldId(draft.selectedFieldId || draft.fillFields?.[0]?.id || "");
-        setCitationFieldId(draft.citationFieldId || draft.fillFields?.[0]?.id || "");
-        setSelectedTemplateFieldId(draft.selectedTemplateFieldId || draft.templateFields?.[0]?.id || "");
-        setAnnotatePreviewPage(draft.annotatePreviewPage || 1);
-        setFillPreviewPage(draft.fillPreviewPage || 1);
-        setAnnotateSidePanelMode(draft.annotateSidePanelMode || initialSession.annotateSidePanelMode || "fields");
-        setSelectedProjectKnowledgeBaseIds(normalizeKnowledgeBaseIds(draft.selectedProjectKnowledgeBaseIds ?? draft.selectedProjectKnowledgeBaseId));
-        setSelectedGlobalKnowledgeBaseIds(normalizeKnowledgeBaseIds(draft.selectedGlobalKnowledgeBaseIds ?? draft.selectedGlobalKnowledgeBaseId));
-        setActiveWorkspace(draft.activeWorkspace || initialSession.activeWorkspace || "fill");
-        setActiveModule(draft.activeModule || initialSession.activeModule || "workspace");
+      if (draftToRestore?.templateFile?.buffer) {
+        setTemplateFile(draftToRestore.templateFile);
+        setFilledTemplateFile(draftToRestore.filledTemplateFile || null);
+        filledTemplateBufferRef.current = draftToRestore.filledTemplateFile?.buffer ? draftToRestore.filledTemplateFile.buffer.slice(0) : null;
+        filledTemplateDraftFileRef.current = draftToRestore.filledTemplateFile || null;
+        setTemplateFields(draftToRestore.templateFields || []);
+        setPlaceholderVariables(normalizePlaceholderVariables(draftToRestore.placeholderVariables));
+        setPlaceholderAnchors(applyPlaceholderAnchors([], draftToRestore.placeholderAnchors || []));
+        setPlaceholderFills(draftToRestore.placeholderFills || {});
+        setFillFields(draftToRestore.fillFields || []);
+        setMaterialFiles(draftToRestore.materialFiles || []);
+        setSelectedFieldId(draftToRestore.selectedFieldId || draftToRestore.fillFields?.[0]?.id || "");
+        setCitationFieldId(draftToRestore.citationFieldId || draftToRestore.fillFields?.[0]?.id || "");
+        setSelectedTemplateFieldId(draftToRestore.selectedTemplateFieldId || draftToRestore.templateFields?.[0]?.id || "");
+        setAnnotatePreviewPage(draftToRestore.annotatePreviewPage || 1);
+        setFillPreviewPage(draftToRestore.fillPreviewPage || 1);
+        setAnnotateSidePanelMode(draftToRestore.annotateSidePanelMode || initialSession.annotateSidePanelMode || "fields");
+        setSelectedProjectKnowledgeBaseIds(normalizeKnowledgeBaseIds(draftToRestore.selectedProjectKnowledgeBaseIds ?? draftToRestore.selectedProjectKnowledgeBaseId));
+        setSelectedGlobalKnowledgeBaseIds(normalizeKnowledgeBaseIds(draftToRestore.selectedGlobalKnowledgeBaseIds ?? draftToRestore.selectedGlobalKnowledgeBaseId));
+        setActiveWorkspace(draftToRestore.activeWorkspace || initialSession.activeWorkspace || "fill");
+        setActiveModule(draftToRestore.activeModule || initialSession.activeModule || "workspace");
       }
       setDraftReady(true);
     });
@@ -379,7 +368,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    draftAutosaveSnapshotRef.current = draftReady && templateFile?.buffer
+    const nextDraftSnapshot = draftReady && templateFile?.buffer
       ? {
           activeWorkspace,
           activeModule,
@@ -401,6 +390,7 @@ export default function App() {
           selectedGlobalKnowledgeBaseIds,
         }
       : null;
+    draftAutosaveSnapshotRef.current = shouldSaveWorkspaceDraft(nextDraftSnapshot, templateLibrary) ? nextDraftSnapshot : null;
   }, [
     activeWorkspace,
     activeModule,
@@ -420,45 +410,17 @@ export default function App() {
     selectedFieldId,
     templateFields,
     templateFile,
+    templateLibrary,
   ]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (draftAutosaveSnapshotRef.current) {
-        saveCurrentWorkspaceDraft();
+        saveDraftState(draftAutosaveSnapshotRef.current);
       }
     }, DRAFT_AUTOSAVE_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, []);
-
-  async function saveCurrentWorkspaceDraft() {
-    const snapshot = draftAutosaveSnapshotRef.current;
-    if (!snapshot || draftAutosaveRunningRef.current) return;
-    draftAutosaveRunningRef.current = true;
-    try {
-      let nextSnapshot = snapshot;
-      if (snapshot.activeWorkspace === "annotate") {
-        const result = await buildAutosavedAnnotateDraft(snapshot, {
-          officeDocId: templateOfficeDocIdRef.current,
-          baselineBuffer: annotatedTemplateBufferRef.current,
-        });
-        if (result.buffer) annotatedTemplateBufferRef.current = result.buffer.slice(0);
-        nextSnapshot = result.snapshot;
-      } else if (snapshot.activeWorkspace === "fill") {
-        const result = await buildAutosavedFillDraft(snapshot, {
-          officeDocId: fillOfficeDocIdRef.current,
-          baselineBuffer: filledTemplateBufferRef.current,
-        });
-        if (result.buffer) filledTemplateBufferRef.current = result.buffer.slice(0);
-        if (result.filledFile) filledTemplateDraftFileRef.current = result.filledFile;
-        nextSnapshot = result.snapshot;
-      }
-      draftAutosaveSnapshotRef.current = nextSnapshot;
-      await saveDraftState(nextSnapshot);
-    } finally {
-      draftAutosaveRunningRef.current = false;
-    }
-  }
 
   function animateWorkspace(nextWorkspace) {
     setActiveModule("workspace");
@@ -527,7 +489,7 @@ export default function App() {
           file?.buffer && file.previewId === sourcePreviewId ? { ...file, buffer: buffer.slice(0), size: formatFileSize(buffer.byteLength) } : file,
         );
         console.log("[annotate] synced highlighted docx", { id: officeDocId, bytes: buffer.byteLength });
-        await saveDraftState({
+        const nextDraft = {
           activeModule,
           activeWorkspace: "annotate",
           annotateSidePanelMode,
@@ -545,7 +507,10 @@ export default function App() {
           fillPreviewPage,
           selectedProjectKnowledgeBaseIds,
           selectedGlobalKnowledgeBaseIds,
-        });
+        };
+        if (shouldSaveWorkspaceDraft(nextDraft, templateLibrary)) {
+          await saveDraftState(nextDraft);
+        }
       } catch {
         // Annotation persistence is best effort; field creation should stay instant.
       }
@@ -1073,6 +1038,8 @@ export default function App() {
   }
 
   async function useTemplate(template) {
+    await clearDraftState();
+    draftAutosaveSnapshotRef.current = null;
     const storedTemplate = await readStoredTemplate(template.id);
     const templateToUse = storedTemplate ?? template;
     const templateFieldsToUse = (templateToUse.fields || []).map(normalizeTemplateFieldForRuntime);
@@ -1086,6 +1053,7 @@ export default function App() {
       annotatedTemplateBufferRef.current = null;
       setTemplateFile({
         previewId: createPreviewId("template"),
+        sourceTemplateId: templateToUse.id,
         name: templateToUse.fileName,
         size: templateToUse.fileSize,
         uploadedAt: templateToUse.uploadedAt || templateToUse.savedAt,
@@ -1111,6 +1079,8 @@ export default function App() {
   }
 
   async function editTemplate(template) {
+    await clearDraftState();
+    draftAutosaveSnapshotRef.current = null;
     const storedTemplate = await readStoredTemplate(template.id);
     const templateToEdit = storedTemplate ?? template;
     const fields = (templateToEdit.fields || []).map(normalizeTemplateFieldForRuntime);
@@ -1124,6 +1094,7 @@ export default function App() {
       annotatedTemplateBufferRef.current = null;
       setTemplateFile({
         previewId: createPreviewId("template"),
+        sourceTemplateId: templateToEdit.id,
         name: templateToEdit.fileName,
         size: templateToEdit.fileSize,
         uploadedAt: templateToEdit.uploadedAt || templateToEdit.savedAt,
