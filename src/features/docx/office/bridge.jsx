@@ -15,6 +15,7 @@ import {
 
 let onlyOfficeFillRequestSeq = 0;
 let onlyOfficePlaceholderRequestSeq = 0;
+let onlyOfficeComplexFillRequestSeq = 0;
 
 function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = true, mode, serverUrl, onReady, onError }) {
   const containerRef = useRef(null);
@@ -314,6 +315,72 @@ function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
   });
 }
 
+function requestOnlyOfficeAddComplexFillAnchor(item) {
+  return requestOnlyOfficeComplexFillAction(
+    "add-complex-fill-anchor",
+    "complex-fill-anchor-added",
+    { item },
+    "OnlyOffice 未响应复杂类填充书签建立命令。",
+  );
+}
+
+function requestOnlyOfficeSelectComplexFillAnchor(item) {
+  return requestOnlyOfficeComplexFillAction(
+    "select-complex-fill-anchor",
+    "complex-fill-anchor-selected",
+    { bookmarkName: item?.bookmarkName, item },
+    "OnlyOffice 未响应复杂类填充书签定位命令。",
+  );
+}
+
+function requestOnlyOfficeDeleteComplexFillAnchor(item) {
+  return requestOnlyOfficeComplexFillAction(
+    "delete-complex-fill-anchor",
+    "complex-fill-anchor-deleted",
+    { bookmarkName: item?.bookmarkName, item },
+    "OnlyOffice 未响应复杂类填充书签删除命令。",
+  );
+}
+
+function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeoutError) {
+  const requestId = `complex-fill-${Date.now()}-${++onlyOfficeComplexFillRequestSeq}`;
+  const message = {
+    source: "guangfa-parent",
+    action,
+    requestId,
+    ...payload,
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    let firstFailure = null;
+    let failureTimer = null;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      if (failureTimer) window.clearTimeout(failureTimer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== resultAction) return;
+      if (data.result?.requestId !== requestId) return;
+      if (data.result?.ok) {
+        finish(data.result);
+        return;
+      }
+      firstFailure ||= data.result;
+      if (!failureTimer) {
+        failureTimer = window.setTimeout(() => finish(firstFailure), 700);
+      }
+    };
+    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), 8000);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 8);
+  });
+}
+
 function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) {
   const requestId = `placeholder-${Date.now()}-${++onlyOfficePlaceholderRequestSeq}`;
   const message = {
@@ -452,11 +519,14 @@ export {
   readOnlyOfficePageNumber,
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
+  requestOnlyOfficeAddComplexFillAnchor,
+  requestOnlyOfficeDeleteComplexFillAnchor,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeFillField,
   requestOnlyOfficeFillPlaceholderVariable,
   requestOnlyOfficeInsertPlaceholderVariable,
+  requestOnlyOfficeSelectComplexFillAnchor,
   requestOnlyOfficeSelectPlaceholderAnchor,
 };

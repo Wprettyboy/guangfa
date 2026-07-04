@@ -217,6 +217,82 @@
     return id ? "GF_FIELD_" + id : "";
   }
 
+  function getBookmarkManager() {
+    const api = getEditorApi();
+    const logicDocument = getLogicDocument();
+    const logicManager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
+    try {
+      if (api && typeof api.asc_GetBookmarksManager === "function") {
+        const manager = api.asc_GetBookmarksManager();
+        if (
+          manager &&
+          (typeof manager.asc_SelectBookmark === "function" ||
+            typeof manager.asc_GoToBookmark === "function" ||
+            typeof manager.asc_RemoveBookmark === "function")
+        ) {
+          return manager;
+        }
+      }
+    } catch {}
+    return logicManager;
+  }
+
+  function getComplexFillBookmarkName(item) {
+    if (item?.bookmarkName) return String(item.bookmarkName);
+    const id = String(item?.id || "").trim();
+    const numberPart = id.match(/^CF-(\d+)$/)?.[1];
+    const safeId = numberPart ? numberPart.padStart(3, "0") : id.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40);
+    return safeId ? "GF_CF_" + safeId : "";
+  }
+
+  function hasBookmark(manager, bookmarkName) {
+    try {
+      if (typeof manager?.asc_HaveBookmark === "function") return manager.asc_HaveBookmark(bookmarkName);
+      return typeof manager?.HaveBookmark === "function" ? manager.HaveBookmark(bookmarkName) : true;
+    } catch {
+      return true;
+    }
+  }
+
+  function goToBookmark(manager, bookmarkName) {
+    try {
+      if (typeof manager?.asc_GoToBookmark === "function") {
+        manager.asc_GoToBookmark(bookmarkName);
+        return true;
+      }
+      if (typeof manager?.GoToBookmark === "function") {
+        manager.GoToBookmark(bookmarkName);
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  function selectBookmarkRange(manager, bookmarkName) {
+    if (!manager || !bookmarkName) return { ok: false, bookmarkName, error: "书签定位接口不可用" };
+    if (!hasBookmark(manager, bookmarkName)) return { ok: false, bookmarkName, error: "未找到对应书签" };
+    try {
+      const moved = goToBookmark(manager, bookmarkName);
+      const selected = typeof manager.asc_SelectBookmark === "function"
+        ? manager.asc_SelectBookmark(bookmarkName) !== false
+        : typeof manager.SelectBookmark === "function"
+          ? manager.SelectBookmark(bookmarkName) !== false
+          : false;
+      const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+      return { ok: moved || selected, bookmarkName, page: pageInfo.page, pageSource: pageInfo.source, selected, moved };
+    } catch (error) {
+      return { ok: false, bookmarkName, error: error?.message || "书签定位失败" };
+    }
+  }
+
+  function removeBookmark(manager, bookmarkName) {
+    try {
+      if (typeof manager?.asc_RemoveBookmark === "function") return manager.asc_RemoveBookmark(bookmarkName);
+      if (typeof manager?.RemoveBookmark === "function") return manager.RemoveBookmark(bookmarkName);
+    } catch {}
+    return false;
+  }
+
   function restoreSelectionState(selectionState) {
     const logicDocument = getLogicDocument();
     if (!selectionState || !logicDocument || typeof logicDocument.SetSelectionState !== "function") return false;
@@ -268,6 +344,84 @@
       return { ok: true, id: field?.id, bookmarkName, page: pageInfo.page, pageSource: pageInfo.source };
     } catch (error) {
       return { ok: false, id: field?.id, bookmarkName, error: error?.message || "输入点写入失败" };
+    }
+  }
+
+  function postComplexFillResult(action, result) {
+    const message = { source: "guangfa-onlyoffice-custom", action, result };
+    try { window.parent?.postMessage(message, "*"); } catch {}
+    try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+    return result;
+  }
+
+  function addComplexFillAnchor(payload = {}) {
+    const requestId = payload.requestId || "";
+    const item = payload.item || payload.anchor || {};
+    const selection = extractOnlyOfficeSelection();
+    if (!selection.ok || !selection.text) {
+      return postComplexFillResult("complex-fill-anchor-added", {
+        ok: false,
+        requestId,
+        error: selection.error || "请先在文档中选中要整体替换的模板文字。",
+      });
+    }
+
+    const logicDocument = getLogicDocument();
+    const manager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
+    const bookmarkName = getComplexFillBookmarkName(item);
+    if (!manager || !bookmarkName) {
+      return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, error: "复杂类填充书签接口不可用" });
+    }
+
+    restoreSelectionState(selection.selectionState);
+    try {
+      if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
+      manager.AddBookmark(bookmarkName);
+      const selectedText = readBookmarkedText(manager, bookmarkName) || selection.text;
+      const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+      const page = pageInfo.page || selection.page || 1;
+      return postComplexFillResult("complex-fill-anchor-added", {
+        ok: true,
+        requestId,
+        item: {
+          id: item.id,
+          bookmarkName,
+          page,
+          sourceText: selectedText,
+          fieldSummary: item.fieldSummary || "",
+          formatRequirement: item.formatRequirement || "",
+          contentRequirement: item.contentRequirement || "",
+          documentOrder: page * 1000000 + Math.max(1, Number(item.order || item.index || 1) || 1),
+        },
+      });
+    } catch (error) {
+      return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, error: error?.message || "复杂类填充书签写入失败" });
+    }
+  }
+
+  function selectComplexFillAnchor(payload = {}) {
+    const requestId = payload.requestId || "";
+    const bookmarkName = String(payload.bookmarkName || payload.item?.bookmarkName || "");
+    const result = selectBookmarkRange(getBookmarkManager(), bookmarkName);
+    return postComplexFillResult("complex-fill-anchor-selected", { ...result, requestId });
+  }
+
+  function deleteComplexFillAnchor(payload = {}) {
+    const requestId = payload.requestId || "";
+    const bookmarkName = String(payload.bookmarkName || payload.item?.bookmarkName || "");
+    const manager = getBookmarkManager();
+    const selected = selectBookmarkRange(manager, bookmarkName);
+    if (!manager || !bookmarkName) {
+      return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, error: "复杂类填充书签接口不可用" });
+    }
+    if (!hasBookmark(manager, bookmarkName)) {
+      return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, error: "未找到对应复杂类填充书签" });
+    }
+    try {
+      removeBookmark(manager, bookmarkName);
+      return postComplexFillResult("complex-fill-anchor-deleted", { ok: true, requestId, bookmarkName, page: selected.page || 1 });
+    } catch (error) {
+      return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page || 1, error: error?.message || "复杂类填充书签删除失败" });
     }
   }
 
@@ -1410,6 +1564,9 @@
   window.guangfaSetTrackRevisions = setTrackRevisions;
   window.guangfaSaveOnlyOfficeDocument = saveOnlyOfficeDocument;
   window.guangfaSetFillFields = setFillFields;
+  window.guangfaAddComplexFillAnchor = addComplexFillAnchor;
+  window.guangfaSelectComplexFillAnchor = selectComplexFillAnchor;
+  window.guangfaDeleteComplexFillAnchor = deleteComplexFillAnchor;
   window.guangfaChoiceMarkerSelfTest = function () {
     const options = parseChoiceOptions("□第五章 评审办法（经评审的最低投标价法） □第五章 评审办法（综合评估法）");
     const target = findChoiceOption(options, { value: "综合评估法" });
@@ -1461,6 +1618,15 @@
     if (data.source === "guangfa-parent" && data.action === "add-input-point") {
       const result = addInputPointBookmark(data.field || {});
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "input-point", result }, "*");
+    }
+    if (data.source === "guangfa-parent" && data.action === "add-complex-fill-anchor") {
+      addComplexFillAnchor(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "select-complex-fill-anchor") {
+      selectComplexFillAnchor(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "delete-complex-fill-anchor") {
+      deleteComplexFillAnchor(data);
     }
     if (data.source === "guangfa-parent" && data.action === "fill-field-value") {
       const field = data.field || {};

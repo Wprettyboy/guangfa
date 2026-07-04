@@ -5,6 +5,7 @@ import { useGSAP } from "@gsap/react";
 import { ChevronDown, ChevronRight, Highlighter, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
 import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
+import ComplexFillPanel from "../features/complex-fill/ComplexFillPanel.jsx";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
 import { DocumentFrame } from "../features/docx/runtime.jsx";
 import { comparePlaceholderAnchors, labelPlaceholderAnchorPages } from "../features/placeholders/variables.js";
@@ -35,9 +36,15 @@ function AnnotateWorkspace({
   onJumpPlaceholderAnchor,
   onDeletePlaceholderAnchor,
   onOpenPlaceholderPanel,
+  onOpenComplexFillPanel,
+  onCreateComplexFillAnchor,
+  onUpdateComplexFillItem,
+  onJumpComplexFillItem,
+  onDeleteComplexFillItem,
   onOfficeDocumentReady,
   placeholderVariables = [],
   placeholderAnchors = [],
+  complexFillItems = [],
   sidePanelMode = "fields",
 }) {
   const fileInputRef = useRef(null);
@@ -83,6 +90,7 @@ function AnnotateWorkspace({
   }
 
   const showPlaceholderPanel = sidePanelMode === "placeholders";
+  const showComplexFillPanel = sidePanelMode === "complex-fill";
 
   return (
     <div className="work-grid annotate-grid">
@@ -102,12 +110,25 @@ function AnnotateWorkspace({
           onUploadClick={() => fileInputRef.current?.click()}
           onInputPointCaptured={onInputPointCaptured}
           onOpenPlaceholderPanel={onOpenPlaceholderPanel}
+          onOpenComplexFillPanel={onOpenComplexFillPanel}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />
       </section>
 
       <aside className="right-panel field-panel" ref={panelRef}>
-        {showPlaceholderPanel ? (
+        {showComplexFillPanel ? (
+          <ComplexFillPanel
+            items={complexFillItems}
+            saveState={saveState}
+            templateCategory={templateCategory}
+            onTemplateCategoryChange={setTemplateCategory}
+            onCreateAnchor={onCreateComplexFillAnchor}
+            onUpdateItem={onUpdateComplexFillItem}
+            onJumpItem={onJumpComplexFillItem}
+            onDeleteItem={onDeleteComplexFillItem}
+            onSaveTemplate={onSaveTemplate}
+          />
+        ) : showPlaceholderPanel ? (
           <PlaceholderPanel
             variables={placeholderVariables}
             anchors={placeholderAnchors}

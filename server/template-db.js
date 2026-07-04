@@ -133,7 +133,16 @@ function replaceTemplatesInDatabase(database, templates) {
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    const insertComplexFillItem = database.prepare(`
+      INSERT INTO template_complex_fill_items (
+        template_id, id, bookmark_name, page, source_text, field_summary,
+        format_requirement, content_requirement, document_order, sort_order,
+        payload_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
 
+    database.exec("DELETE FROM template_complex_fill_items");
     database.exec("DELETE FROM template_placeholder_anchors");
     database.exec("DELETE FROM template_placeholder_variables");
     database.exec("DELETE FROM template_fields");
@@ -219,6 +228,24 @@ function replaceTemplatesInDatabase(database, templates) {
           now,
         );
       });
+
+      normalized.complexFillItems.forEach((item, itemIndex) => {
+        insertComplexFillItem.run(
+          normalized.id,
+          String(item.id || `CF-${String(itemIndex + 1).padStart(3, "0")}`),
+          String(item.bookmarkName || ""),
+          numberOrDefault(item.page, 1),
+          textOrNull(item.sourceText),
+          textOrNull(item.fieldSummary || item.description),
+          textOrNull(item.formatRequirement),
+          textOrNull(item.contentRequirement),
+          numberOrDefault(item.documentOrder, numberOrDefault(item.page, 1) * 1000000 + itemIndex + 1),
+          itemIndex,
+          JSON.stringify(item),
+          normalized.createdAt,
+          now,
+        );
+      });
     });
   });
 }
@@ -238,6 +265,7 @@ function readTemplatesFromDatabase(database, templateId = "") {
   const fieldsStatement = database.prepare("SELECT * FROM template_fields WHERE template_id = ? ORDER BY sort_order, document_order, id");
   const variablesStatement = database.prepare("SELECT * FROM template_placeholder_variables WHERE template_id = ? ORDER BY sort_order, id");
   const anchorsStatement = database.prepare("SELECT * FROM template_placeholder_anchors WHERE template_id = ? ORDER BY document_order, anchor_index, bookmark_name");
+  const complexFillStatement = database.prepare("SELECT * FROM template_complex_fill_items WHERE template_id = ? ORDER BY document_order, sort_order, id");
   const rows = templateId ? templateRows.all(templateId) : templateRows.all();
 
   return rows.map((row) => {
@@ -245,6 +273,7 @@ function readTemplatesFromDatabase(database, templateId = "") {
     const fields = fieldsStatement.all(row.id).map(rowToField);
     const placeholderVariables = variablesStatement.all(row.id).map(rowToPlaceholderVariable);
     const placeholderAnchors = anchorsStatement.all(row.id).map(rowToPlaceholderAnchor);
+    const complexFillItems = complexFillStatement.all(row.id).map(rowToComplexFillItem);
     const template = {
       ...extra,
       id: row.id,
@@ -267,6 +296,7 @@ function readTemplatesFromDatabase(database, templateId = "") {
       fields,
       placeholderVariables,
       placeholderAnchors,
+      complexFillItems,
     };
     if (row.file_base64) template.fileBase64 = row.file_base64;
     return template;
@@ -318,6 +348,21 @@ function rowToPlaceholderAnchor(row) {
   };
 }
 
+function rowToComplexFillItem(row) {
+  const item = parseJson(row.payload_json, {});
+  return {
+    ...item,
+    id: row.id,
+    bookmarkName: row.bookmark_name,
+    page: row.page,
+    sourceText: row.source_text ?? item.sourceText,
+    fieldSummary: row.field_summary ?? item.fieldSummary,
+    formatRequirement: row.format_requirement ?? item.formatRequirement,
+    contentRequirement: row.content_requirement ?? item.contentRequirement,
+    documentOrder: row.document_order ?? item.documentOrder,
+  };
+}
+
 function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now()) {
   const category = String(template.category || template.typeName || "招标类").trim() || "招标类";
   const libraryId = String(template.libraryId || defaultLibraryId);
@@ -328,6 +373,7 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
   const fields = Array.isArray(template.fields) ? template.fields : [];
   const placeholderVariables = Array.isArray(template.placeholderVariables) ? template.placeholderVariables : [];
   const placeholderAnchors = Array.isArray(template.placeholderAnchors) ? template.placeholderAnchors.filter((anchor) => anchor?.bookmarkName) : [];
+  const complexFillItems = Array.isArray(template.complexFillItems) ? template.complexFillItems.filter((item) => item?.bookmarkName) : [];
   return {
     id: templateId,
     libraryId,
@@ -346,6 +392,7 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
     fields,
     placeholderVariables,
     placeholderAnchors,
+    complexFillItems,
     confirmedCount: Number(template.confirmedCount ?? fields.filter((field) => field.status === "已标注").length),
     typeSummary: Array.isArray(template.typeSummary) ? template.typeSummary : [],
     createdAt: Number(template.createdAt || template.savedAtMs || now),
@@ -377,6 +424,7 @@ function stripTemplateStorageColumns(template) {
     fields,
     placeholderVariables,
     placeholderAnchors,
+    complexFillItems,
     ...extra
   } = template || {};
   return extra;
@@ -541,11 +589,31 @@ CREATE TABLE IF NOT EXISTS template_placeholder_anchors (
   FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS template_complex_fill_items (
+  template_id TEXT NOT NULL,
+  id TEXT NOT NULL,
+  bookmark_name TEXT NOT NULL,
+  page INTEGER DEFAULT 1,
+  source_text TEXT,
+  field_summary TEXT,
+  format_requirement TEXT,
+  content_requirement TEXT,
+  document_order INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  payload_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (template_id, id),
+  UNIQUE(template_id, bookmark_name),
+  FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_template_types_library ON template_types(library_id);
 CREATE INDEX IF NOT EXISTS idx_templates_type ON templates(type_id);
 CREATE INDEX IF NOT EXISTS idx_template_fields_template ON template_fields(template_id);
 CREATE INDEX IF NOT EXISTS idx_placeholder_variables_template ON template_placeholder_variables(template_id);
 CREATE INDEX IF NOT EXISTS idx_placeholder_anchors_template ON template_placeholder_anchors(template_id);
+CREATE INDEX IF NOT EXISTS idx_complex_fill_items_template ON template_complex_fill_items(template_id);
 `;
 
 export {

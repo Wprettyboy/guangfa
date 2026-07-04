@@ -1,0 +1,139 @@
+.complex-fill-panel-section {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.complex-fill-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 14px 12px;
+  padding: 10px 12px;
+  border: 1px solid #e3e9f2;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #25324a;
+}
+
+.complex-fill-summary strong {
+  font-size: 13px;
+}
+
+.complex-fill-summary span {
+  color: #60708a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.complex-fill-list {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  max-height: calc(100% - 104px);
+  overflow: hidden auto;
+  padding: 0 14px 14px;
+}
+
+.complex-fill-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.complex-fill-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d4e3;
+}
+
+.complex-fill-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dfe7f2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(28, 43, 68, 0.06);
+}
+
+.complex-fill-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.complex-fill-card-header strong {
+  min-width: 0;
+  color: #25324a;
+  font-size: 15px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.complex-fill-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.complex-fill-source {
+  min-width: 0;
+  max-height: 72px;
+  overflow: hidden auto;
+  border: 1px solid #e5eaf2;
+  border-radius: 6px;
+  padding: 8px 9px;
+  color: #526177;
+  background: #fbfcfe;
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.complex-fill-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.complex-fill-field span {
+  color: #5f6d82;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.complex-fill-field input,
+.complex-fill-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d8e0ec;
+  border-radius: 6px;
+  color: #25324a;
+  background: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.complex-fill-field input {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.complex-fill-field textarea {
+  min-height: 72px;
+  padding: 8px 9px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.complex-fill-field input:focus,
+.complex-fill-field textarea:focus {
+  border-color: #9ec2ff;
+  box-shadow: 0 0 0 3px rgba(15, 99, 233, 0.1);
+}
