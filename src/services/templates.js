@@ -1,7 +1,7 @@
 const templateDbName = "tender-agent-template-db";
 
 const templateStoreName = "templates";
-const currentDraftVersion = 2;
+const currentDraftVersion = 3;
 
 async function openTemplateDb() {
   return new Promise((resolve, reject) => {

@@ -58,6 +58,10 @@ import {
   resolveOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
 } from "./features/docx/office/documentSync.js";
+import {
+  buildAutosavedAnnotateDraft,
+  buildAutosavedFillDraft,
+} from "./features/docx/office/draftAutosave.js";
 import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
 import {
   applyPlaceholderAnchors,
@@ -160,7 +164,10 @@ export default function App() {
   const fillSyncTimerRef = useRef(0);
   const fillPreviewPageLockRef = useRef(null);
   const templateFileRef = useRef(templateFile);
+  const templateOfficeDocIdRef = useRef(templateOfficeDocId);
+  const fillOfficeDocIdRef = useRef(fillOfficeDocId);
   const draftAutosaveSnapshotRef = useRef(null);
+  const draftAutosaveRunningRef = useRef(false);
   const placeholderVariablesRef = useRef(placeholderVariables);
   const placeholderAnchorsRef = useRef(placeholderAnchors);
   const placeholderFillsRef = useRef(placeholderFills);
@@ -217,6 +224,14 @@ export default function App() {
   useEffect(() => {
     templateFileRef.current = templateFile;
   }, [templateFile]);
+
+  useEffect(() => {
+    templateOfficeDocIdRef.current = templateOfficeDocId;
+  }, [templateOfficeDocId]);
+
+  useEffect(() => {
+    fillOfficeDocIdRef.current = fillOfficeDocId;
+  }, [fillOfficeDocId]);
 
   useEffect(() => {
     placeholderAnchorsRef.current = placeholderAnchors;
@@ -410,11 +425,40 @@ export default function App() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (draftAutosaveSnapshotRef.current) {
-        saveDraftState(draftAutosaveSnapshotRef.current);
+        saveCurrentWorkspaceDraft();
       }
     }, DRAFT_AUTOSAVE_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, []);
+
+  async function saveCurrentWorkspaceDraft() {
+    const snapshot = draftAutosaveSnapshotRef.current;
+    if (!snapshot || draftAutosaveRunningRef.current) return;
+    draftAutosaveRunningRef.current = true;
+    try {
+      let nextSnapshot = snapshot;
+      if (snapshot.activeWorkspace === "annotate") {
+        const result = await buildAutosavedAnnotateDraft(snapshot, {
+          officeDocId: templateOfficeDocIdRef.current,
+          baselineBuffer: annotatedTemplateBufferRef.current,
+        });
+        if (result.buffer) annotatedTemplateBufferRef.current = result.buffer.slice(0);
+        nextSnapshot = result.snapshot;
+      } else if (snapshot.activeWorkspace === "fill") {
+        const result = await buildAutosavedFillDraft(snapshot, {
+          officeDocId: fillOfficeDocIdRef.current,
+          baselineBuffer: filledTemplateBufferRef.current,
+        });
+        if (result.buffer) filledTemplateBufferRef.current = result.buffer.slice(0);
+        if (result.filledFile) filledTemplateDraftFileRef.current = result.filledFile;
+        nextSnapshot = result.snapshot;
+      }
+      draftAutosaveSnapshotRef.current = nextSnapshot;
+      await saveDraftState(nextSnapshot);
+    } finally {
+      draftAutosaveRunningRef.current = false;
+    }
+  }
 
   function animateWorkspace(nextWorkspace) {
     setActiveModule("workspace");
@@ -798,7 +842,7 @@ export default function App() {
   function addPlaceholderVariable() {
     const nextVariables = [...placeholderVariables, createPlaceholderVariable(`字段${placeholderVariables.length + 1}`, placeholderVariables)];
     setPlaceholderVariables(nextVariables);
-    persistPlaceholderVariableDraft(nextVariables);
+    updatePlaceholderDraftSnapshot(nextVariables);
     setAnnotateSidePanelMode("placeholders");
     setSaveState("dirty");
   }
@@ -814,7 +858,7 @@ export default function App() {
         : variable,
     );
     setPlaceholderVariables(nextVariables);
-    persistPlaceholderVariableDraft(nextVariables);
+    updatePlaceholderDraftSnapshot(nextVariables);
     setSaveState("dirty");
   }
 
@@ -827,21 +871,19 @@ export default function App() {
     const nextAnchors = placeholderAnchors.filter((anchor) => anchor.variableId !== variableId);
     setPlaceholderVariables(nextVariables);
     setPlaceholderAnchors(nextAnchors);
-    persistPlaceholderVariableDraft(nextVariables, nextAnchors);
+    updatePlaceholderDraftSnapshot(nextVariables, nextAnchors);
     setSaveState("dirty");
   }
 
-  function persistPlaceholderVariableDraft(nextVariables, nextAnchors = placeholderAnchorsRef.current) {
+  function updatePlaceholderDraftSnapshot(nextVariables, nextAnchors = placeholderAnchorsRef.current) {
     placeholderVariablesRef.current = nextVariables;
     placeholderAnchorsRef.current = nextAnchors;
     if (!draftAutosaveSnapshotRef.current) return;
-    const nextSnapshot = {
+    draftAutosaveSnapshotRef.current = {
       ...draftAutosaveSnapshotRef.current,
       placeholderVariables: nextVariables,
       placeholderAnchors: nextAnchors,
     };
-    draftAutosaveSnapshotRef.current = nextSnapshot;
-    saveDraftState(nextSnapshot);
   }
 
   function insertPlaceholderVariable(variable) {
