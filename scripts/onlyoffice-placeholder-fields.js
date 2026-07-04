@@ -221,29 +221,54 @@
       }
       safeCall(logicDocument, "UpdateSelection", null);
       safeCall(logicDocument, "UpdateInterface", null);
-      return { ok: true, selectedText };
+      return { ok: true, selectedText, selectionState: safeCall(logicDocument, "GetSelectionState", null) };
     } catch (error) {
       return { ok: false, error: error?.message || "占位符选区定位失败" };
     }
   }
 
-  function applyInsertedPlaceholderHighlight() {
-    const api = getEditorApi();
+  function restoreSelectionState(selectionState) {
+    const logicDocument = getLogicDocument();
+    if (!selectionState || !logicDocument || typeof logicDocument.SetSelectionState !== "function") return false;
     try {
+      logicDocument.SetSelectionState(selectionState);
+      safeCall(logicDocument, "UpdateSelection", null);
+      safeCall(logicDocument, "UpdateInterface", null);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function applyInsertedPlaceholderHighlight(selectionState) {
+    const api = getEditorApi();
+    const sources = [];
+    let lastError = null;
+    try {
+      restoreSelectionState(selectionState);
       if (api && typeof api.SetMarkerFormat === "function") {
         api.SetMarkerFormat(true, true, 229, 231, 235);
-        if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
-        return { ok: true, color: "E5E7EB", source: "set-marker-format" };
-      }
-      if (api && typeof api.put_LineHighLight === "function") {
-        api.put_LineHighLight(true, 229, 231, 235);
-        if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
-        return { ok: true, color: "E5E7EB", source: "put-line-highlight" };
+        api.SetMarkerFormat(false);
+        sources.push("set-marker-format");
       }
     } catch (error) {
-      return { ok: false, error: error?.message || "占位符灰色底纹设置失败" };
+      lastError = error;
     }
     try {
+      restoreSelectionState(selectionState);
+      if (api && typeof api.put_LineHighLight === "function") {
+        api.put_LineHighLight(true, 229, 231, 235);
+        sources.push("put-line-highlight");
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    if (sources.length > 0) {
+      if (api && typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
+      return { ok: true, color: "E5E7EB", source: sources.join("+") };
+    }
+    try {
+      restoreSelectionState(selectionState);
       const apiDocument = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
       const range = apiDocument && typeof apiDocument.GetRangeBySelect === "function" ? apiDocument.GetRangeBySelect() : null;
       if (range && typeof range.SetShd === "function") {
@@ -257,6 +282,7 @@
     } catch (error) {
       return { ok: false, error: error?.message || "占位符灰色底纹设置失败" };
     }
+    if (lastError) return { ok: false, error: lastError?.message || "占位符灰色底纹设置失败" };
     return { ok: true, skipped: true, reason: "highlight-api-unavailable" };
   }
 
@@ -510,6 +536,8 @@
 
     const selectResult = selectInsertedText(variable.token);
     if (!selectResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: selectResult.error, selectedText: selectResult.selectedText });
+    const highlightResult = applyInsertedPlaceholderHighlight(selectResult.selectionState);
+    restoreSelectionState(selectResult.selectionState);
 
     try {
       if (typeof manager.asc_RemoveBookmark === "function") manager.asc_RemoveBookmark(bookmarkName);
@@ -532,7 +560,6 @@
           postInsertedResult({ ok: false, requestId, bookmarkName, error: bookmarkResult.error || "自动字段书签创建后无法定位" });
           return;
         }
-        const highlightResult = bookmarkResult.selected === false ? { ok: true, skipped: true, reason: "bookmark-range-unavailable" } : applyInsertedPlaceholderHighlight();
         const page = bookmarkResult.page || getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", selectionState));
         saveDocument("placeholder-variable");
         postInsertedResult({
