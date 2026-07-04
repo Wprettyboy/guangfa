@@ -60,6 +60,7 @@ import {
   getNextPlaceholderAnchorIndex,
   normalizePlaceholderName,
   normalizePlaceholderVariables,
+  updatePlaceholderAnchorPage,
 } from "./features/placeholders/variables.js";
 import {
   createAnnotatedField,
@@ -755,6 +756,12 @@ export default function App() {
       }
       const page = Math.max(1, Number(result.page || anchor?.page) || 1);
       setAnnotatePreviewPage(page);
+      const nextAnchors = updatePlaceholderAnchorPage(placeholderAnchorsRef.current, result.bookmarkName || anchor.bookmarkName, page);
+      if (nextAnchors !== placeholderAnchorsRef.current) {
+        setPlaceholderAnchors(nextAnchors);
+        setSaveState("dirty");
+        syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors, placeholderVariablesRef.current);
+      }
     });
   }
 

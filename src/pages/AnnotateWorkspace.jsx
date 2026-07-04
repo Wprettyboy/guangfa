@@ -341,34 +341,14 @@ function getPlaceholderAnchorPage(anchor) {
 }
 
 function labelPlaceholderAnchorPages(anchors) {
-  const pageCounts = new Map();
-  anchors.forEach((anchor) => {
-    const page = getPlaceholderAnchorPage(anchor);
-    pageCounts.set(page, (pageCounts.get(page) || 0) + 1);
-  });
-  const pageIndexes = new Map();
   return anchors.map((anchor) => {
     const page = getPlaceholderAnchorPage(anchor);
-    const pageIndex = (pageIndexes.get(page) || 0) + 1;
-    pageIndexes.set(page, pageIndex);
-    const suffix = pageCounts.get(page) > 1 ? ` ${toAlphaLabel(pageIndex)}` : "";
     return {
       ...anchor,
       page,
-      pageLabel: `第 ${page} 页${suffix}`,
+      pageLabel: `第 ${page} 页`,
     };
   });
-}
-
-function toAlphaLabel(index) {
-  let value = Math.max(1, Number(index) || 1);
-  let label = "";
-  while (value > 0) {
-    value -= 1;
-    label = String.fromCharCode(97 + (value % 26)) + label;
-    value = Math.floor(value / 26);
-  }
-  return label;
 }
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onClose }) {

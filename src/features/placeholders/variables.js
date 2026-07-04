@@ -82,6 +82,23 @@ function applyPlaceholderAnchors(existingAnchors = [], incomingAnchors = []) {
     .sort((a, b) => a.documentOrder - b.documentOrder || a.bookmarkName.localeCompare(b.bookmarkName));
 }
 
+function updatePlaceholderAnchorPage(anchors = [], bookmarkName, page) {
+  const nextPage = Math.max(1, Number(page) || 1);
+  if (!bookmarkName || !Number.isFinite(nextPage)) return anchors;
+  let changed = false;
+  const nextAnchors = anchors.map((anchor) => {
+    if (anchor.bookmarkName !== bookmarkName || Number(anchor.page) === nextPage) return anchor;
+    changed = true;
+    const index = Math.max(1, Number(anchor.index) || 1);
+    return {
+      ...anchor,
+      page: nextPage,
+      documentOrder: nextPage * 1000000 + index,
+    };
+  });
+  return changed ? applyPlaceholderAnchors([], nextAnchors) : anchors;
+}
+
 export {
   applyPlaceholderAnchors,
   buildPlaceholderToken,
@@ -91,4 +108,5 @@ export {
   normalizePlaceholderName,
   normalizePlaceholderVariable,
   normalizePlaceholderVariables,
+  updatePlaceholderAnchorPage,
 };
