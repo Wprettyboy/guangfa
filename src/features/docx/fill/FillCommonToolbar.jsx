@@ -69,7 +69,6 @@ function FillCommonToolbar({
 }) {
   const projectKnowledgeBases = knowledgeBases.filter((base) => base.scope !== "global");
   const globalKnowledgeBases = knowledgeBases.filter((base) => base.scope === "global" && (base.documentCount || 0) > 0);
-  const knowledgeSelected = selectedProjectKnowledgeBaseIds.length > 0;
   const anyKnowledgeSelected = selectedProjectKnowledgeBaseIds.length > 0 || selectedGlobalKnowledgeBaseIds.length > 0;
   const progressText = generatingAll && bulkProgressText ? ` ${bulkProgressText}` : "";
 
@@ -191,7 +190,6 @@ function FillCommonToolbar({
           bases={globalKnowledgeBases}
           selectedIds={selectedGlobalKnowledgeBaseIds}
           onChange={onSelectedGlobalKnowledgeBaseChange}
-          disabled={!knowledgeSelected}
         />
       </div>
     </>

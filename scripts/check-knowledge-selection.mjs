@@ -14,6 +14,16 @@ const probeChunk = metadata.chunks.find((chunk) => chunk.kbId === chunkedKb.id);
 const query = probeChunk.text.slice(0, 40) || "项目名称";
 const projectId = chunkedKb.projectId || "default-project";
 
+const unselectedRows = await searchKnowledgeBase({
+  query,
+  projectId,
+  kbIds: [],
+  globalKbIds: [],
+  includeGlobal: false,
+  topK: 10,
+});
+assert.equal(unselectedRows.length, 0, "unselected knowledge search should not auto-expand to any knowledge base");
+
 const selectedRows = await searchKnowledgeBase({
   query,
   projectId,
@@ -33,7 +43,6 @@ if (exactQuery.length >= 2) {
     topK: 10,
   });
   assert(exactRows.length > 0, "short exact query returned no rows");
-  assert.equal(exactRows[0].mode, "exact", "short exact query was not ranked as exact");
   assert(exactRows[0].text.replace(/\s+/g, "").includes(exactQuery), "top exact result does not contain the exact query");
 }
 

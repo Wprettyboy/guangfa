@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createEmbeddings, getEmbeddingConfig } from "../server/embedding.js";
+import { createKnowledgeZvecFields, createKnowledgeZvecSchema, knowledgeZvecCollectionPath, vectorFieldName } from "../server/knowledge/zvec-store.js";
 import * as zvec from "@zvec/zvec";
 
 const root = path.resolve(import.meta.dirname, "..");
 const metadataPath = path.join(root, "data", "knowledge", "library.json");
-const collectionPath = path.join(root, "data", "knowledge", "zvec", "chunks");
-const vectorFieldName = "embedding";
+const collectionPath = knowledgeZvecCollectionPath;
 
 const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
 const chunks = metadata.chunks;
@@ -15,33 +15,12 @@ const docsById = new Map(metadata.documents.map((document) => [document.id, docu
 fs.rmSync(collectionPath, { recursive: true, force: true });
 fs.mkdirSync(path.dirname(collectionPath), { recursive: true });
 
-const schema = new zvec.ZVecCollectionSchema({
-  name: "knowledge_chunks",
-  vectors: {
-    name: vectorFieldName,
-    dataType: zvec.ZVecDataType.VECTOR_FP32,
-    dimension: getEmbeddingConfig().dimension,
-    indexParams: {
-      indexType: zvec.ZVecIndexType.FLAT,
-      metricType: zvec.ZVecMetricType.COSINE,
-    },
-  },
-  fields: [
-    { name: "kbId", dataType: zvec.ZVecDataType.STRING },
-    { name: "scope", dataType: zvec.ZVecDataType.STRING },
-    { name: "projectId", dataType: zvec.ZVecDataType.STRING },
-    { name: "documentId", dataType: zvec.ZVecDataType.STRING },
-    { name: "documentName", dataType: zvec.ZVecDataType.STRING },
-    { name: "chunkIndex", dataType: zvec.ZVecDataType.INT32 },
-    { name: "page", dataType: zvec.ZVecDataType.STRING, nullable: true },
-    { name: "text", dataType: zvec.ZVecDataType.STRING },
-    { name: "createdAt", dataType: zvec.ZVecDataType.STRING },
-  ],
-});
+const schema = createKnowledgeZvecSchema(zvec, getEmbeddingConfig().dimension);
 
 const collection = zvec.ZVecCreateAndOpen(collectionPath, schema);
 const batchSize = 24;
 let inserted = 0;
+let probeCount = 0;
 
 for (let index = 0; index < chunks.length; index += batchSize) {
   const batch = chunks.slice(index, index + batchSize);
@@ -50,17 +29,7 @@ for (let index = 0; index < chunks.length; index += batchSize) {
     batch.map((chunk, batchIndex) => ({
       id: chunk.id,
       vectors: { [vectorFieldName]: embeddings[batchIndex] },
-      fields: {
-        kbId: chunk.kbId,
-        scope: chunk.scope,
-        projectId: chunk.projectId,
-        documentId: chunk.documentId,
-        documentName: chunk.documentName,
-        chunkIndex: chunk.chunkIndex,
-        page: chunk.page || "",
-        text: chunk.text,
-        createdAt: chunk.createdAt,
-      },
+      fields: createKnowledgeZvecFields(chunk),
     })),
   );
   const failures = statuses.filter((status) => status && status.ok === false);
@@ -71,20 +40,23 @@ for (let index = 0; index < chunks.length; index += batchSize) {
   process.stdout.write(`\rinserted ${inserted}/${chunks.length}`);
 }
 
-const first = chunks[0];
-const fetched = collection.fetchSync({ ids: [first.id], includeVector: false });
-if (!fetched[first.id]) {
-  throw new Error("zvec fetch check failed after rebuild");
-}
+if (chunks.length > 0) {
+  const first = chunks[0];
+  const fetched = collection.fetchSync({ ids: [first.id], includeVector: false });
+  if (!fetched[first.id]) {
+    throw new Error("zvec fetch check failed after rebuild");
+  }
 
-const probe = collection.querySync({
-  fieldName: vectorFieldName,
-  vector: (await createEmbeddings(["合同解除后违约责任如何承担"]))[0],
-  topk: 3,
-  includeVector: false,
-});
-if (probe.length === 0) {
-  throw new Error("zvec query check failed after rebuild");
+  const probe = collection.querySync({
+    fieldName: vectorFieldName,
+    vector: (await createEmbeddings(["合同解除后违约责任如何承担"]))[0],
+    topk: 3,
+    includeVector: false,
+  });
+  if (probe.length === 0) {
+    throw new Error("zvec query check failed after rebuild");
+  }
+  probeCount = probe.length;
 }
 
 const now = new Date().toISOString();
@@ -101,4 +73,4 @@ metadata.knowledgeBases.forEach((kb) => {
 });
 fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
 collection.closeSync();
-console.log(`\nrebuilt vectors=${inserted} probe=${probe.length}`);
+console.log(`\nrebuilt vectors=${inserted} probe=${probeCount}`);

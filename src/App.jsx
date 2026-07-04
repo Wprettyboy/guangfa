@@ -299,19 +299,26 @@ export default function App() {
             : activeWorkspace === "audit"
               ? "格式审核工作台"
               : "填充确认工作台";
+  const selectedFillKnowledgeBaseIds = useMemo(
+    () => [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
+    [selectedGlobalKnowledgeBaseIds, selectedProjectKnowledgeBaseIds],
+  );
+  const fillKnowledgeOptions = useMemo(() => ({
+    enabled: selectedFillKnowledgeBaseIds.length > 0,
+    projectId: currentProjectId,
+    kbIds: selectedFillKnowledgeBaseIds,
+    globalKbIds: selectedGlobalKnowledgeBaseIds,
+    topK: knowledgeTopK,
+  }), [currentProjectId, knowledgeTopK, selectedFillKnowledgeBaseIds, selectedGlobalKnowledgeBaseIds]);
   const onlyOfficeAiKnowledgeContext = useMemo(() => {
-    const kbIds = [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds];
     return {
-      enabled: kbIds.length > 0,
+      ...fillKnowledgeOptions,
       apiBase: window.location.origin,
-      projectId: currentProjectId,
-      kbIds,
-      topK: knowledgeTopK,
       bases: knowledgeBases
-        .filter((base) => kbIds.includes(base.id))
+        .filter((base) => selectedFillKnowledgeBaseIds.includes(base.id))
         .map((base) => ({ id: base.id, name: base.name, scope: base.scope })),
     };
-  }, [currentProjectId, knowledgeBases, knowledgeTopK, selectedGlobalKnowledgeBaseIds, selectedProjectKnowledgeBaseIds]);
+  }, [fillKnowledgeOptions, knowledgeBases, selectedFillKnowledgeBaseIds]);
 
   useEffect(() => {
     if (selectedTemplateField && (selectedTemplateField.page || 1) !== annotatePreviewPage) {
@@ -364,11 +371,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedProjectKnowledgeBaseIds.length === 0 && knowledgeBases.length > 0) {
-      const firstProjectBase = knowledgeBases.find((base) => base.scope !== "global" && (base.projectId || currentProjectId) === currentProjectId);
-      if (firstProjectBase) setSelectedProjectKnowledgeBaseIds([firstProjectBase.id]);
-      return;
-    }
     const validIds = selectedProjectKnowledgeBaseIds.filter((id) => {
       const base = knowledgeBases.find((item) => item.id === id);
       return base && base.scope !== "global";
@@ -1440,12 +1442,7 @@ export default function App() {
     try {
       const appliedFill = await requestPlaceholderAiFill(card, {
         materials: materialFiles,
-        knowledgeOptions: {
-          enabled: selectedProjectKnowledgeBaseIds.length > 0,
-          projectId: currentProjectId,
-          kbIds: [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
-          topK: knowledgeTopK,
-        },
+        knowledgeOptions: fillKnowledgeOptions,
       });
       let nextFill = appliedFill;
       if (appliedFill.value.trim()) {
@@ -1533,12 +1530,7 @@ export default function App() {
     try {
       const appliedFill = await requestComplexFillAiFill(card, {
         materials: materialFiles,
-        knowledgeOptions: {
-          enabled: selectedProjectKnowledgeBaseIds.length > 0,
-          projectId: currentProjectId,
-          kbIds: [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
-          topK: knowledgeTopK,
-        },
+        knowledgeOptions: fillKnowledgeOptions,
       });
       let nextFill = appliedFill;
       let writeSucceeded = false;
@@ -1681,12 +1673,7 @@ export default function App() {
             templateContext: getTemplateFieldSourceText(templateField || targetField) || targetField.answerFormat || "",
           },
           materials: materialFiles,
-          knowledgeOptions: {
-            enabled: selectedProjectKnowledgeBaseIds.length > 0,
-            projectId: currentProjectId,
-            kbIds: [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
-            topK: knowledgeTopK,
-          },
+          knowledgeOptions: fillKnowledgeOptions,
         }),
       });
       const result = await response.json();
