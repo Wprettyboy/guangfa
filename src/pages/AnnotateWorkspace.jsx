@@ -33,7 +33,6 @@ function AnnotateWorkspace({
   onInsertPlaceholderVariable,
   onJumpPlaceholderAnchor,
   onDeletePlaceholderAnchor,
-  onPlaceholderAnchorsDetected,
   onOpenPlaceholderPanel,
   onOfficeDocumentReady,
   placeholderVariables = [],
@@ -101,7 +100,6 @@ function AnnotateWorkspace({
           onPageChange={onPreviewPageChange}
           onUploadClick={() => fileInputRef.current?.click()}
           onInputPointCaptured={onInputPointCaptured}
-          onPlaceholderAnchorsDetected={onPlaceholderAnchorsDetected}
           onOpenPlaceholderPanel={onOpenPlaceholderPanel}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />
@@ -308,21 +306,16 @@ function PlaceholderPanel({
                     <>
                       <div className="placeholder-anchor-head">
                         <span>序号</span>
-                        <span>书签</span>
                         <span>页面</span>
                         <span>操作</span>
                       </div>
                       {anchorRows.map((anchor, index) => (
                         <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
                           <span className="row-index">{index + 1}</span>
-                          <div className="placeholder-anchor-copy">
-                            <strong>{anchor.bookmarkName}</strong>
-                            <span>{anchor.token}</span>
-                          </div>
                           <button className="placeholder-page-link" type="button" onClick={() => onJumpAnchor?.(anchor)}>
                             {anchor.pageLabel}
                           </button>
-                          <button className="placeholder-anchor-delete icon-button quiet" type="button" aria-label={`删除${anchor.bookmarkName}`} onClick={() => onDeleteAnchor?.(anchor)}>
+                          <button className="placeholder-anchor-delete icon-button quiet" type="button" aria-label={`删除${anchor.pageLabel}位置`} onClick={() => onDeleteAnchor?.(anchor)}>
                             <Trash2 size={14} />
                           </button>
                         </div>

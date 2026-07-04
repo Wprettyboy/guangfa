@@ -495,7 +495,7 @@
 .placeholder-anchor-head,
 .placeholder-anchor-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 72px 32px;
+  grid-template-columns: 34px minmax(0, 1fr) 32px;
   gap: 8px;
   align-items: center;
 }
@@ -521,31 +521,8 @@
   border-bottom: 0;
 }
 
-.placeholder-anchor-copy {
-  min-width: 0;
-}
-
-.placeholder-anchor-copy strong,
-.placeholder-anchor-copy span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.placeholder-anchor-copy strong {
-  color: #25324a;
-  font-size: 12px;
-}
-
-.placeholder-anchor-copy span {
-  margin-top: 2px;
-  color: #738096;
-  font-size: 12px;
-}
-
 .placeholder-page-link {
-  justify-self: end;
+  justify-self: start;
   max-width: 100%;
   height: 26px;
   border: 0;

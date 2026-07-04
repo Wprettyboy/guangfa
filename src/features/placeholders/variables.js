@@ -52,8 +52,7 @@ function normalizePlaceholderAnchor(anchor = {}, order = 1, existing = null) {
   const bookmarkName = String(anchor.bookmarkName || existing?.bookmarkName || "");
   if (!bookmarkName) return null;
   const variableName = normalizePlaceholderName(anchor.variableName || anchor.name || anchor.label || existing?.variableName || existing?.name) || "字段";
-  const legacyVariableId = anchor.key === "projectName" ? "PV-001" : anchor.key;
-  const variableId = String(anchor.variableId || existing?.variableId || legacyVariableId || "");
+  const variableId = String(anchor.variableId || existing?.variableId || "");
   const page = Math.max(1, Number(anchor.page || existing?.page || 1) || 1);
   const index = Math.max(1, Number(anchor.index || existing?.index || order) || order);
   const token = anchor.token || existing?.token || buildPlaceholderToken(variableName);

@@ -1590,7 +1590,6 @@ export default function App() {
                 onInsertPlaceholderVariable={insertPlaceholderVariable}
                 onJumpPlaceholderAnchor={jumpToPlaceholderAnchor}
                 onDeletePlaceholderAnchor={deletePlaceholderAnchor}
-                onPlaceholderAnchorsDetected={applyPlaceholderAnchorResult}
                 onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}
                 onOfficeDocumentReady={setTemplateOfficeDocId}
               />

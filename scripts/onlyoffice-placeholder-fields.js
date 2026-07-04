@@ -102,71 +102,7 @@
   }
 
   function currentSelectionPage() {
-    const api = getEditorApi();
-    const searchPage = Number(api?.WordControl?.m_oDrawingDocument?.m_oDocumentRenderer?.SearchResults?.CurrentPage);
-    if (Number.isFinite(searchPage) && searchPage >= 0) return searchPage + 1;
     return getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", null));
-  }
-
-  function moveSearchCursorToStart() {
-    const logicDocument = getLogicDocument();
-    const attempts = [
-      function () { return logicDocument && typeof logicDocument.MoveCursorToStartOfDocument === "function" && logicDocument.MoveCursorToStartOfDocument(); },
-      function () { return logicDocument && typeof logicDocument.MoveCursorToStartPos === "function" && logicDocument.MoveCursorToStartPos(false); },
-    ];
-    for (const attempt of attempts) {
-      try {
-        if (attempt() !== false) return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  function createSearchSettings(text) {
-    const CSearchSettings = window.AscCommon?.CSearchSettings;
-    if (typeof CSearchSettings !== "function") return null;
-    const settings = new CSearchSettings();
-    safeCall(settings, "put_Text", null, text);
-    safeCall(settings, "put_MatchCase", null, false);
-    safeCall(settings, "put_WholeWords", null, false);
-    return settings;
-  }
-
-  function endFindText() {
-    const api = getEditorApi();
-    try { if (api && typeof api.asc_endFindText === "function") api.asc_endFindText(); } catch {}
-  }
-
-  function selectPlaceholderTokenBySearch(token, expectedPage) {
-    const api = getEditorApi();
-    const normalizedToken = normalizeSelectionText(token);
-    const settings = createSearchSettings(normalizedToken);
-    if (!api || typeof api.asc_findText !== "function" || !settings || !normalizedToken) {
-      return { ok: false, error: "OnlyOffice 搜索接口不可用" };
-    }
-    let matched = false;
-    try {
-      endFindText();
-      moveSearchCursorToStart();
-      const count = Number(api.asc_findText(settings, true)) || 0;
-      const max = Math.min(Math.max(count, 1), 120);
-      const targetPage = Math.max(0, Number(expectedPage || 0) || 0);
-      for (let index = 0; index < max; index += 1) {
-        const selectedText = normalizeSelectionText(readSelectedText(getLogicDocument()) || readSelectedText(api));
-        const selectedPage = currentSelectionPage();
-        const pageOk = !targetPage || !selectedPage || selectedPage === targetPage;
-        if (pageOk && compactSelectionText(selectedText) === compactSelectionText(normalizedToken)) {
-          matched = true;
-          return { ok: true, page: selectedPage, selectedText, source: "onlyoffice-search" };
-        }
-        if (index < max - 1) api.asc_findText(settings, true);
-      }
-      return { ok: false, error: "未找到对应自动字段文本" };
-    } catch (error) {
-      return { ok: false, error: error?.message || "自动字段文本搜索失败" };
-    } finally {
-      if (!matched) endFindText();
-    }
   }
 
   function removeSelectedTextForReplacement() {
@@ -301,14 +237,6 @@
     }
   }
 
-  function saveDocument(trigger) {
-    const api = getEditorApi();
-    try {
-      if (api && typeof api.asc_Save === "function") api.asc_Save(false);
-      window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "office-save", ok: true, trigger }, "*");
-    } catch {}
-  }
-
   function postPlaceholderResult(action, result) {
     const message = { source: "guangfa-onlyoffice-custom", action, result };
     try { window.parent?.postMessage(message, "*"); } catch {}
@@ -395,7 +323,7 @@
     return postPlaceholderResult("placeholder-anchor-selected", { ...result, requestId });
   }
 
-  function ensurePlaceholderTokenSelected(token, page, bookmarkName) {
+  function ensurePlaceholderTokenSelected(token, bookmarkName) {
     const normalizedToken = normalizeSelectionText(token);
     if (!normalizedToken) return { ok: true, skipped: true };
     const selectedText = normalizeSelectionText(readSelectedText(getLogicDocument()) || readSelectedText(getEditorApi()));
@@ -406,11 +334,9 @@
     if (bookmarkName) goToPlaceholderBookmark(manager, bookmarkName);
     const forwardSelection = selectTextForward(normalizedToken);
     if (forwardSelection.ok) return { ...forwardSelection, source: "forward-from-bookmark" };
-    const searchSelection = selectPlaceholderTokenBySearch(normalizedToken, page);
-    if (searchSelection.ok) return searchSelection;
     return {
       ok: false,
-      error: searchSelection.error || forwardSelection.error || "未能选中自动字段文本，无法安全删除。",
+      error: forwardSelection.error || "未能选中自动字段文本，无法安全删除。",
     };
   }
 
@@ -419,33 +345,15 @@
     const requestId = payload.requestId || "";
     const selected = selectPlaceholderBookmark(bookmarkName);
     if (!selected.ok) {
-      if (selected.error === "未找到对应自动字段书签") {
-        const token = payload.anchor?.token || payload.token || "";
-        let searchResult = { ok: false, skipped: true };
-        if (token) {
-          searchResult = selectPlaceholderTokenBySearch(token, payload.anchor?.page || payload.page);
-        }
-        if (searchResult.ok) {
-          const removeStaleText = removeSelectedTextForReplacement();
-          endFindText();
-          if (!removeStaleText.ok || removeStaleText.skipped) {
-            return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, stale: true, requestId, bookmarkName, page: searchResult.page, error: removeStaleText.error || "未能选中自动字段文本，未删除文档内容。" });
-          }
-        } else if (token && searchResult.error !== "未找到对应自动字段文本") {
-          return postPlaceholderResult("placeholder-anchor-deleted", { ...searchResult, ok: false, stale: true, requestId, bookmarkName });
-        }
-        return postPlaceholderResult("placeholder-anchor-deleted", { ok: true, stale: true, requestId, bookmarkName, page: searchResult.page || selected.page });
-      }
       return postPlaceholderResult("placeholder-anchor-deleted", { ...selected, requestId });
     }
     const token = payload.anchor?.token || payload.token || "";
-    const tokenSelection = ensurePlaceholderTokenSelected(token, selected.page, bookmarkName);
+    const tokenSelection = ensurePlaceholderTokenSelected(token, bookmarkName);
     if (!tokenSelection.ok) {
       return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page, error: tokenSelection.error });
     }
     const manager = getBookmarkManager();
     const removeText = removeSelectedTextForReplacement();
-    endFindText();
     if (!removeText.ok || removeText.skipped) {
       return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page, error: removeText.error || "未能选中自动字段文本，未删除文档内容。" });
     }
@@ -497,7 +405,6 @@
           return;
         }
         const page = bookmarkResult.page || currentSelectionPage();
-        saveDocument("placeholder-variable");
         postInsertedResult({
           ok: true,
           requestId,
