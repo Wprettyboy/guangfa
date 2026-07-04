@@ -114,6 +114,7 @@ function AnnotateWorkspace({
             anchors={placeholderAnchors}
             saveState={saveState}
             templateCategory={templateCategory}
+            onTemplateCategoryChange={setTemplateCategory}
             onAddVariable={onAddPlaceholderVariable}
             onRenameVariable={onRenamePlaceholderVariable}
             onDeleteVariable={onDeletePlaceholderVariable}
@@ -223,6 +224,7 @@ function PlaceholderPanel({
   anchors,
   saveState,
   templateCategory,
+  onTemplateCategoryChange,
   onAddVariable,
   onRenameVariable,
   onDeleteVariable,
@@ -251,10 +253,17 @@ function PlaceholderPanel({
             <Settings2 size={14} />
             维护字段
           </button>
-          <button className="text-button" type="button" onClick={() => onSaveTemplate?.(templateCategory)} disabled={saveState === "saving"}>
-            {saveState === "saving" ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
-            {saveState === "saving" ? "保存中" : "保存模板"}
-          </button>
+          <div className="template-save-actions">
+            <select value={templateCategory} onChange={(event) => onTemplateCategoryChange?.(event.target.value)} disabled={saveState === "saving"}>
+              {templateCategories.filter((category) => category !== "全部").map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+            <button className="text-button" type="button" onClick={() => onSaveTemplate?.(templateCategory)} disabled={saveState === "saving"}>
+              {saveState === "saving" ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+              {saveState === "saving" ? "保存中" : "保存模板"}
+            </button>
+          </div>
         </div>
       </div>
       <div className="placeholder-summary">

@@ -942,7 +942,8 @@ export default function App() {
     };
 
     try {
-      const nextTemplates = [savedTemplate, ...templateLibrary.filter((item) => item.fileName !== templateFile.name)];
+      const currentTemplates = await readStoredTemplates();
+      const nextTemplates = [savedTemplate, ...currentTemplates.filter((item) => item.fileName !== templateFile.name)];
       await storeTemplates(nextTemplates);
       setTemplateLibrary(nextTemplates);
     } catch {
