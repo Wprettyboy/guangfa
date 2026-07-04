@@ -278,10 +278,13 @@ function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) 
   };
   return new Promise((resolve) => {
     let done = false;
+    let firstFailure = null;
+    let failureTimer = null;
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      if (failureTimer) window.clearTimeout(failureTimer);
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -289,7 +292,14 @@ function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) 
       const data = event.data || {};
       if (data.source !== "guangfa-onlyoffice-custom" || data.action !== resultAction) return;
       if (data.result?.requestId !== requestId) return;
-      finish(data.result);
+      if (data.result?.ok) {
+        finish(data.result);
+        return;
+      }
+      firstFailure ||= data.result;
+      if (!failureTimer) {
+        failureTimer = window.setTimeout(() => finish(firstFailure), 700);
+      }
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段书签命令。" }), 8000);
     window.addEventListener("message", handleMessage);

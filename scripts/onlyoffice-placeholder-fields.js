@@ -178,17 +178,26 @@
     return postPlaceholderResult("placeholder-anchor-inserted", result);
   }
 
+  function hasPlaceholderBookmark(manager, bookmarkName) {
+    try {
+      return typeof manager?.HaveBookmark === "function" ? manager.HaveBookmark(bookmarkName) : true;
+    } catch {
+      return true;
+    }
+  }
+
   function selectPlaceholderBookmark(bookmarkName) {
     const manager = getBookmarkManager();
     if (!manager || !bookmarkName || typeof manager.SelectBookmark !== "function") {
       return { ok: false, bookmarkName, error: "OnlyOffice 书签定位接口不可用" };
     }
     try {
-      if (manager.SelectBookmark(bookmarkName) === false) {
+      if (!hasPlaceholderBookmark(manager, bookmarkName)) {
         return { ok: false, bookmarkName, error: "未找到对应自动字段书签" };
       }
+      const selected = manager.SelectBookmark(bookmarkName) !== false;
       const page = getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", null));
-      return { ok: true, bookmarkName, page };
+      return { ok: true, bookmarkName, page, selected };
     } catch (error) {
       return { ok: false, bookmarkName, error: error?.message || "自动字段书签定位失败" };
     }
@@ -206,6 +215,9 @@
     const requestId = payload.requestId || "";
     const selected = selectPlaceholderBookmark(bookmarkName);
     if (!selected.ok) return postPlaceholderResult("placeholder-anchor-deleted", { ...selected, requestId });
+    if (selected.selected === false) {
+      return postPlaceholderResult("placeholder-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page, error: "自动字段书签没有可删除的文本范围，请重新插入该字段。" });
+    }
     const manager = getBookmarkManager();
     const removeText = removeSelectedTextForReplacement();
     if (!removeText.ok) {
@@ -246,12 +258,22 @@
 
     const selectResult = selectInsertedText(variable.token);
     if (!selectResult.ok) return postInsertedResult({ ok: false, requestId, bookmarkName, error: selectResult.error, selectedText: selectResult.selectedText });
-    const highlightResult = applyInsertedPlaceholderHighlight();
 
     try {
       if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
       manager.AddBookmark(bookmarkName);
-      const page = getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", selectionState));
+      if (!hasPlaceholderBookmark(manager, bookmarkName)) {
+        return postInsertedResult({ ok: false, requestId, bookmarkName, error: "自动字段书签创建失败" });
+      }
+      const bookmarkResult = selectPlaceholderBookmark(bookmarkName);
+      if (!bookmarkResult.ok) {
+        return postInsertedResult({ ok: false, requestId, bookmarkName, error: bookmarkResult.error || "自动字段书签创建后无法定位" });
+      }
+      if (bookmarkResult.selected === false) {
+        return postInsertedResult({ ok: false, requestId, bookmarkName, error: "自动字段书签没有可选中的文本范围，请撤销后重试。" });
+      }
+      const highlightResult = applyInsertedPlaceholderHighlight();
+      const page = bookmarkResult.page || getSelectionPage(safeCall(getLogicDocument(), "GetSelectionState", selectionState));
       saveDocument("placeholder-variable");
       return postInsertedResult({
         ok: true,

@@ -38,7 +38,7 @@ html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister,
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 html = re.sub(r'\s*<script src="guangfa-placeholder-fields\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=62"></script>\n<script src="guangfa-placeholder-fields.js?gf=5"></script>\n</body>')
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=62"></script>\n<script src="guangfa-placeholder-fields.js?gf=7"></script>\n</body>')
 html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=7"', html)
 if 'urlArgs: "gf=7"' not in html:
     html = html.replace(
