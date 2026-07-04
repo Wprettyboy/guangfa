@@ -327,7 +327,7 @@
     return String(Date.now()) + String(fallbackBookmarkIdSeed).padStart(4, "0");
   }
 
-  function insertBookmarkedPlainText(text, bookmarkName, manager) {
+  function insertBookmarkedPlainText(text, bookmarkName, manager, options) {
     const logicDocument = getLogicDocument();
     const Paragraph = window.AscWord?.Paragraph;
     const ParaRun = window.AscWord?.ParaRun || window.AscCommonWord?.ParaRun;
@@ -359,7 +359,7 @@
         actionStarted = true;
       }
 
-      if (typeof logicDocument.RemoveBeforePaste === "function") logicDocument.RemoveBeforePaste();
+      if (options?.removeBeforeInsert !== false && typeof logicDocument.RemoveBeforePaste === "function") logicDocument.RemoveBeforePaste();
 
       const currentParagraph = typeof logicDocument.GetCurrentParagraph === "function" ? logicDocument.GetCurrentParagraph() : null;
       if (!currentParagraph || typeof currentParagraph.GetCurrentAnchorPosition !== "function") {
@@ -541,8 +541,12 @@
     const selected = selectBookmarkRange(manager, bookmarkName);
     if (!selected.ok) return selected;
     try {
+      const removeResult = removeSelectedTextForReplacement();
+      if (!removeResult.ok) {
+        return { ok: false, bookmarkName, page: selected.page, error: removeResult.error || "复杂类填充原选区删除失败" };
+      }
       removeBookmark(manager, bookmarkName);
-      const insertResult = insertBookmarkedPlainText(value, bookmarkName, manager);
+      const insertResult = insertBookmarkedPlainText(value, bookmarkName, manager, { removeBeforeInsert: false });
       if (!insertResult.ok) {
         return { ok: false, bookmarkName, page: selected.page, error: insertResult.error || "复杂类填充内容写入失败" };
       }
@@ -552,6 +556,7 @@
         bookmarkName,
         page: bookmarkResult.page || selected.page || currentSelectionPage(),
         source: insertResult.source,
+        removeSource: removeResult.source,
       };
     } catch (error) {
       return { ok: false, bookmarkName, page: selected.page, error: error?.message || "复杂类填充内容写入失败" };
@@ -622,7 +627,7 @@
     if (!logicDocument) return { ok: false, error: "文档对象不可用，无法删除原选区" };
     try {
       if (typeof logicDocument.IsSelectionEmpty === "function" && logicDocument.IsSelectionEmpty(true)) {
-        return { ok: false, error: "字段书签选区为空，请重新标注并保存模板" };
+        return { ok: false, error: "书签选区为空，请重新标注并保存模板" };
       }
       if (typeof logicDocument.RemoveBeforePaste === "function") {
         logicDocument.RemoveBeforePaste();

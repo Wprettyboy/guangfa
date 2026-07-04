@@ -38,7 +38,7 @@ html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister,
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 html = re.sub(r'\s*<script src="guangfa-placeholder-fields\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=71"></script>\n<script src="guangfa-placeholder-fields.js?gf=31"></script>\n</body>')
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=72"></script>\n<script src="guangfa-placeholder-fields.js?gf=31"></script>\n</body>')
 html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=21"', html)
 if 'urlArgs: "gf=21"' not in html:
     html = html.replace(
@@ -61,7 +61,7 @@ for api in [
 ]:
     if api.exists():
         text = api.read_text(encoding="utf-8")
-        next_text = re.sub(r'var params = "\?_dc=9\.4\.0-129(?:-gf\d+)?";', 'var params = "?_dc=9.4.0-129-gf29";', text)
+        next_text = re.sub(r'var params = "\?_dc=9\.4\.0-129(?:-gf\d+)?";', 'var params = "?_dc=9.4.0-129-gf30";', text)
         if next_text != text:
             api.chmod(0o644)
             api.write_text(next_text, encoding="utf-8")
