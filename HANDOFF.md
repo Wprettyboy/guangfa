@@ -73,6 +73,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/docx/preview/`：PDF/页面布局/大纲搜索等预览辅助模块。
 - `src/features/docx/structure/docxStructure.js`：DOCX 结构解析。
 - `scripts/onlyoffice-outline-probe.js`：注入 OnlyOffice 的桥接脚本，负责大纲、选区、页码、标注、输入点、保存、回填等消息。
+- `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，只负责精确定位 `{{项目名称}}` 等占位符并写入 `GF_PH_` 书签。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
@@ -139,6 +140,13 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/onlyoffice-outline-probe.js` 已将原只能开启的 `enableTrackRevisions()` 扩展为 `setTrackRevisions(enabled)`，可主动关闭修订模式；`scripts/patch-onlyoffice.py` 的 `guangfa-outline-probe.js?gf=` 已更新到 `60`。
 - 一键填充期间如果写入字段导致 OnlyOffice 选区跳到字段所在页，`scripts/onlyoffice-outline-probe.js` 会在 `suppressPageSync` 分支记录写入前可见页并在写入后用 `WordControl.GoToPage` 拉回，避免进度中途停在第一页；脚本缓存号已更新到 `60`。
 - 已修复修订模式“常关”：`server/office.js` 下发 `permissions.review=true`，填充预览在 `onDocumentReady` 后补发修订状态，`scripts/onlyoffice-outline-probe.js` 不再把编辑器 API 未就绪误判为设置成功；脚本缓存号已更新到 `60`。
+
+### 占位符变量自动设置
+
+- 定制组件新增“自动字段设置”，当前只识别白名单占位符：`{{项目名称}}`、`{{采购人}}`、`{{采购代理机构}}`、`{{项目编号}}`、`{{日期}}`、`{{供应商}}`。
+- 占位符变量模块独立于旧模板字段：前端状态为 `placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`。
+- `src/features/placeholders/definitions.js` 维护占位符白名单；`src/features/placeholders/applyDetectedPlaceholders.js` 只负责整理检测结果。
+- `scripts/onlyoffice-placeholder-fields.js` 使用 OnlyOffice 搜索接口精确查找占位符文本，校验选区后写入唯一 `GF_PH_` 书签并回传锚点；后续定位应依赖书签，不依赖页码、行号或旧字段选区。
 
 ### OnlyOffice 原生 AI 接本地模型
 
@@ -214,6 +222,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 内容审查
 - 大纲审查
 - 标注字段
+- 自动字段设置（占位符变量）
 
 不要再污染 OnlyOffice 原生工具按钮。业务按钮放在“定制组件”里。
 

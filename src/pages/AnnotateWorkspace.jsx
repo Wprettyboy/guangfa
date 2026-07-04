@@ -26,7 +26,9 @@ function AnnotateWorkspace({
   onRemoveField,
   onAddInputPoint,
   onInputPointCaptured,
+  onPlaceholderAnchorsDetected,
   onOfficeDocumentReady,
+  placeholderAnchors = [],
 }) {
   const fileInputRef = useRef(null);
   const panelRef = useRef(null);
@@ -87,6 +89,7 @@ function AnnotateWorkspace({
           onPageChange={onPreviewPageChange}
           onUploadClick={() => fileInputRef.current?.click()}
           onInputPointCaptured={onInputPointCaptured}
+          onPlaceholderAnchorsDetected={onPlaceholderAnchorsDetected}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />
       </section>
@@ -116,6 +119,32 @@ function AnnotateWorkspace({
             onChange={onUpdateField}
             onAddInputPoint={() => selectedField && onAddInputPoint?.(selectedField.id)}
           />
+        </div>
+        <div className="panel-section placeholder-panel-section">
+          <div className="panel-title">
+            <h2>占位符变量</h2>
+            <div className="panel-actions">
+              <span className="soft-count">总计 {placeholderAnchors.length} 个</span>
+            </div>
+          </div>
+          <div className="placeholder-anchor-list">
+            {placeholderAnchors.length === 0 ? (
+              <div className="empty-state compact">
+                <Highlighter size={16} />
+                <span>点击定制组件里的自动字段设置</span>
+              </div>
+            ) : (
+              placeholderAnchors.map((anchor, index) => (
+                <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
+                  <span className="row-index">{index + 1}</span>
+                  <div>
+                    <strong>{anchor.label}</strong>
+                    <span>{anchor.token} · 第 {anchor.page || 1} 页 · {anchor.bookmarkName}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
         <div className="panel-section grow-section">
           <div className="panel-title">

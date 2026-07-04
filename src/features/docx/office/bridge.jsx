@@ -12,6 +12,7 @@ import {
   hasInputPoint,
   requiresInputPoint,
 } from "../../../utils/fields.js";
+import { placeholderDefinitions } from "../../placeholders/definitions.js";
 
 let onlyOfficeFillRequestSeq = 0;
 
@@ -25,6 +26,13 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
 
   useEffect(() => {
     annotationFieldPayloadRef.current = buildOnlyOfficeAnnotationFieldPayload(annotationFields);
+    if (mode === "annotate") {
+      postOnlyOfficeCommand(containerRef.current, {
+        source: "guangfa-parent",
+        action: "sync-placeholder-definitions",
+        definitions: placeholderDefinitions,
+      }, 2);
+    }
   }, [annotationFields, mode]);
 
   useEffect(() => {
@@ -103,6 +111,14 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
                     context: aiKnowledgeContextRef.current,
                   });
                 }, 350);
+              } else if (mode === "annotate") {
+                window.setTimeout(() => {
+                  postOnlyOfficeCommand(container, {
+                    source: "guangfa-parent",
+                    action: "sync-placeholder-definitions",
+                    definitions: placeholderDefinitions,
+                  });
+                }, 350);
               }
             },
             onDocumentReady: () => {
@@ -113,6 +129,14 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
                     source: "guangfa-parent",
                     action: "set-track-revisions",
                     enabled: trackRevisionsEnabledRef.current,
+                  });
+                }, 350);
+              } else if (mode === "annotate") {
+                window.setTimeout(() => {
+                  postOnlyOfficeCommand(container, {
+                    source: "guangfa-parent",
+                    action: "sync-placeholder-definitions",
+                    definitions: placeholderDefinitions,
                   });
                 }, 350);
               }

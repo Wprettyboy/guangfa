@@ -50,6 +50,7 @@ import {
   waitForChangedOfficeDocumentBuffer,
 } from "./features/docx/office/documentSync.js";
 import { getNextFieldNumber } from "./features/docx/fill/FieldControls.jsx";
+import { applyDetectedPlaceholders } from "./features/placeholders/applyDetectedPlaceholders.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -95,6 +96,7 @@ export default function App() {
   const [settingsNavOpen, setSettingsNavOpen] = useState(true);
   const [templateFile, setTemplateFile] = useState(initialTemplateFile);
   const [templateFields, setTemplateFields] = useState(initialTemplateFields);
+  const [placeholderAnchors, setPlaceholderAnchors] = useState([]);
   const [templateOfficeDocId, setTemplateOfficeDocId] = useState("");
   const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState(initialTemplateFields[0]?.id ?? "");
   const [brushActive, setBrushActive] = useState(false);
@@ -127,6 +129,7 @@ export default function App() {
   const fillSyncTimerRef = useRef(0);
   const fillPreviewPageLockRef = useRef(null);
   const templateFileRef = useRef(templateFile);
+  const placeholderAnchorsRef = useRef(placeholderAnchors);
   const enrichedFillFields = useMemo(
     () => mergeFillFieldsWithTemplate(fillFields, templateFields),
     [fillFields, templateFields],
@@ -176,6 +179,10 @@ export default function App() {
     templateFileRef.current = templateFile;
   }, [templateFile]);
 
+  useEffect(() => {
+    placeholderAnchorsRef.current = placeholderAnchors;
+  }, [placeholderAnchors]);
+
   const selectedTemplateField = templateFields.find((field) => field.id === selectedTemplateFieldId);
   const workspaceTitle =
     activeModule === "template-management"
@@ -220,6 +227,7 @@ export default function App() {
         filledTemplateBufferRef.current = draft.filledTemplateFile?.buffer ? draft.filledTemplateFile.buffer.slice(0) : null;
         filledTemplateDraftFileRef.current = draft.filledTemplateFile || null;
         setTemplateFields(draft.templateFields || []);
+        setPlaceholderAnchors(draft.placeholderAnchors || []);
         setFillFields(draft.fillFields || []);
         setMaterialFiles(draft.materialFiles || []);
         setSelectedFieldId(draft.selectedFieldId || draft.fillFields?.[0]?.id || "");
@@ -281,6 +289,7 @@ export default function App() {
         templateFile: getDraftTemplateFile(),
         filledTemplateFile: getDraftFilledTemplateFile(),
         templateFields,
+        placeholderAnchors,
         fillFields,
         materialFiles,
         selectedFieldId,
@@ -300,6 +309,7 @@ export default function App() {
     fillFields,
     fillPreviewPage,
     materialFiles,
+    placeholderAnchors,
     selectedProjectKnowledgeBaseIds,
     selectedGlobalKnowledgeBaseIds,
     selectedFieldId,
@@ -349,7 +359,7 @@ export default function App() {
     setFilledTemplateFile(null);
   }
 
-  function syncAnnotatedOfficeDocument(fieldsSnapshot, sourceOfficeDocId = templateOfficeDocId) {
+  function syncAnnotatedOfficeDocument(fieldsSnapshot, sourceOfficeDocId = templateOfficeDocId, anchorsSnapshot = placeholderAnchorsRef.current) {
     if (!sourceOfficeDocId || !templateFile?.buffer) return;
     const officeDocId = sourceOfficeDocId;
     const sourcePreviewId = templateFile.previewId;
@@ -369,6 +379,7 @@ export default function App() {
           activeWorkspace: "annotate",
           templateFile: getDraftTemplateFile({ ...templateFile, buffer }),
           templateFields: fieldsSnapshot,
+          placeholderAnchors: anchorsSnapshot,
           fillFields,
           materialFiles,
           selectedFieldId,
@@ -418,6 +429,7 @@ export default function App() {
           templateFile: getDraftTemplateFile(),
           filledTemplateFile: filledFile,
           templateFields,
+          placeholderAnchors: placeholderAnchorsRef.current,
           fillFields: fieldsSnapshot,
           materialFiles,
           selectedFieldId,
@@ -448,6 +460,7 @@ export default function App() {
     annotatedTemplateBufferRef.current = null;
     setTemplateFile(null);
     setTemplateFields([]);
+    setPlaceholderAnchors([]);
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
     setAnnotatePreviewPage(1);
@@ -579,6 +592,7 @@ export default function App() {
       supported: isDocx,
     });
     setTemplateFields([]);
+    setPlaceholderAnchors([]);
     setTemplateOfficeDocId("");
     setSelectedTemplateFieldId("");
     setAnnotatePreviewPage(1);
@@ -653,6 +667,20 @@ export default function App() {
     syncAnnotatedOfficeDocument(nextFields);
   }
 
+  function applyPlaceholderAnchors(result) {
+    if (!result?.ok) {
+      window.alert(result?.error || "占位符变量设置失败。");
+      return;
+    }
+    const nextAnchors = applyDetectedPlaceholders(placeholderAnchorsRef.current, result.anchors || []);
+    setPlaceholderAnchors(nextAnchors);
+    setSaveState("dirty");
+    syncAnnotatedOfficeDocument(templateFields, templateOfficeDocId, nextAnchors);
+    if (nextAnchors.length === 0) {
+      window.alert("未找到支持的占位符。请在模板中使用 {{项目名称}}、{{采购人}}、{{日期}} 等占位符。");
+    }
+  }
+
   function removeTemplateField(fieldId) {
     removePreviewMarker(fieldId);
     const nextFields = templateFields.filter((field) => field.id !== fieldId);
@@ -666,6 +694,7 @@ export default function App() {
   function clearAnnotations() {
     clearPreviewMarkers();
     setTemplateFields([]);
+    setPlaceholderAnchors([]);
     setSelectedTemplateFieldId("");
     setSaveState("dirty");
   }
@@ -686,7 +715,8 @@ export default function App() {
       .map((field) => ({ field, issue: getFieldSetupIssue(field) }))
       .filter((item) => item.issue);
     const hasPendingFields = templateFields.some((field) => field.status !== "已标注");
-    const isComplete = templateFields.length > 0 && invalidFields.length === 0 && setupIssues.length === 0 && !hasPendingFields;
+    const hasTemplateMarkers = templateFields.length > 0 || placeholderAnchors.length > 0;
+    const isComplete = hasTemplateMarkers && invalidFields.length === 0 && setupIssues.length === 0 && !hasPendingFields;
 
     if (!isComplete) {
       setSaveState("incomplete");
@@ -733,9 +763,11 @@ export default function App() {
       uploadedAt: templateFile.uploadedAt,
       supported: templateFile.supported,
       fieldCount: normalizedTemplateFields.length,
+      placeholderCount: placeholderAnchors.length,
       confirmedCount: normalizedTemplateFields.filter((field) => field.status === "已标注").length,
       typeSummary: summarizeFieldTypes(normalizedTemplateFields),
       fields: normalizedTemplateFields,
+      placeholderAnchors,
       fileBuffer,
     };
 
@@ -756,6 +788,7 @@ export default function App() {
       activeWorkspace: "annotate",
       templateFile: getDraftTemplateFile({ ...templateFile, buffer: fileBuffer, size: formatFileSize(fileBuffer.byteLength) }),
       templateFields: normalizedTemplateFields,
+      placeholderAnchors,
       fillFields,
       materialFiles,
       selectedFieldId,
@@ -774,6 +807,7 @@ export default function App() {
     const templateFieldsToUse = (templateToUse.fields || []).map(normalizeTemplateFieldForRuntime);
     const mappedFields = createFillFieldsFromTemplate(templateFieldsToUse);
     setTemplateFields(templateFieldsToUse);
+    setPlaceholderAnchors(templateToUse.placeholderAnchors || []);
     clearFilledTemplateDraft();
     if (templateToUse.fileBuffer) {
       annotatedTemplateBufferRef.current = null;
@@ -789,6 +823,7 @@ export default function App() {
       setAnnotatePreviewPage(1);
     } else {
       setTemplateFile(null);
+      setPlaceholderAnchors([]);
       setSaveState("no-file");
     }
     setFillFields(mappedFields);
@@ -805,6 +840,7 @@ export default function App() {
     const templateToEdit = storedTemplate ?? template;
     const fields = (templateToEdit.fields || []).map(normalizeTemplateFieldForRuntime);
     setTemplateFields(fields);
+    setPlaceholderAnchors(templateToEdit.placeholderAnchors || []);
     clearFilledTemplateDraft();
     setFillFieldPageMap({});
     if (templateToEdit.fileBuffer) {
@@ -821,6 +857,7 @@ export default function App() {
       setSaveState("saved");
     } else {
       setTemplateFile(null);
+      setPlaceholderAnchors([]);
       setSaveState("no-file");
     }
     setSelectedTemplateFieldId(fields[0]?.id ?? "");
@@ -1330,6 +1367,7 @@ export default function App() {
               <AnnotateWorkspace
                 templateFile={templateFile}
                 fields={templateFields}
+                placeholderAnchors={placeholderAnchors}
                 selectedField={selectedTemplateField}
                 selectedFieldId={selectedTemplateFieldId}
                 brushActive={brushActive}
@@ -1344,6 +1382,7 @@ export default function App() {
                 onRemoveField={removeTemplateField}
                 onAddInputPoint={addInputPointForTemplateField}
                 onInputPointCaptured={applyTemplateInputPoint}
+                onPlaceholderAnchorsDetected={applyPlaceholderAnchors}
                 onOfficeDocumentReady={setTemplateOfficeDocId}
               />
             ) : (
