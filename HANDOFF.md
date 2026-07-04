@@ -145,7 +145,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ### 占位符变量自动设置
 
 - 定制组件“自动字段设置”现在只打开右侧独立面板，不再扫描模板文本。
-- 右侧面板维护可编辑变量卡片，默认给一个 `项目名称`，用户可新增、改名、删除；卡片点击后把 `{{字段名}}` 插入 OnlyOffice 当前光标/选区。
+- 右侧面板只显示变量卡片清单和快速插入按钮；新增、改名、删除统一在“维护字段”弹窗里完成。默认给一个 `项目名称`，点击卡片里的“插入”会把 `{{字段名}}` 插入 OnlyOffice 当前光标/选区。
 - 占位符变量模块独立于旧模板字段：前端状态为 `placeholderVariables`、`placeholderAnchors`，OnlyOffice 书签前缀为 `GF_PH_`；不要混入 `templateFields`、`fillMode`、`GF_FIELD_`。
 - `src/features/placeholders/variables.js` 负责变量名、Token、锚点归一化；`scripts/onlyoffice-placeholder-fields.js` 只负责插入 token、反选刚插入的 token、添加 `GF_PH_` 书签并回传锚点。
 - 已插入位置后续定位依赖书签，不依赖页码、行号，也不依赖旧字段选区；变量改名只影响后续插入，已插入的 token/锚点保留当时记录。

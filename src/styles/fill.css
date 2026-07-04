@@ -316,7 +316,7 @@
   justify-content: center;
   gap: 6px;
   height: 34px;
-  margin: 10px 12px;
+  width: fit-content;
   border: 1px solid #cfd8e6;
   background: #ffffff;
   color: #25324a;
@@ -332,55 +332,102 @@
 
 .placeholder-variable-card {
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
   padding: 10px;
   border: 1px solid #e3e8f0;
   background: #ffffff;
 }
 
-.placeholder-insert-card {
+.placeholder-card-copy {
   display: grid;
   gap: 4px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
+  min-width: 0;
 }
 
-.placeholder-insert-card strong,
-.placeholder-insert-card span {
+.placeholder-card-copy strong,
+.placeholder-card-copy span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.placeholder-insert-card strong {
+.placeholder-card-copy strong {
   color: #25324a;
   font-size: 14px;
 }
 
-.placeholder-insert-card span {
+.placeholder-card-copy span {
   color: #728097;
   font-size: 12px;
 }
 
-.placeholder-variable-tools {
+.placeholder-maintenance-modal {
+  width: min(560px, 100%);
+  max-height: min(620px, 90vh);
+  overflow: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 8px;
-  align-items: center;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(20, 32, 52, 0.24);
 }
 
-.placeholder-variable-tools input {
+.placeholder-maintenance-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.placeholder-maintenance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.placeholder-maintenance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #e3e8f0;
+  background: #fbfdff;
+}
+
+.placeholder-maintenance-row label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.placeholder-maintenance-row label span {
+  color: #5f6d82;
+  font-size: 12px;
+}
+
+.placeholder-maintenance-row input {
   width: 100%;
   min-width: 0;
-  height: 32px;
+  height: 34px;
   border: 1px solid #d8e0ec;
   padding: 0 9px;
   color: #25324a;
+}
+
+.placeholder-maintenance-row em {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: #728097;
+  font-size: 12px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .placeholder-anchor-list {

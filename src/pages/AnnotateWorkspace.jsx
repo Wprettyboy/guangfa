@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Highlighter, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { Highlighter, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
 import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
@@ -215,12 +215,17 @@ function AnnotateWorkspace({
 }
 
 function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onInsertVariable, onBack }) {
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   return (
     <div className="panel-section placeholder-panel-section standalone">
       <div className="panel-title">
         <h2>自动字段设置</h2>
         <div className="panel-actions">
           <span className="soft-count">字段 {variables.length} 个</span>
+          <button className="text-button" type="button" onClick={() => setMaintenanceOpen(true)}>
+            <Settings2 size={14} />
+            维护字段
+          </button>
           <button className="text-button" type="button" onClick={onBack}>返回字段标注</button>
         </div>
       </div>
@@ -228,40 +233,23 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
         <strong>字段变量</strong>
         <span>已插入 {anchors.length} 处，后续填充按书签定位。</span>
       </div>
-      <button className="placeholder-add-button" type="button" onClick={onAddVariable}>
-        <Plus size={15} />
-        新增字段
-      </button>
       <div className="placeholder-variable-list">
         {variables.length === 0 ? (
           <div className="empty-state compact">
             <Highlighter size={16} />
-            <span>暂无字段变量</span>
+            <span>暂无字段变量，请先维护字段</span>
           </div>
         ) : variables.map((variable) => {
           const count = anchors.filter((anchor) => anchor.variableId === variable.id).length;
           return (
             <div className="placeholder-variable-card" key={variable.id}>
-              <button className="placeholder-insert-card" type="button" onClick={() => onInsertVariable?.(variable)}>
+              <div className="placeholder-card-copy">
                 <strong>{variable.name}</strong>
                 <span>{variable.token} · 已插入 {count} 处</span>
-              </button>
-              <div className="placeholder-variable-tools">
-                <input
-                  value={variable.name}
-                  onChange={(event) => onRenameVariable?.(variable.id, event.target.value)}
-                  onClick={(event) => event.stopPropagation()}
-                  aria-label={`${variable.name}字段名称`}
-                />
-                <button
-                  className="icon-button quiet"
-                  type="button"
-                  aria-label={`删除${variable.name}`}
-                  onClick={() => onDeleteVariable?.(variable.id)}
-                >
-                  <Trash2 size={15} />
-                </button>
               </div>
+              <button className="tool-button mini-button" type="button" onClick={() => onInsertVariable?.(variable)}>
+                插入
+              </button>
             </div>
           );
         })}
@@ -284,6 +272,62 @@ function PlaceholderPanel({ variables, anchors, onAddVariable, onRenameVariable,
           ))
         )}
       </div>
+      {maintenanceOpen ? (
+        <PlaceholderMaintenanceModal
+          variables={variables}
+          anchors={anchors}
+          onAddVariable={onAddVariable}
+          onRenameVariable={onRenameVariable}
+          onDeleteVariable={onDeleteVariable}
+          onClose={() => setMaintenanceOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="placeholder-maintenance-modal" role="dialog" aria-modal="true" aria-label="自动字段维护" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title">
+          <h2>自动字段维护</h2>
+          <button className="icon-button quiet" type="button" onClick={onClose} aria-label="关闭">
+            <X size={17} />
+          </button>
+        </div>
+        <div className="placeholder-maintenance-body">
+          <button className="placeholder-add-button" type="button" onClick={onAddVariable}>
+            <Plus size={15} />
+            新增字段
+          </button>
+          <div className="placeholder-maintenance-list">
+            {variables.length === 0 ? (
+              <div className="empty-state compact">
+                <Highlighter size={16} />
+                <span>暂无字段变量</span>
+              </div>
+            ) : variables.map((variable) => {
+              const count = anchors.filter((anchor) => anchor.variableId === variable.id).length;
+              return (
+                <div className="placeholder-maintenance-row" key={variable.id}>
+                  <label>
+                    <span>字段名称</span>
+                    <input value={variable.name} onChange={(event) => onRenameVariable?.(variable.id, event.target.value)} />
+                  </label>
+                  <em>{variable.token || "{{字段名}}"} · 已插入 {count} 处</em>
+                  <button className="icon-button quiet" type="button" aria-label={`删除${variable.name || "字段"}`} onClick={() => onDeleteVariable?.(variable.id)}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="tool-button primary" type="button" onClick={onClose}>完成</button>
+        </div>
+      </section>
     </div>
   );
 }
