@@ -98,14 +98,14 @@ function ComplexFillPanel({
                   ) : (
                     <>
                       <div className="complex-fill-anchor-head">
-                        <span>序号</span>
+                        <span>范围</span>
                         <span>页面</span>
                         <span>选区</span>
                         <span>操作</span>
                       </div>
                       {fieldAnchors.map((anchor, index) => (
                         <div className="complex-fill-anchor-row" key={anchor.bookmarkName || anchor.id}>
-                          <span className="row-index">{index + 1}</span>
+                          <span className="complex-fill-anchor-index">替换 {index + 1}</span>
                           <button className="placeholder-page-link" type="button" onClick={() => onJumpAnchor?.(anchor)}>
                             第 {anchor.page || 1} 页
                           </button>

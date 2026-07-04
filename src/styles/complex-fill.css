@@ -79,36 +79,65 @@
 .complex-fill-anchor-head,
 .complex-fill-anchor-row {
   display: grid;
-  grid-template-columns: 34px 74px minmax(0, 1fr) 32px;
+  grid-template-columns: 62px 74px minmax(0, 1fr) 32px;
   gap: 8px;
   align-items: center;
 }
 
+.complex-fill-anchor-list {
+  gap: 8px;
+  padding: 8px;
+  border-color: #d7e7ff;
+  background: #f6faff;
+}
+
 .complex-fill-anchor-head {
-  min-height: 30px;
-  padding: 5px 8px;
-  border-bottom: 1px solid #edf2f7;
+  min-height: 24px;
+  padding: 0 2px;
+  border-bottom: 0;
   color: #738096;
-  background: #f8fafc;
+  background: transparent;
   font-size: 12px;
   font-weight: 800;
 }
 
 .complex-fill-anchor-row {
-  min-height: 44px;
-  padding: 7px 8px;
-  border-bottom: 1px solid #eef2f7;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid #d9e8ff;
+  border-left: 3px solid #0f63e9;
+  border-radius: 7px;
   background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 99, 233, 0.08);
 }
 
 .complex-fill-anchor-row:last-child {
-  border-bottom: 0;
+  border-bottom: 1px solid #d9e8ff;
+}
+
+.complex-fill-anchor-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 24px;
+  border-radius: 5px;
+  color: #0f63e9;
+  background: #e8f1ff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .complex-fill-anchor-text {
   min-width: 0;
-  color: #526177;
+  border: 1px solid #e3e9f2;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #25324a;
+  background: #f8fafc;
   font-size: 12px;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
