@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -8,7 +8,7 @@ import { templateCategories } from "../constants/templates.js";
 import ComplexFillPanel from "../features/complex-fill/ComplexFillPanel.jsx";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
 import { DocumentFrame } from "../features/docx/runtime.jsx";
-import { comparePlaceholderAnchors, labelPlaceholderAnchorPages } from "../features/placeholders/variables.js";
+import { comparePlaceholderAnchors, labelPlaceholderAnchorPages, normalizePlaceholderName, normalizePlaceholderVariables } from "../features/placeholders/variables.js";
 import { getFillModeLabel, getTemplateFieldSourceText, normalizeFieldCategory, normalizeFillMode } from "../utils/fields.js";
 import { inferTemplateCategory, normalizeTemplateCategory } from "../utils/templates.js";
 
@@ -33,6 +33,7 @@ function AnnotateWorkspace({
   onAddInputPoint,
   onInputPointCaptured,
   onAddPlaceholderVariable,
+  onImportPlaceholderVariables,
   onRenamePlaceholderVariable,
   onUpdatePlaceholderVariable,
   onDeletePlaceholderVariable,
@@ -53,6 +54,7 @@ function AnnotateWorkspace({
   complexFillFields = [],
   complexFillAnchors = [],
   sidePanelMode = "fields",
+  placeholderReuseTemplates = [],
 }) {
   const fileInputRef = useRef(null);
   const panelRef = useRef(null);
@@ -98,6 +100,10 @@ function AnnotateWorkspace({
 
   const showPlaceholderPanel = sidePanelMode === "placeholders";
   const showComplexFillPanel = sidePanelMode === "complex-fill";
+  const placeholderReuseSources = useMemo(
+    () => buildPlaceholderReuseSources(placeholderReuseTemplates, templateFile),
+    [placeholderReuseTemplates, templateFile],
+  );
 
   return (
     <div className="work-grid annotate-grid">
@@ -146,6 +152,7 @@ function AnnotateWorkspace({
             templateCategory={templateCategory}
             onTemplateCategoryChange={setTemplateCategory}
             onAddVariable={onAddPlaceholderVariable}
+            onImportVariables={onImportPlaceholderVariables}
             onRenameVariable={onRenamePlaceholderVariable}
             onUpdateVariable={onUpdatePlaceholderVariable}
             onDeleteVariable={onDeletePlaceholderVariable}
@@ -153,6 +160,7 @@ function AnnotateWorkspace({
             onJumpAnchor={onJumpPlaceholderAnchor}
             onDeleteAnchor={onDeletePlaceholderAnchor}
             onSaveTemplate={onSaveTemplate}
+            reuseSources={placeholderReuseSources}
           />
         ) : (
           <>
@@ -257,6 +265,7 @@ function PlaceholderPanel({
   templateCategory,
   onTemplateCategoryChange,
   onAddVariable,
+  onImportVariables,
   onRenameVariable,
   onUpdateVariable,
   onDeleteVariable,
@@ -264,6 +273,7 @@ function PlaceholderPanel({
   onJumpAnchor,
   onDeleteAnchor,
   onSaveTemplate,
+  reuseSources,
 }) {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [collapsedVariables, setCollapsedVariables] = useState({});
@@ -367,18 +377,21 @@ function PlaceholderPanel({
           variables={variables}
           anchors={anchors}
           onAddVariable={onAddVariable}
+          onImportVariables={onImportVariables}
           onRenameVariable={onRenameVariable}
           onUpdateVariable={onUpdateVariable}
           onDeleteVariable={onDeleteVariable}
           onClose={() => setMaintenanceOpen(false)}
+          reuseSources={reuseSources}
         />
       ) : null}
     </div>
   );
 }
 
-function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onUpdateVariable, onDeleteVariable, onClose }) {
+function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onImportVariables, onRenameVariable, onUpdateVariable, onDeleteVariable, onClose, reuseSources = [] }) {
   const [expandedPromptId, setExpandedPromptId] = useState("");
+  const [reuseOpen, setReuseOpen] = useState(false);
   const [commonConfig, setCommonConfig] = useState(() => loadPromptCommonTextConfig());
   const [selectedCommonCategoryId, setSelectedCommonCategoryId] = useState(() => loadPromptCommonTextConfig().categories[0]?.id || defaultPromptCommonCategoryId);
 
@@ -462,6 +475,10 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
               <Plus size={15} />
               新增字段
             </button>
+            <button className="placeholder-add-button secondary" type="button" onClick={() => setReuseOpen(true)} disabled={reuseSources.length === 0}>
+              <Plus size={15} />
+              复用其他项目字段
+            </button>
             <span>共 {variables.length} 个字段</span>
           </div>
           <div className="placeholder-maintenance-list">
@@ -503,6 +520,121 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
         </div>
         <div className="modal-actions">
           <button className="tool-button primary" type="button" onClick={onClose}>完成</button>
+        </div>
+        {reuseOpen ? (
+          <PlaceholderReuseModal
+            sources={reuseSources}
+            existingVariables={variables}
+            onImport={(items) => {
+              onImportVariables?.(items);
+              setReuseOpen(false);
+            }}
+            onClose={() => setReuseOpen(false)}
+          />
+        ) : null}
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function buildPlaceholderReuseSources(templates = [], currentTemplateFile) {
+  const currentTemplateId = String(currentTemplateFile?.sourceTemplateId || "");
+  const currentFileName = normalizeTemplateFileName(currentTemplateFile?.fileName || currentTemplateFile?.name);
+  return templates
+    .filter((template) => {
+      if (currentTemplateId && String(template?.id || "") === currentTemplateId) return false;
+      if (currentFileName && normalizeTemplateFileName(template?.fileName || template?.name) === currentFileName) return false;
+      return Array.isArray(template?.placeholderVariables) && normalizePlaceholderVariables(template.placeholderVariables).length > 0;
+    })
+    .map((template) => ({
+      id: String(template.id || template.fileName || template.name),
+      name: String(template.name || template.fileName || "未命名模板"),
+      category: String(template.category || "未分类"),
+      savedAt: String(template.savedAt || ""),
+      variables: normalizePlaceholderVariables(template.placeholderVariables),
+    }));
+}
+
+function normalizeTemplateFileName(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function PlaceholderReuseModal({ sources, existingVariables, onImport, onClose }) {
+  const [selectedSourceId, setSelectedSourceId] = useState(() => sources[0]?.id || "");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const selectedSource = sources.find((source) => source.id === selectedSourceId) || sources[0] || null;
+  const existingNames = new Set(existingVariables.map((variable) => normalizePlaceholderName(variable.name)));
+  const importableVariables = selectedSource?.variables || [];
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [selectedSourceId]);
+
+  function toggleVariable(variableId) {
+    setSelectedIds((ids) => (ids.includes(variableId) ? ids.filter((id) => id !== variableId) : [...ids, variableId]));
+  }
+
+  function importSelected() {
+    const selected = importableVariables.filter((variable) => selectedIds.includes(variable.id) && !existingNames.has(normalizePlaceholderName(variable.name)));
+    if (selected.length === 0) return;
+    onImport?.(selected);
+  }
+
+  return createPortal(
+    <div className="placeholder-reuse-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="placeholder-reuse-modal" role="dialog" aria-modal="true" aria-label="复用其他项目字段" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title">
+          <h2>复用其他项目字段</h2>
+          <button className="icon-button quiet" type="button" onClick={onClose} aria-label="关闭">
+            <X size={17} />
+          </button>
+        </div>
+        <div className="placeholder-reuse-body">
+          <aside className="placeholder-reuse-sources">
+            {sources.length === 0 ? (
+              <div className="common-text-empty">暂无可复用字段库</div>
+            ) : sources.map((source) => (
+              <button
+                className={source.id === selectedSource?.id ? "placeholder-reuse-source active" : "placeholder-reuse-source"}
+                type="button"
+                key={source.id}
+                onClick={() => setSelectedSourceId(source.id)}
+              >
+                <strong>{source.name}</strong>
+                <span>{source.category} · {source.variables.length} 个字段</span>
+              </button>
+            ))}
+          </aside>
+          <main className="placeholder-reuse-fields">
+            <div className="placeholder-reuse-head">
+              <strong>{selectedSource?.name || "请选择来源"}</strong>
+              <button className="tool-button primary" type="button" onClick={importSelected} disabled={selectedIds.length === 0}>
+                导入所选
+              </button>
+            </div>
+            <div className="placeholder-reuse-list">
+              {importableVariables.length === 0 ? (
+                <div className="common-text-empty">该模板暂无自动字段</div>
+              ) : importableVariables.map((variable) => {
+                const duplicated = existingNames.has(normalizePlaceholderName(variable.name));
+                return (
+                  <label className={duplicated ? "placeholder-reuse-field duplicated" : "placeholder-reuse-field"} key={variable.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(variable.id)}
+                      disabled={duplicated}
+                      onChange={() => toggleVariable(variable.id)}
+                    />
+                    <span>
+                      <strong>{variable.name}</strong>
+                      <em>{duplicated ? "当前模板已存在同名字段" : variable.prompt ? "含提示词" : "无提示词"}</em>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </main>
         </div>
       </section>
     </div>,

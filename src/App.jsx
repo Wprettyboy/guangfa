@@ -895,6 +895,28 @@ export default function App() {
     setSaveState("dirty");
   }
 
+  function importPlaceholderVariables(variablesToImport = []) {
+    const existingNames = new Set(placeholderVariables.map((variable) => normalizePlaceholderName(variable.name)));
+    let nextVariables = [...placeholderVariables];
+    variablesToImport.forEach((variable) => {
+      const name = normalizePlaceholderName(variable?.name);
+      if (!name || existingNames.has(name)) return;
+      nextVariables = [
+        ...nextVariables,
+        {
+          ...createPlaceholderVariable(name, nextVariables),
+          prompt: String(variable?.prompt || "").trim(),
+        },
+      ];
+      existingNames.add(name);
+    });
+    if (nextVariables.length === placeholderVariables.length) return;
+    setPlaceholderVariables(nextVariables);
+    updatePlaceholderDraftSnapshot(nextVariables);
+    setAnnotateSidePanelMode("placeholders");
+    setSaveState("dirty");
+  }
+
   function updatePlaceholderVariable(variableId, patch) {
     const nextVariables = placeholderVariables.map((variable) =>
       variable.id === variableId
@@ -2042,6 +2064,7 @@ export default function App() {
                 fields={templateFields}
                 placeholderVariables={placeholderVariables}
                 placeholderAnchors={placeholderAnchors}
+                placeholderReuseTemplates={templateLibrary}
                 complexFillFields={complexFillFields}
                 complexFillAnchors={complexFillAnchors}
                 sidePanelMode={annotateSidePanelMode}
@@ -2063,6 +2086,7 @@ export default function App() {
                 onAddInputPoint={addInputPointForTemplateField}
                 onInputPointCaptured={applyTemplateInputPoint}
                 onAddPlaceholderVariable={addPlaceholderVariable}
+                onImportPlaceholderVariables={importPlaceholderVariables}
                 onRenamePlaceholderVariable={renamePlaceholderVariable}
                 onUpdatePlaceholderVariable={updatePlaceholderVariable}
                 onDeletePlaceholderVariable={removePlaceholderVariable}

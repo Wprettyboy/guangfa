@@ -327,6 +327,11 @@
   cursor: pointer;
 }
 
+.placeholder-add-button.secondary {
+  background: #f8fbff;
+  color: #42536c;
+}
+
 .placeholder-variable-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -799,6 +804,146 @@
   min-height: 140px;
   color: #7a879a;
   font-size: 13px;
+}
+
+.placeholder-reuse-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.placeholder-reuse-modal {
+  width: min(760px, calc(100vw - 96px));
+  height: min(540px, calc(100vh - 112px));
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 52px rgba(20, 32, 52, 0.22);
+}
+
+.placeholder-reuse-body {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  min-height: 0;
+  border-top: 1px solid #e5ecf5;
+}
+
+.placeholder-reuse-sources,
+.placeholder-reuse-fields {
+  min-height: 0;
+  min-width: 0;
+  padding: 12px;
+  background: #f7f9fc;
+}
+
+.placeholder-reuse-sources {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+  border-right: 1px solid #e5ecf5;
+}
+
+.placeholder-reuse-source {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid #dbe4f1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #26364f;
+  text-align: left;
+  cursor: pointer;
+}
+
+.placeholder-reuse-source.active {
+  border-color: #8db7ff;
+  background: #eaf1ff;
+  color: #0f56d9;
+}
+
+.placeholder-reuse-source strong,
+.placeholder-reuse-source span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder-reuse-source span {
+  color: #6d7b91;
+  font-size: 12px;
+}
+
+.placeholder-reuse-fields {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.placeholder-reuse-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.placeholder-reuse-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #25324a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder-reuse-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.placeholder-reuse-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px;
+  border: 1px solid #dfe7f2;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.placeholder-reuse-field.duplicated {
+  opacity: 0.58;
+  background: #f8fafc;
+}
+
+.placeholder-reuse-field strong,
+.placeholder-reuse-field em {
+  display: block;
+}
+
+.placeholder-reuse-field strong {
+  color: #25324a;
+  font-size: 14px;
+}
+
+.placeholder-reuse-field em {
+  margin-top: 3px;
+  color: #6d7b91;
+  font-size: 12px;
+  font-style: normal;
 }
 
 .placeholder-rich-editor {
