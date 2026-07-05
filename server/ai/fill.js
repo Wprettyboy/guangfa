@@ -280,9 +280,11 @@ function findModelReferencedCitation(knowledgeSnippets = [], materialSnippets = 
   return null;
 }
 function applySystemCitation(result, citation) {
+  const aiReason = result.aiReason || result.evidence || "";
   if (!citation) {
     return {
       ...result,
+      aiReason,
       source: "未找到来源片段",
       evidence: "",
       sourceSnippetText: "",
@@ -291,6 +293,7 @@ function applySystemCitation(result, citation) {
   const text = citation.text.slice(0, 2000);
   return {
     ...result,
+    aiReason,
     source: citation.source,
     evidence: text,
     sourceSnippetText: text,
@@ -314,9 +317,11 @@ function buildSupplementEvidence(ruleReason, detail = "") {
 }
 function attachSupplementCitation(result, citation) {
   if (result?.status !== "需补充资料" || result?.sourceSnippetText) return result;
+  const aiReason = result.aiReason || result.evidence || "";
   if (!citation) {
     return {
       ...result,
+      aiReason,
       source: result.source || "未找到可参考来源片段",
       sourceSnippetText: "",
     };
@@ -325,6 +330,7 @@ function attachSupplementCitation(result, citation) {
   const preview = text.slice(0, 500);
   return {
     ...result,
+    aiReason,
     source: `未找到可支撑当前字段的资料依据；可参考 ${citation.source}`,
     evidence: `${result.evidence || "证据不足，无法直接写入。"}\n可参考相近原文：${preview}`,
     sourceSnippetText: text,

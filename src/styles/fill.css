@@ -963,12 +963,37 @@
 .placeholder-fill-evidence {
   min-width: 0;
   margin: -2px 0 0;
+  padding: 8px 9px;
+  border: 1px solid #e3eaf4;
+  border-radius: 7px;
+  background: #f8fbff;
   color: #738096;
   font-size: 12px;
   line-height: 1.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.placeholder-fill-evidence dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.placeholder-fill-evidence div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.placeholder-fill-evidence dt {
+  color: #516178;
+  font-weight: 800;
+}
+
+.placeholder-fill-evidence dd {
+  min-width: 0;
+  margin: 0;
+  color: #25324a;
+  overflow-wrap: anywhere;
 }
 
 .placeholder-anchor-state {

@@ -143,6 +143,7 @@ function buildPlaceholderFillCards(variables = [], anchors = [], fills = {}) {
         status: fill.status || "未填充",
         confidence: Number(fill.confidence || 0),
         source: fill.source || "待上传资料后生成",
+        aiReason: fill.aiReason || "",
         evidence: fill.evidence || "",
         sourceSnippetText: fill.sourceSnippetText || "",
       };

@@ -182,7 +182,7 @@ function extractChoiceReplacementCandidate(field = {}, knowledgeSnippets = [], m
       const value = sliceChoiceReplacementText(text, matched.at);
       if (!value) return null;
       const source = type === "knowledge"
-        ? `知识库${index + 1}（${item.scope === "global" ? "全局库" : "项目库"}｜${item.documentName || "未命名资料"} 片段${item.chunkIndex || index + 1}）`
+        ? `知识库${index + 1}（${item.scope === "global" ? "全局库" : "项目库"}｜${item.documentName || "未命名资料"} ${formatSnippetLocation(item, index)}）`
         : `临时资料${index + 1}（${item.name || "未命名资料"}｜片段${item.chunkIndex || index + 1}）`;
       return { text: value, source, score: scoreChoiceReplacementCandidate(field, text, 100 - matched.termIndex) };
     })
@@ -250,7 +250,7 @@ function extractParagraphSourceCandidate(field = {}, modelContext = {}, knowledg
       const score = scoreParagraphSourceCandidate(text, terms, modelContext, Number(item.score || 0), sourceReferenced);
       if (score < 4) return null;
       const source = type === "knowledge"
-        ? `知识库${index + 1}（${item.scope === "global" ? "全局库" : "项目库"}｜${item.documentName || "未命名资料"} 片段${item.chunkIndex || index + 1}）`
+        ? `知识库${index + 1}（${item.scope === "global" ? "全局库" : "项目库"}｜${item.documentName || "未命名资料"} ${formatSnippetLocation(item, index)}）`
         : `临时资料${index + 1}（${item.name || "未命名资料"}｜片段${item.chunkIndex || index + 1}）`;
       return {
         text: sliceParagraphSourceText(text, terms),
@@ -331,6 +331,10 @@ function sliceParagraphSourceText(text, terms = []) {
     .filter((index) => index >= 0);
   const start = starts.length ? Math.min(...starts) : 0;
   return normalized.slice(start > 120 ? start : 0, start > 120 ? start + 2000 : 2000).trim();
+}
+
+function formatSnippetLocation(item = {}, index = 0) {
+  return item.page ? `第${item.page}页` : `片段${item.chunkIndex || index + 1}`;
 }
 
 function sanitizeChoiceFillResult(field, parsed, value, source, evidence) {

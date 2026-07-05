@@ -2,6 +2,14 @@ import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Info, Loader2, Wand2 } from "lucide-react";
 import StatusPill from "../../components/StatusPill.jsx";
 
+function normalizeEvidenceText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function getPlaceholderReason(card) {
+  return normalizeEvidenceText(card.aiReason) || (card.status === "需补充资料" ? normalizeEvidenceText(card.evidence) : "");
+}
+
 function PlaceholderFillCards({
   cards,
   currentPage,
@@ -89,7 +97,24 @@ function PlaceholderFillCards({
                       写入
                     </button>
                   </div>
-                  {card.evidence ? <p className="placeholder-fill-evidence" title={card.evidence}>{card.evidence}</p> : null}
+                  {(card.aiReason || card.source || card.sourceSnippetText || card.evidence) && card.status !== "未填充" ? (
+                    <div className="placeholder-fill-evidence">
+                      <dl>
+                        <div>
+                          <dt>AI判断原因</dt>
+                          <dd>{getPlaceholderReason(card) || "AI 未返回明确判断原因。"}</dd>
+                        </div>
+                        <div>
+                          <dt>原文位置</dt>
+                          <dd>{card.source || "未找到原文位置"}</dd>
+                        </div>
+                        <div>
+                          <dt>相关原文</dt>
+                          <dd>{card.sourceSnippetText || card.evidence || "暂无相关原文描述。"}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  ) : null}
                   <button
                     className="placeholder-card-toggle"
                     type="button"

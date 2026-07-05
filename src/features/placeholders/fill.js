@@ -52,6 +52,7 @@ async function requestPlaceholderAiFill(card, { materials, knowledgeOptions }) {
     status: result.status || (result.value ? "待确认" : "需补充资料"),
     confidence: result.confidence || 0,
     source: result.source || "AI 基于上传资料生成",
+    aiReason: result.aiReason || result.reason || "",
     evidence: result.evidence || "AI 未返回明确证据。",
     sourceSnippetText: result.sourceSnippetText || "",
   };
@@ -63,6 +64,7 @@ function markPlaceholderFillFailure(fill, writeResult) {
     status: "需补充资料",
     confidence: 0,
     source: "OnlyOffice 写入失败",
+    aiReason: fill.aiReason || "",
     evidence: writeResult?.error || "未收到 OnlyOffice 自动字段写入回执，请确认填充预览已打开并重新尝试。",
     sourceSnippetText: fill.sourceSnippetText || "",
   };
@@ -74,6 +76,7 @@ function createPlaceholderFillError(error, previousValue = "") {
     status: "需补充资料",
     confidence: 0,
     source: "AI 填充失败",
+    aiReason: "",
     evidence: error?.message || "请检查模型配置、网络或上传资料。",
     sourceSnippetText: "",
   };
@@ -86,6 +89,7 @@ function createManualPlaceholderFill(value, currentFill = {}) {
     status: "待确认",
     confidence: currentFill.confidence || 100,
     source: currentFill.source || "人工修改",
+    aiReason: currentFill.aiReason || "",
     evidence: currentFill.evidence || "用户手动填写并写入自动字段。",
   };
 }
@@ -96,6 +100,7 @@ function createEditedPlaceholderFill(value) {
     status: value.trim() ? "待确认" : "未填充",
     confidence: value.trim() ? 100 : 0,
     source: value.trim() ? "人工修改" : "待上传资料后生成",
+    aiReason: "",
     evidence: value.trim() ? "用户手动修改自动字段填充值。" : "",
     sourceSnippetText: "",
   };
