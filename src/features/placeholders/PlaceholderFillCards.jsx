@@ -11,7 +11,15 @@ function PlaceholderFillCards({
   onApplyValue,
   onJumpAnchor,
 }) {
+  const [collapsedCards, setCollapsedCards] = useState({});
   const [collapsedVariables, setCollapsedVariables] = useState({});
+
+  function toggleCard(variableId) {
+    setCollapsedCards((current) => ({
+      ...current,
+      [variableId]: !(current[variableId] ?? true),
+    }));
+  }
 
   function toggleVariable(variableId) {
     setCollapsedVariables((current) => ({
@@ -35,6 +43,7 @@ function PlaceholderFillCards({
     <section className="placeholder-fill-panel">
       <div className="placeholder-fill-list">
         {cards.map((card) => {
+          const cardExpanded = collapsedCards[card.id] === false;
           const expanded = collapsedVariables[card.id] === false;
           const listId = `placeholder-fill-anchor-list-${card.id}`;
           const isGenerating = card.status === "生成中";
@@ -42,7 +51,18 @@ function PlaceholderFillCards({
           return (
             <article className="placeholder-variable-card placeholder-fill-card" key={card.id}>
               <div className="placeholder-card-header">
-                <strong title={card.name}>{card.name}</strong>
+                <div className="placeholder-card-title">
+                  <strong title={card.name}>{card.name}</strong>
+                  <button
+                    className="placeholder-card-collapse-button"
+                    type="button"
+                    aria-expanded={cardExpanded}
+                    onClick={() => toggleCard(card.id)}
+                    title={cardExpanded ? "收起字段" : "展开字段"}
+                  >
+                    {cardExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  </button>
+                </div>
                 <div className="placeholder-fill-actions">
                   <StatusPill status={card.status} />
                   <button
@@ -57,48 +77,52 @@ function PlaceholderFillCards({
                   </button>
                 </div>
               </div>
-              <div className="placeholder-fill-value">
-                <input
-                  value={card.value}
-                  placeholder="待一键填充"
-                  onChange={(event) => onUpdateValue?.(card.id, event.target.value)}
-                />
-                <button className="text-button" type="button" onClick={() => onApplyValue?.(card.id)} disabled={!canApply}>
-                  写入
-                </button>
-              </div>
-              {card.evidence ? <p className="placeholder-fill-evidence" title={card.evidence}>{card.evidence}</p> : null}
-              <button
-                className="placeholder-card-toggle"
-                type="button"
-                aria-expanded={expanded}
-                aria-controls={listId}
-                onClick={() => toggleVariable(card.id)}
-              >
-                <span>已插入总数 {card.insertedCount}</span>
-                {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              </button>
-              {expanded ? (
-                <div className="placeholder-card-anchor-list" id={listId}>
-                  <div className="placeholder-anchor-head">
-                    <span>序号</span>
-                    <span>页面</span>
-                    <span>状态</span>
+              {cardExpanded ? (
+                <>
+                  <div className="placeholder-fill-value">
+                    <input
+                      value={card.value}
+                      placeholder="待一键填充"
+                      onChange={(event) => onUpdateValue?.(card.id, event.target.value)}
+                    />
+                    <button className="text-button" type="button" onClick={() => onApplyValue?.(card.id)} disabled={!canApply}>
+                      写入
+                    </button>
                   </div>
-                  {card.anchors.map((anchor, index) => (
-                    <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
-                      <span className="row-index">{index + 1}</span>
-                      <button
-                        className={Number(anchor.page) === Number(currentPage) ? "placeholder-page-link is-current" : "placeholder-page-link"}
-                        type="button"
-                        onClick={() => onJumpAnchor?.(anchor)}
-                      >
-                        {anchor.pageLabel}
-                      </button>
-                      <span className="placeholder-anchor-state">书签</span>
+                  {card.evidence ? <p className="placeholder-fill-evidence" title={card.evidence}>{card.evidence}</p> : null}
+                  <button
+                    className="placeholder-card-toggle"
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-controls={listId}
+                    onClick={() => toggleVariable(card.id)}
+                  >
+                    <span>已插入总数 {card.insertedCount}</span>
+                    {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  </button>
+                  {expanded ? (
+                    <div className="placeholder-card-anchor-list" id={listId}>
+                      <div className="placeholder-anchor-head">
+                        <span>序号</span>
+                        <span>页面</span>
+                        <span>状态</span>
+                      </div>
+                      {card.anchors.map((anchor, index) => (
+                        <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
+                          <span className="row-index">{index + 1}</span>
+                          <button
+                            className={Number(anchor.page) === Number(currentPage) ? "placeholder-page-link is-current" : "placeholder-page-link"}
+                            type="button"
+                            onClick={() => onJumpAnchor?.(anchor)}
+                          >
+                            {anchor.pageLabel}
+                          </button>
+                          <span className="placeholder-anchor-state">书签</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  ) : null}
+                </>
               ) : null}
             </article>
           );
