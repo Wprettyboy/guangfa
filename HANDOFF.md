@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-04
+更新时间：2026-07-05
 
 ## 新会话先读
 
@@ -93,6 +93,15 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
 
+### 本地 API 管理
+
+- `server/api/index.js`：本地 API 注册表入口，负责注册当前已迁移的路由并生成统一 middleware。
+- `server/api/registry.js`：接口注册与 `:param` 路径匹配；新增接口优先通过 `defineRoute()` 登记，不要继续在 Vite 中间件里堆分支。
+- `server/api/router.js`：统一分发已注册路由，并提供 `/api/_meta/routes` 与 `/api/_meta/openapi.json`。
+- `server/api/openapi.js`：从注册表生成轻量 OpenAPI 3.0.3 文档；只描述通用入参、响应和路径，不写业务说明长文。
+- `server/api/http.js`：通用 JSON body、JSON 响应、二进制响应辅助。
+- `server/api/routes/*.routes.js`：按模块存放已迁移 API 的路由定义；handler 应调用现有业务模块，不在路由文件里重写业务规则。
+
 ### AI / 知识库高频区
 
 - `server/ai.js`：AI 路由分发入口；保持薄，不要放业务规则。
@@ -103,7 +112,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/ai/format-outline.js`：格式/大纲 AI 审查接口。
 - `server/ai/model.js`：模型调用封装。
 - `server/ai/debug-log.js`：AI 填充调试日志。
-- `server/knowledge-base.js`：知识库管理、检索与召回。
+- `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
+- `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
 
 ### 样式高频区
 
@@ -137,6 +147,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 3. 模板标注以 OnlyOffice 真实选区为准，字段保存的是选区原文、页码、bookmark/selection/inputPoint 等信息。
 4. 填充确认工作台优先用 OnlyOffice 现场写入与下载回传保存，避免旧 HTML DOCX 预览链路导致状态丢失。
 5. 格式审核工作台保留脚本审查 + AI 大纲审查；修复仍由脚本写 DOCX 副本。
+6. 本地接口开始迁移到 `server/api/` 注册表：当前只迁移知识库接口，其他 AI、OnlyOffice、模板、设置接口仍保持原中间件，后续按模块逐步迁移。
 
 ## 最近已完成
 
@@ -155,6 +166,14 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/onlyoffice-outline-probe.js` 已将原只能开启的 `enableTrackRevisions()` 扩展为 `setTrackRevisions(enabled)`，可主动关闭修订模式；`scripts/patch-onlyoffice.py` 的 `guangfa-outline-probe.js?gf=` 已更新到 `60`。
 - 一键填充期间如果写入字段导致 OnlyOffice 选区跳到字段所在页，`scripts/onlyoffice-outline-probe.js` 会在 `suppressPageSync` 分支记录写入前可见页并在写入后用 `WordControl.GoToPage` 拉回，避免进度中途停在第一页；脚本缓存号已更新到 `60`。
 - 已修复修订模式“常关”：`server/office.js` 下发 `permissions.review=true`，填充预览在 `onDocumentReady` 后补发修订状态，`scripts/onlyoffice-outline-probe.js` 不再把编辑器 API 未就绪误判为设置成功；脚本缓存号已更新到 `60`。
+
+### 本地 API 注册表
+
+- 已新增 `server/api/` 轻量注册表，用代码维护接口清单，避免把接口长期散写在交接文档或 Vite middleware 分支里。
+- Vite dev server 当前挂载 `apiMiddleware()`；注册表内置 `GET /api/_meta/routes` 查看已登记接口，`GET /api/_meta/openapi.json` 生成 OpenAPI 3.0.3 文档。
+- 当前只迁移知识库接口：`/api/knowledge-bases`、`/api/knowledge-bases/search`、知识库资料上传/删除/重建索引、`/api/knowledge-documents/:documentId/file`。
+- 迁移后的知识库路由只做协议层定义，仍调用 `server/knowledge/documents.js` 中的原有业务函数；`server/knowledge-base.js` 保留兼容导出。
+- 后续新增或迁移本地 API 时，优先新增对应 `server/api/routes/<module>.routes.js`，在 `server/api/index.js` 注册；不要把 handler 写成大路由分发文件。
 
 ### OnlyOffice 通用接口与本地封装
 
