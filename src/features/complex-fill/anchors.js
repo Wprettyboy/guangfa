@@ -74,11 +74,6 @@ function normalizeComplexFillAnchor(anchor = {}, order = 1, existing = null) {
   const bookmarkName = String(anchor.bookmarkName || existing?.bookmarkName || buildComplexFillBookmarkName(fieldId, index));
   if (!fieldId || !bookmarkName) return null;
   const page = Math.max(1, Number(anchor.page || existing?.page || 1) || 1);
-  const selectionState = Array.isArray(anchor.selectionState)
-    ? anchor.selectionState
-    : Array.isArray(existing?.selectionState)
-      ? existing.selectionState
-      : null;
   return {
     id: String(existing?.id || anchor.anchorId || anchor.id || `CFA-${String(order).padStart(3, "0")}`),
     fieldId,
@@ -89,7 +84,6 @@ function normalizeComplexFillAnchor(anchor = {}, order = 1, existing = null) {
     index,
     documentOrder: Math.max(1, Number(anchor.documentOrder || existing?.documentOrder || page * 1000000 + index) || page * 1000000 + index),
     createdAt: Number(anchor.createdAt || existing?.createdAt || Date.now()),
-    ...(selectionState ? { selectionState } : {}),
   };
 }
 
