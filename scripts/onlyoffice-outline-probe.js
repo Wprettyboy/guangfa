@@ -85,6 +85,24 @@
     return "";
   }
 
+  function readCurrentSelectedText() {
+    return readSelectedText(getLogicDocument()) || readSelectedText(getEditorApi()) || readSelectedText(window.Asc?.editor);
+  }
+
+  function isCurrentSelectionEmpty() {
+    const logicDocument = getLogicDocument();
+    try {
+      return Boolean(logicDocument && typeof logicDocument.IsSelectionEmpty === "function" && logicDocument.IsSelectionEmpty(true));
+    } catch {
+      return false;
+    }
+  }
+
+  function matchesExpectedSelectionText(selectedText, expectedText) {
+    const expected = normalizeSelectionText(expectedText);
+    return !expected || normalizeSelectionText(selectedText) === expected;
+  }
+
   function extractOnlyOfficeSelection() {
     const api = getEditorApi();
     const logicDocument = getLogicDocument();
@@ -273,6 +291,21 @@
     return logicManager;
   }
 
+  function getApiDocument() {
+    const attempts = [
+      () => window.Api?.GetDocument?.(),
+      () => window.AscBuilder?.Word?.Api?.GetDocument?.(),
+      () => window.AscBuilder?.Api?.GetDocument?.(),
+    ];
+    for (const attempt of attempts) {
+      try {
+        const documentApi = attempt();
+        if (documentApi && typeof documentApi.GetRangeBySelect === "function") return documentApi;
+      } catch {}
+    }
+    return null;
+  }
+
   function getComplexFillBookmarkName(item) {
     if (item?.bookmarkName) return String(item.bookmarkName);
     const id = String(item?.id || "").trim();
@@ -427,9 +460,60 @@
     return selected;
   }
 
+  function addComplexFillSelectionBookmark(manager, bookmarkName, selectionState, expectedText) {
+    if (!manager || !bookmarkName) return { ok: false, bookmarkName, error: "复杂类填充选区书签接口不可用" };
+    removeBookmark(manager, bookmarkName);
+    restoreSelectionState(selectionState);
+
+    const liveSelectedText = readCurrentSelectedText();
+    if (!liveSelectedText || isCurrentSelectionEmpty()) {
+      return { ok: false, bookmarkName, error: "当前选区为空，请重新选择要整体替换的模板文字。" };
+    }
+
+    const documentApi = getApiDocument();
+    if (documentApi) {
+      try {
+        const range = documentApi.GetRangeBySelect();
+        if (range && typeof range.AddBookmark === "function") {
+          const added = range.AddBookmark(bookmarkName);
+          const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
+          const selectedText = selected.ok ? readCurrentSelectedText() : "";
+          if (added !== false && selected.ok && selectedText && !isCurrentSelectionEmpty()) {
+            if (!matchesExpectedSelectionText(selectedText, expectedText)) {
+              removeBookmark(manager, bookmarkName);
+              return { ok: false, bookmarkName, error: "复杂类填充选区书签范围与当前选区不一致，请重新标注。", selectedText };
+            }
+            return { ...selected, selectedText, source: "api-range-add-bookmark" };
+          }
+          removeBookmark(manager, bookmarkName);
+        }
+      } catch {}
+    }
+
+    restoreSelectionState(selectionState);
+    try {
+      const added = manager.AddBookmark(bookmarkName);
+      const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
+      const selectedText = selected.ok ? readCurrentSelectedText() : "";
+      if (added !== false && selected.ok && selectedText && !isCurrentSelectionEmpty()) {
+        if (!matchesExpectedSelectionText(selectedText, expectedText)) {
+          removeBookmark(manager, bookmarkName);
+          return { ok: false, bookmarkName, error: "复杂类填充选区书签范围与当前选区不一致，请重新标注。", selectedText };
+        }
+        return { ...selected, selectedText, source: "document-add-bookmark" };
+      }
+      removeBookmark(manager, bookmarkName);
+      return { ok: false, bookmarkName, error: "复杂类填充选区书签为空，请重新选择模板文字后再建立标签。" };
+    } catch (error) {
+      removeBookmark(manager, bookmarkName);
+      return { ok: false, bookmarkName, error: error?.message || "复杂类填充选区书签写入失败" };
+    }
+  }
+
   function selectComplexFillAnchorRangeForMutation(manager, anchor) {
     const bookmarkName = getComplexFillBookmarkName(anchor);
     const selectionBookmarkName = getComplexFillSelectionBookmarkName(anchor);
+    const expectedText = anchor?.sourceText || anchor?.selectedText || "";
     const names = [selectionBookmarkName, bookmarkName].filter(function (name, index, items) {
       return name && items.indexOf(name) === index;
     });
@@ -437,15 +521,55 @@
     for (let index = 0; index < names.length; index += 1) {
       const selected = selectComplexFillBookmarkForMutation(manager, names[index]);
       if (selected.ok) {
-        return {
+        const selectedText = readCurrentSelectedText();
+        if (selectedText && !isCurrentSelectionEmpty() && matchesExpectedSelectionText(selectedText, expectedText)) {
+          return {
+            ...selected,
+            bookmarkName,
+            selectionBookmarkName,
+            activeBookmarkName: names[index],
+            usedSelectionBookmark: names[index] === selectionBookmarkName,
+            selectedText,
+          };
+        }
+        const textFailure = {
           ...selected,
-          bookmarkName,
-          selectionBookmarkName,
-          activeBookmarkName: names[index],
-          usedSelectionBookmark: names[index] === selectionBookmarkName,
+          ok: false,
+          error: selectedText ? "复杂类填充书签范围与原选区不一致，请重新标注并保存模板。" : "复杂类填充书签选区为空，请重新标注并保存模板。",
+          selectedText,
         };
+        if (!firstFailure) firstFailure = textFailure;
+        continue;
       }
       if (!firstFailure) firstFailure = selected;
+    }
+    if (anchor?.selectionState && restoreSelectionState(anchor.selectionState)) {
+      const selectedText = readCurrentSelectedText();
+      if (selectedText && !isCurrentSelectionEmpty() && matchesExpectedSelectionText(selectedText, expectedText)) {
+        const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+        return {
+          ok: true,
+          bookmarkName,
+          selectionBookmarkName,
+          activeBookmarkName: "selection-state",
+          usedSelectionBookmark: false,
+          selected: true,
+          moved: false,
+          page: pageInfo.page,
+          pageSource: pageInfo.source,
+          selectedText,
+          source: "selection-state",
+        };
+      }
+      if (!firstFailure) {
+        firstFailure = {
+          ok: false,
+          bookmarkName,
+          selectionBookmarkName,
+          error: selectedText ? "复杂类填充选区状态与原选区不一致，请重新标注并保存模板。" : "复杂类填充选区状态为空，请重新标注并保存模板。",
+          selectedText,
+        };
+      }
     }
     return {
       ...(firstFailure || { ok: false, bookmarkName, error: "未找到对应复杂类填充书签" }),
@@ -556,11 +680,8 @@
     }
 
     try {
-      restoreSelectionState(selection.selectionState);
       removeBookmark(manager, bookmarkName);
-      removeBookmark(manager, selectionBookmarkName);
-      manager.AddBookmark(selectionBookmarkName);
-      const selected = selectComplexFillBookmarkForMutation(manager, selectionBookmarkName);
+      const selected = addComplexFillSelectionBookmark(manager, selectionBookmarkName, selection.selectionState, selection.text);
       if (!selected.ok) {
         removeBookmark(manager, selectionBookmarkName);
         removeBookmark(manager, bookmarkName);
@@ -573,7 +694,8 @@
         return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, selectionBookmarkName, error: businessBookmark.error || "复杂类填充业务书签写入失败" });
       }
       selectBookmarkRange(manager, selectionBookmarkName);
-      const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+      const anchoredSelectionState = safeCall(getLogicDocument(), "GetSelectionState", null) || selection.selectionState;
+      const pageInfo = extractOnlyOfficePage(anchoredSelectionState);
       const page = pageInfo.page || selection.page || 1;
       saveOnlyOfficeDocument("complex-fill-anchor");
       return postComplexFillResult("complex-fill-anchor-added", {
@@ -587,7 +709,7 @@
           selectionBookmarkName,
           page,
           sourceText: selection.text,
-          selectionState: selection.selectionState,
+          selectionState: anchoredSelectionState,
           fieldSummary: anchor.fieldSummary || "",
           index: Math.max(1, Number(anchor.index || 1) || 1),
           documentOrder: page * 1000000 + Math.max(1, Number(anchor.index || 1) || 1),
