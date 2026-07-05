@@ -68,6 +68,10 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  function compactSelectionText(value) {
+    return normalizeSelectionText(value).replace(/\s/g, "");
+  }
+
   function readSelectedText(target) {
     const options = { NewLine: true, ParaSeparator: "\n", Numbering: false };
     const attempts = [
@@ -83,6 +87,12 @@
       } catch {}
     }
     return "";
+  }
+
+  function readCurrentSelectedText() {
+    const logicDocument = getLogicDocument();
+    const api = getEditorApi();
+    return readSelectedText(logicDocument) || readSelectedText(api) || readSelectedText(window.Asc?.editor);
   }
 
   function extractOnlyOfficeSelection() {
@@ -475,13 +485,15 @@
       return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, error: "复杂类填充书签接口不可用" });
     }
 
-    restoreSelectionState(selection.selectionState);
     try {
-      const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
       restoreSelectionState(selection.selectionState);
       if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
       manager.AddBookmark(bookmarkName);
-      const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+      const selected = selectBookmarkRange(manager, bookmarkName);
+      const highlight = selected.ok ? applyTextHighlightToCurrentSelection(complexFillHighlightColor) : null;
+      if (selected.ok) selectBookmarkRange(manager, bookmarkName);
+      const anchoredSelectionState = safeCall(getLogicDocument(), "GetSelectionState", null) || selection.selectionState;
+      const pageInfo = extractOnlyOfficePage(anchoredSelectionState);
       const page = pageInfo.page || selection.page || 1;
       saveOnlyOfficeDocument("complex-fill-anchor");
       return postComplexFillResult("complex-fill-anchor-added", {
@@ -494,6 +506,7 @@
           bookmarkName,
           page,
           sourceText: selection.text,
+          selectionState: anchoredSelectionState,
           fieldSummary: anchor.fieldSummary || "",
           index: Math.max(1, Number(anchor.index || 1) || 1),
           documentOrder: page * 1000000 + Math.max(1, Number(anchor.index || 1) || 1),
@@ -532,13 +545,63 @@
     }
   }
 
+  function ensureComplexFillReplacementSelection(anchor) {
+    const expected = compactSelectionText(anchor?.sourceText);
+    if (!expected) return { ok: true, source: "bookmark-selection", selectedText: readCurrentSelectedText() };
+
+    let selectedText = readCurrentSelectedText();
+    let compactSelected = compactSelectionText(selectedText);
+    if (compactSelected === expected) return { ok: true, source: "matched-selection", selectedText };
+    if (!compactSelected || !expected.startsWith(compactSelected)) {
+      return { ok: false, selectedText, error: "复杂类填充书签范围与原选区不匹配，请重新标注并保存模板。" };
+    }
+
+    const logicDocument = getLogicDocument();
+    if (!logicDocument || typeof logicDocument.MoveCursorRight !== "function") {
+      return { ok: false, selectedText, error: "复杂类填充选区补偿接口不可用，请重新标注并保存模板。" };
+    }
+
+    const maxMoves = Math.min(120, Math.max(12, normalizeSelectionText(anchor?.sourceText).length * 4));
+    try {
+      for (let index = 0; index < maxMoves; index += 1) {
+        logicDocument.MoveCursorRight(true, false);
+        selectedText = readCurrentSelectedText();
+        compactSelected = compactSelectionText(selectedText);
+        if (compactSelected === expected) {
+          return { ok: true, source: "expanded-bookmark-selection", selectedText, moves: index + 1 };
+        }
+        if (compactSelected && !expected.startsWith(compactSelected)) break;
+      }
+    } catch (error) {
+      return { ok: false, selectedText, error: error?.message || "复杂类填充选区补偿失败，请重新标注并保存模板。" };
+    }
+    return { ok: false, selectedText, error: "复杂类填充书签范围与原选区不匹配，请重新标注并保存模板。" };
+  }
+
+  function selectComplexFillReplacementRange(anchor, manager, bookmarkName) {
+    if (anchor?.selectionState && restoreSelectionState(anchor.selectionState)) {
+      const ensured = ensureComplexFillReplacementSelection(anchor);
+      if (ensured.ok) {
+        const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+        return { ok: true, bookmarkName, page: pageInfo.page, pageSource: pageInfo.source, selected: true, selectionSource: ensured.source, selectedText: ensured.selectedText };
+      }
+    }
+
+    const selected = selectBookmarkRange(manager, bookmarkName);
+    if (!selected.ok) return selected;
+    const ensured = ensureComplexFillReplacementSelection(anchor);
+    return ensured.ok
+      ? { ...selected, selectionSource: ensured.source, selectedText: ensured.selectedText, expandedMoves: ensured.moves || 0 }
+      : { ...selected, ok: false, selectedText: ensured.selectedText, error: ensured.error };
+  }
+
   function fillComplexFillAnchor(anchor, value) {
     const bookmarkName = String(anchor?.bookmarkName || "");
     const manager = getBookmarkManager();
     if (!manager || !bookmarkName) {
       return { ok: false, bookmarkName, error: "复杂类填充书签接口不可用" };
     }
-    const selected = selectBookmarkRange(manager, bookmarkName);
+    const selected = selectComplexFillReplacementRange(anchor, manager, bookmarkName);
     if (!selected.ok) return selected;
     try {
       const removeResult = removeSelectedTextForReplacement();
@@ -557,6 +620,8 @@
         page: bookmarkResult.page || selected.page || currentSelectionPage(),
         source: insertResult.source,
         removeSource: removeResult.source,
+        selectionSource: selected.selectionSource,
+        expandedMoves: selected.expandedMoves || 0,
       };
     } catch (error) {
       return { ok: false, bookmarkName, page: selected.page, error: error?.message || "复杂类填充内容写入失败" };
