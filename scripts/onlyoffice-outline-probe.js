@@ -510,10 +510,11 @@
     }
   }
 
-  function selectComplexFillAnchorRangeForMutation(manager, anchor) {
+  function selectComplexFillAnchorRangeForMutation(manager, anchor, options = {}) {
     const bookmarkName = getComplexFillBookmarkName(anchor);
     const selectionBookmarkName = getComplexFillSelectionBookmarkName(anchor);
     const expectedText = anchor?.sourceText || anchor?.selectedText || "";
+    const requireExpectedText = options.requireExpectedText !== false;
     const names = [selectionBookmarkName, bookmarkName].filter(function (name, index, items) {
       return name && items.indexOf(name) === index;
     });
@@ -522,7 +523,7 @@
       const selected = selectComplexFillBookmarkForMutation(manager, names[index]);
       if (selected.ok) {
         const selectedText = readCurrentSelectedText();
-        if (selectedText && !isCurrentSelectionEmpty() && matchesExpectedSelectionText(selectedText, expectedText)) {
+        if (selectedText && !isCurrentSelectionEmpty() && (!requireExpectedText || matchesExpectedSelectionText(selectedText, expectedText))) {
           return {
             ...selected,
             bookmarkName,
@@ -724,7 +725,7 @@
     const requestId = payload.requestId || "";
     const anchor = payload.anchor || payload.item || {};
     const bookmarkName = String(payload.bookmarkName || anchor.bookmarkName || "");
-    const result = selectComplexFillAnchorRangeForMutation(getBookmarkManager(), { ...anchor, bookmarkName });
+    const result = selectComplexFillAnchorRangeForMutation(getBookmarkManager(), { ...anchor, bookmarkName }, { requireExpectedText: false });
     const highlight = result.ok ? applyTextHighlightToCurrentSelection(complexFillHighlightColor) : null;
     return postComplexFillResult("complex-fill-anchor-selected", { ...result, requestId, highlight });
   }
