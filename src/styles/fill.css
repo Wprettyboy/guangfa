@@ -581,11 +581,11 @@
   background: #f8fbff;
 }
 
-.placeholder-rich-toolbar button {
+.placeholder-rich-toolbar > button,
+.placeholder-common-text > button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
   height: 26px;
   border: 0;
   border-radius: 5px;
@@ -594,9 +594,113 @@
   cursor: pointer;
 }
 
-.placeholder-rich-toolbar button:hover {
+.placeholder-rich-toolbar > button {
+  width: 28px;
+}
+
+.placeholder-common-text > button {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.placeholder-rich-toolbar > button:hover,
+.placeholder-common-text > button:hover,
+.placeholder-common-text > button.active {
   color: #1f5eff;
   background: #eaf1ff;
+}
+
+.placeholder-common-text {
+  position: relative;
+  margin-left: auto;
+}
+
+.placeholder-common-menu {
+  position: absolute;
+  top: 31px;
+  right: 0;
+  z-index: 5;
+  display: grid;
+  gap: 8px;
+  width: min(360px, 72vw);
+  padding: 10px;
+  border: 1px solid #dce5f2;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(23, 36, 60, 0.18);
+}
+
+.placeholder-common-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.placeholder-common-form input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid #d8e0ec;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: #25324a;
+}
+
+.placeholder-common-form button,
+.placeholder-common-item > button:last-child {
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  color: #1f5eff;
+  background: #eaf1ff;
+  cursor: pointer;
+}
+
+.placeholder-common-form button {
+  padding: 0 10px;
+}
+
+.placeholder-common-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.placeholder-common-empty {
+  padding: 10px;
+  color: #7a879a;
+  font-size: 12px;
+  text-align: center;
+}
+
+.placeholder-common-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.placeholder-common-item > button:first-child {
+  min-width: 0;
+  height: auto;
+  min-height: 30px;
+  border: 1px solid #e3eaf4;
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #25324a;
+  background: #f8fbff;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder-common-item > button:first-child:hover {
+  border-color: #b8ccff;
+  background: #eef5ff;
 }
 
 .placeholder-rich-editor {

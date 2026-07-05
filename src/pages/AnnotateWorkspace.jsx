@@ -12,6 +12,8 @@ import { comparePlaceholderAnchors, labelPlaceholderAnchorPages } from "../featu
 import { getFillModeLabel, getTemplateFieldSourceText, normalizeFieldCategory, normalizeFillMode } from "../utils/fields.js";
 import { inferTemplateCategory, normalizeTemplateCategory } from "../utils/templates.js";
 
+const promptCommonTextStorageKey = "guangfa.placeholderPrompt.commonTexts";
+
 function AnnotateWorkspace({
   templateFile,
   fields,
@@ -364,6 +366,7 @@ function PlaceholderPanel({
           anchors={anchors}
           onAddVariable={onAddVariable}
           onRenameVariable={onRenameVariable}
+          onUpdateVariable={onUpdateVariable}
           onDeleteVariable={onDeleteVariable}
           onClose={() => setMaintenanceOpen(false)}
         />
@@ -374,6 +377,22 @@ function PlaceholderPanel({
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onUpdateVariable, onDeleteVariable, onClose }) {
   const [expandedPromptId, setExpandedPromptId] = useState("");
+  const [commonTexts, setCommonTexts] = useState(() => loadPromptCommonTexts());
+
+  function updateCommonTexts(nextTexts) {
+    setCommonTexts(nextTexts);
+    savePromptCommonTexts(nextTexts);
+  }
+
+  function addCommonText(text) {
+    const normalized = normalizeCommonText(text);
+    if (!normalized) return;
+    updateCommonTexts([normalized, ...commonTexts.filter((item) => item !== normalized)].slice(0, 20));
+  }
+
+  function deleteCommonText(text) {
+    updateCommonTexts(commonTexts.filter((item) => item !== text));
+  }
 
   return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -411,6 +430,9 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
                       expanded={expandedPromptId === variable.id}
                       onExpand={() => setExpandedPromptId(variable.id)}
                       onChange={(prompt) => onUpdateVariable?.(variable.id, { prompt })}
+                      commonTexts={commonTexts}
+                      onAddCommonText={addCommonText}
+                      onDeleteCommonText={deleteCommonText}
                     />
                   </label>
                   <button className="icon-button quiet" type="button" aria-label={`删除${variable.name || "字段"}`} onClick={() => onDeleteVariable?.(variable.id)}>
@@ -429,6 +451,25 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
   );
 }
 
+function normalizeCommonText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
+function loadPromptCommonTexts() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(promptCommonTextStorageKey) || "[]");
+    return Array.isArray(parsed) ? parsed.map(normalizeCommonText).filter(Boolean).slice(0, 20) : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePromptCommonTexts(texts) {
+  try {
+    window.localStorage.setItem(promptCommonTextStorageKey, JSON.stringify(texts));
+  } catch {}
+}
+
 function sanitizePromptHtml(html) {
   const value = String(html || "").trim();
   if (!value) return "";
@@ -445,8 +486,20 @@ function sanitizePromptHtml(html) {
   return container.innerHTML.replace(/<div><br><\/div>/g, "").trim();
 }
 
-function RichPromptEditor({ value, expanded, onExpand, onChange }) {
+function escapePromptText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/\n/g, "<br>");
+}
+
+function RichPromptEditor({ value, expanded, onExpand, onChange, commonTexts = [], onAddCommonText, onDeleteCommonText }) {
   const editorRef = useRef(null);
+  const lastRangeRef = useRef(null);
+  const [commonOpen, setCommonOpen] = useState(false);
+  const [commonDraft, setCommonDraft] = useState("");
 
   useEffect(() => {
     if (!editorRef.current || document.activeElement === editorRef.current) return;
@@ -458,10 +511,50 @@ function RichPromptEditor({ value, expanded, onExpand, onChange }) {
     onChange?.(sanitizePromptHtml(editorRef.current?.innerHTML || ""));
   }
 
+  function saveSelection() {
+    const editor = editorRef.current;
+    const selection = window.getSelection?.();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) {
+      lastRangeRef.current = range.cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const editor = editorRef.current;
+    const range = lastRangeRef.current;
+    const selection = window.getSelection?.();
+    if (!editor || !range || !selection) {
+      editor?.focus();
+      return;
+    }
+    editor.focus();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
   function applyCommand(command) {
     editorRef.current?.focus();
     document.execCommand(command, false, null);
     emitChange();
+    saveSelection();
+  }
+
+  function insertCommonText(text) {
+    onExpand?.();
+    restoreSelection();
+    document.execCommand("insertHTML", false, escapePromptText(text));
+    emitChange();
+    saveSelection();
+    setCommonOpen(false);
+  }
+
+  function submitCommonText() {
+    const normalized = normalizeCommonText(commonDraft);
+    if (!normalized) return;
+    onAddCommonText?.(normalized);
+    setCommonDraft("");
   }
 
   return (
@@ -477,6 +570,46 @@ function RichPromptEditor({ value, expanded, onExpand, onChange }) {
           <button type="button" aria-label="列表" onMouseDown={(event) => event.preventDefault()} onClick={() => applyCommand("insertUnorderedList")}>
             <List size={14} />
           </button>
+          <div className="placeholder-common-text">
+            <button
+              type="button"
+              className={commonOpen ? "active" : ""}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                saveSelection();
+                setCommonOpen((open) => !open);
+              }}
+            >
+              常用文本
+            </button>
+            {commonOpen ? (
+              <div className="placeholder-common-menu" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="placeholder-common-form">
+                  <input
+                    value={commonDraft}
+                    placeholder="设置常用文本"
+                    onChange={(event) => setCommonDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitCommonText();
+                    }}
+                  />
+                  <button type="button" onClick={submitCommonText}>添加</button>
+                </div>
+                <div className="placeholder-common-list">
+                  {commonTexts.length === 0 ? (
+                    <span className="placeholder-common-empty">暂无常用文本</span>
+                  ) : commonTexts.map((text) => (
+                    <div className="placeholder-common-item" key={text}>
+                      <button type="button" title={text} onClick={() => insertCommonText(text)}>{text}</button>
+                      <button type="button" aria-label="删除常用文本" onClick={() => onDeleteCommonText?.(text)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
       <div
@@ -488,6 +621,9 @@ function RichPromptEditor({ value, expanded, onExpand, onChange }) {
         data-placeholder="点击编辑提示词"
         onFocus={onExpand}
         onInput={emitChange}
+        onKeyUp={saveSelection}
+        onMouseUp={saveSelection}
+        onBlur={saveSelection}
         suppressContentEditableWarning
       />
     </div>
