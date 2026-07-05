@@ -30,6 +30,7 @@ import KnowledgeBaseManagement from "./pages/KnowledgeBaseManagement.jsx";
 import FormatAuditWorkspace from "./pages/FormatAuditWorkspace.jsx";
 import AnnotateWorkspace from "./pages/AnnotateWorkspace.jsx";
 import FillWorkspace from "./pages/FillWorkspace.jsx";
+import LayoutWorkspace from "./pages/LayoutWorkspace.jsx";
 import {
   currentProjectId,
   documentSlots,
@@ -300,6 +301,8 @@ export default function App() {
           ? "系统设置"
           : activeWorkspace === "annotate"
             ? "模板标注工作台"
+            : activeWorkspace === "layout"
+              ? "排版工作台"
             : activeWorkspace === "audit"
               ? "格式审核工作台"
               : "填充确认工作台";
@@ -1912,6 +1915,12 @@ export default function App() {
                 填充确认工作台
               </button>
               <button
+                className={activeModule === "workspace" && activeWorkspace === "layout" ? "child-link active" : "child-link"}
+                onClick={() => animateWorkspace("layout")}
+              >
+                排版工作台
+              </button>
+              <button
                 className={activeModule === "workspace" && activeWorkspace === "audit" ? "child-link active" : "child-link"}
                 onClick={() => animateWorkspace("audit")}
               >
@@ -1982,6 +1991,13 @@ export default function App() {
                   填充确认工作台
                 </button>
                 <button
+                  className={activeWorkspace === "layout" ? "tab active" : "tab"}
+                  data-testid="tab-layout"
+                  onClick={() => animateWorkspace("layout")}
+                >
+                  排版工作台
+                </button>
+                <button
                   className={activeWorkspace === "audit" ? "tab active" : "tab"}
                   data-testid="tab-audit"
                   onClick={() => animateWorkspace("audit")}
@@ -2016,6 +2032,8 @@ export default function App() {
               />
             ) : activeModule === "settings" ? (
               <SystemSettings />
+            ) : activeWorkspace === "layout" ? (
+              <LayoutWorkspace />
             ) : activeWorkspace === "audit" ? (
               <FormatAuditWorkspace onStoreTemplate={storeAuditTemplate} />
             ) : activeWorkspace === "annotate" ? (

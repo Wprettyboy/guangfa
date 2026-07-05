@@ -37,8 +37,9 @@ unregister = '+function unregisterOnlyOfficeServiceWorker(){if("serviceWorker"in
 html = re.sub(r"\+function registerServiceWorker\(\)\{.*?\}\}\(\);", unregister, html)
 html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "", html)
 html = re.sub(r'\s*<script src="guangfa-placeholder-fields\.js\?gf=\d+"></script>', "", html)
+html = re.sub(r'\s*<script src="guangfa-layout-format\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=87"></script>\n<script src="guangfa-placeholder-fields.js?gf=31"></script>\n</body>')
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=87"></script>\n<script src="guangfa-placeholder-fields.js?gf=31"></script>\n<script src="guangfa-layout-format.js?gf=1"></script>\n</body>')
 html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=22"', html)
 if 'urlArgs: "gf=22"' not in html:
     html = html.replace(
@@ -54,6 +55,10 @@ if probe.exists():
 placeholder_probe = Path("/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/guangfa-placeholder-fields.js")
 if placeholder_probe.exists():
     rewrite_gzip(placeholder_probe)
+
+layout_probe = Path("/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/guangfa-layout-format.js")
+if layout_probe.exists():
+    rewrite_gzip(layout_probe)
 
 for api in [
     Path("/var/www/onlyoffice/documentserver/web-apps/apps/api/documents/api.js"),

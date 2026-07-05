@@ -63,6 +63,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/App.jsx`：根状态与工作台编排，目前仍偏重；只放跨页面状态、批量填充编排、草稿保存这类上层逻辑。
 - `src/pages/AnnotateWorkspace.jsx`：模板标注页面组合。
 - `src/pages/FillWorkspace.jsx`：填充工作台页面组合。
+- `src/pages/LayoutWorkspace.jsx`：排版工作台页面组合，复用 OnlyOffice 预览并调用排版 bridge。
 - `src/pages/FormatAuditWorkspace.jsx`：格式审核页面组合。
 
 ### 填充工作台高频区
@@ -75,6 +76,14 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/docx/fill/docxXmlFill.js`：填充导出兜底的 DOCX XML 回写、修订痕迹、选择/日期/标签写入。
 - `src/styles/fill.css`：填充工作台样式；字段卡片、依据原文、筛选条等样式优先改这里。
 
+### 排版工作台
+
+- `src/pages/LayoutWorkspace.jsx`：排版工作台编排，上传 DOCX、生成排版计划、调用 OnlyOffice 执行排版并导出。
+- `src/features/docx/layout/gbRules.js`：GB/T 9704-2012 第一版规则配置；只放规则参数，不写页面逻辑。
+- `src/features/docx/layout/FormatControls.jsx`：排版工作台右侧操作面板。
+- `src/styles/layout-format.css`：排版工作台样式。
+- `scripts/onlyoffice-layout-format.js`：注入 OnlyOffice 的排版执行脚本，接收 `apply-layout-format` 并调用 OnlyOffice 文档 API 设置页面、正文、标题和落款格式。
+
 ### OnlyOffice / DOCX 高频区
 
 - `src/features/docx/runtime.jsx`：DOCX/OnlyOffice 运行时主组件，只导出 `DocumentFrame`、页码显示和少量运行时工具；不要再当总出口文件。
@@ -85,6 +94,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/docx/preview/`：PDF/页面布局/大纲搜索等预览辅助模块。
 - `src/features/docx/structure/docxStructure.js`：DOCX 结构解析。
 - `scripts/onlyoffice-outline-probe.js`：注入 OnlyOffice 的桥接脚本，负责大纲、选区、页码、标注、输入点、保存、回填等消息。
+- `scripts/onlyoffice-layout-format.js`：注入 OnlyOffice 的排版脚本，负责公文排版动作执行和结果回传。
 - `src/features/placeholders/variables.js`：自动字段设置的变量/Token/锚点归一化、排序和填充卡片聚合工具，独立于旧模板字段。
 - `src/features/placeholders/fill.js`：自动字段填充的 AI 请求字段构造、返回值归一化和写入失败状态辅助。
 - `src/features/placeholders/PlaceholderFillCards.jsx`：填充工作台的自动字段卡片列表，只展示已有插入位置的字段。
@@ -219,6 +229,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，优先按 `GF_CF_SEL_` 选区范围书签定位并选中对应范围，旧数据无选区书签时才回退到 `GF_CF_`。
 - `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，删除 `GF_CF_` 业务书签；清高亮只通过 `GF_CF_SEL_` 选区范围书签定位，清除后保留 `GF_CF_SEL_`，不删除书签范围内的文档文字。
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
+- `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
 - `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
 - `requestOnlyOfficeDeletePlaceholderAnchor(anchor)`：发送 `delete-placeholder-anchor`，等待 `placeholder-anchor-deleted` 回传。
@@ -255,6 +266,12 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
+- `scripts/onlyoffice-layout-format.js`
+  - `applyLayoutPlan(plan)`：排版脚本入口，按计划执行页面、正文、标题、落款等动作并回传结果。
+  - `applyPageLayout(documentApi, action)`：优先通过 OnlyOffice section API 设置 A4 页面与页边距。
+  - `applyBodyLayout(paragraphs, action)`：给非标题正文段落设置字体、字号、首行缩进和行距。
+  - `applyHeadingLayout(paragraphs, action)`：按公文标题编号规则识别标题层级并套用标题格式。
+  - `applySignatureLayout(paragraphs, action)`：识别短落款/日期段落并右对齐。
 - `scripts/onlyoffice-placeholder-fields.js`
   - `getEditorApi()`、`getLogicDocument()`：同上，用于取得编辑器 API 和逻辑文档。
   - `getBookmarkManager()`：优先 `api.asc_GetBookmarksManager()`，其次 `logicDocument.GetBookmarksManager()`。
@@ -298,7 +315,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 #### 缓存与补丁
 
-- 改 `scripts/onlyoffice-outline-probe.js` 或 `scripts/onlyoffice-placeholder-fields.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
+- 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。

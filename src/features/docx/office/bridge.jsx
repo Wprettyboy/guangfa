@@ -16,6 +16,7 @@ import {
 let onlyOfficeFillRequestSeq = 0;
 let onlyOfficePlaceholderRequestSeq = 0;
 let onlyOfficeComplexFillRequestSeq = 0;
+let onlyOfficeLayoutRequestSeq = 0;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
@@ -162,6 +163,35 @@ function requestOnlyOfficeDocumentSave(trigger = "manual") {
     try {
       frame.contentWindow?.postMessage({ source: "guangfa-parent", action: "save-document", trigger }, "*");
     } catch {}
+  });
+}
+
+function requestOnlyOfficeApplyLayoutFormat(plan, options = {}) {
+  const requestId = options.requestId || `layout-${Date.now()}-${++onlyOfficeLayoutRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || 15000);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "layout-format-applied") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, summary: "OnlyOffice 未响应排版命令。", items: [] }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames({
+      source: "guangfa-parent",
+      action: "apply-layout-format",
+      requestId,
+      plan,
+    }, 8);
   });
 }
 
@@ -563,6 +593,7 @@ export {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
   requestOnlyOfficeAddComplexFillAnchor,
+  requestOnlyOfficeApplyLayoutFormat,
   requestOnlyOfficeDeleteComplexFillAnchor,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,

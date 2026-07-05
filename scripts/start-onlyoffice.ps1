@@ -90,6 +90,11 @@ if (Test-Path $placeholderProbe) {
   docker cp $placeholderProbe "${name}:/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/guangfa-placeholder-fields.js" | Out-Null
 }
 
+$layoutProbe = Join-Path $PSScriptRoot "onlyoffice-layout-format.js"
+if (Test-Path $layoutProbe) {
+  docker cp $layoutProbe "${name}:/var/www/onlyoffice/documentserver/web-apps/apps/documenteditor/main/guangfa-layout-format.js" | Out-Null
+}
+
 docker exec `
   -e LOCAL_AI_BASE_URL="$officeAiBaseUrl" `
   -e LOCAL_AI_MODEL="$localAiModel" `

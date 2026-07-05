@@ -127,7 +127,7 @@ function DocumentFrame({
   const [pageInput, setPageInput] = useState("1");
   const [zoomPercent, setZoomPercent] = useState(100);
   const isAuditPdfMode = mode === "audit";
-  const isOfficeMode = mode === "audit" || mode === "annotate" || mode === "fill";
+  const isOfficeMode = mode === "audit" || mode === "annotate" || mode === "fill" || mode === "layout";
   const canRenderDocx = Boolean(templateFile?.buffer);
   const isReady = renderState === "ready";
   const activePage = onPageChange ? currentPage : localPage;
