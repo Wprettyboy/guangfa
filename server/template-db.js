@@ -123,9 +123,9 @@ function replaceTemplatesInDatabase(database, templates) {
     `);
     const insertVariable = database.prepare(`
       INSERT INTO template_placeholder_variables (
-        template_id, id, name, token, sort_order, created_at, updated_at
+        template_id, id, name, token, prompt, sort_order, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertAnchor = database.prepare(`
       INSERT INTO template_placeholder_anchors (
@@ -215,6 +215,7 @@ function replaceTemplatesInDatabase(database, templates) {
           String(variable.id || `PV-${String(variableIndex + 1).padStart(3, "0")}`),
           String(variable.name || ""),
           String(variable.token || ""),
+          textOrNull(variable.prompt),
           variableIndex,
           Number(variable.createdAt || normalized.createdAt),
           now,
@@ -360,6 +361,7 @@ function rowToPlaceholderVariable(row) {
     id: row.id,
     name: row.name,
     token: row.token,
+    prompt: row.prompt || "",
     createdAt: row.created_at,
   };
 }
@@ -525,6 +527,9 @@ function columnExists(database, tableName, columnName) {
 }
 
 function ensureTemplateSchemaMigrations(database) {
+  if (!columnExists(database, "template_placeholder_variables", "prompt")) {
+    database.exec("ALTER TABLE template_placeholder_variables ADD COLUMN prompt TEXT");
+  }
   if (!columnExists(database, "template_complex_fill_anchors", "selection_bookmark_name")) {
     database.exec("ALTER TABLE template_complex_fill_anchors ADD COLUMN selection_bookmark_name TEXT");
     const rows = database.prepare("SELECT template_id, id, payload_json FROM template_complex_fill_anchors").all();
@@ -650,6 +655,7 @@ CREATE TABLE IF NOT EXISTS template_placeholder_variables (
   id TEXT NOT NULL,
   name TEXT NOT NULL,
   token TEXT NOT NULL,
+  prompt TEXT,
   sort_order INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,

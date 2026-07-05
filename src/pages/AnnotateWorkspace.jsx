@@ -31,6 +31,7 @@ function AnnotateWorkspace({
   onInputPointCaptured,
   onAddPlaceholderVariable,
   onRenamePlaceholderVariable,
+  onUpdatePlaceholderVariable,
   onDeletePlaceholderVariable,
   onInsertPlaceholderVariable,
   onJumpPlaceholderAnchor,
@@ -143,6 +144,7 @@ function AnnotateWorkspace({
             onTemplateCategoryChange={setTemplateCategory}
             onAddVariable={onAddPlaceholderVariable}
             onRenameVariable={onRenamePlaceholderVariable}
+            onUpdateVariable={onUpdatePlaceholderVariable}
             onDeleteVariable={onDeletePlaceholderVariable}
             onInsertVariable={onInsertPlaceholderVariable}
             onJumpAnchor={onJumpPlaceholderAnchor}
@@ -370,7 +372,7 @@ function PlaceholderPanel({
   );
 }
 
-function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onDeleteVariable, onClose }) {
+function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onUpdateVariable, onDeleteVariable, onClose }) {
   return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="placeholder-maintenance-modal" role="dialog" aria-modal="true" aria-label="自动字段维护" onMouseDown={(event) => event.stopPropagation()}>
@@ -396,6 +398,10 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
                   <label>
                     <span>字段名称</span>
                     <input value={variable.name} onChange={(event) => onRenameVariable?.(variable.id, event.target.value)} />
+                  </label>
+                  <label>
+                    <span>提示词</span>
+                    <input value={variable.prompt || ""} onChange={(event) => onUpdateVariable?.(variable.id, { prompt: event.target.value })} />
                   </label>
                   <button className="icon-button quiet" type="button" aria-label={`删除${variable.name || "字段"}`} onClick={() => onDeleteVariable?.(variable.id)}>
                     <Trash2 size={15} />

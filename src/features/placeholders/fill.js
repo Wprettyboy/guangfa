@@ -1,5 +1,6 @@
 function buildPlaceholderAiField(card) {
-  const context = `自动字段：${card.name}；模板标记：${card.token}`;
+  const prompt = String(card.prompt || "").trim();
+  const context = `自动字段：${card.name}；模板标记：${card.token}${prompt ? `；提示词：${prompt}` : ""}`;
   const field = {
     id: card.id,
     name: card.name,
@@ -7,9 +8,11 @@ function buildPlaceholderAiField(card) {
     templateContext: context,
     category: "填空",
     type: "填空",
-    question: `请从资料中提取“${card.name}”的字段值。`,
+    question: prompt || `请从资料中提取“${card.name}”的字段值。`,
     answerFormat: card.name,
-    aiInstruction: `根据知识库或上传资料自动获取“${card.name}”，只输出可替换模板标记的值。`,
+    aiInstruction: prompt
+      ? `根据知识库或上传资料自动获取“${card.name}”。补充提示：${prompt}。只输出可替换模板标记的值。`
+      : `根据知识库或上传资料自动获取“${card.name}”，只输出可替换模板标记的值。`,
     writeMode: "replace-placeholder-bookmark",
     hasInputPoint: true,
     inputPoint: { bookmarkName: card.anchors[0]?.bookmarkName || "" },

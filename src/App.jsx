@@ -892,19 +892,25 @@ export default function App() {
     setSaveState("dirty");
   }
 
-  function renamePlaceholderVariable(variableId, name) {
+  function updatePlaceholderVariable(variableId, patch) {
     const nextVariables = placeholderVariables.map((variable) =>
       variable.id === variableId
         ? {
             ...variable,
-            name: normalizePlaceholderName(name),
-            token: buildPlaceholderToken(name),
+            ...patch,
+            name: Object.prototype.hasOwnProperty.call(patch, "name") ? normalizePlaceholderName(patch.name) : variable.name,
+            token: Object.prototype.hasOwnProperty.call(patch, "name") ? buildPlaceholderToken(patch.name) : variable.token,
+            prompt: Object.prototype.hasOwnProperty.call(patch, "prompt") ? String(patch.prompt || "").trim() : variable.prompt,
           }
         : variable,
     );
     setPlaceholderVariables(nextVariables);
     updatePlaceholderDraftSnapshot(nextVariables);
     setSaveState("dirty");
+  }
+
+  function renamePlaceholderVariable(variableId, name) {
+    updatePlaceholderVariable(variableId, { name });
   }
 
   function removePlaceholderVariable(variableId) {
@@ -2040,6 +2046,7 @@ export default function App() {
                 onInputPointCaptured={applyTemplateInputPoint}
                 onAddPlaceholderVariable={addPlaceholderVariable}
                 onRenamePlaceholderVariable={renamePlaceholderVariable}
+                onUpdatePlaceholderVariable={updatePlaceholderVariable}
                 onDeletePlaceholderVariable={removePlaceholderVariable}
                 onInsertPlaceholderVariable={insertPlaceholderVariable}
                 onJumpPlaceholderAnchor={jumpToPlaceholderAnchor}

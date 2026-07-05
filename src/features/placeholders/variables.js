@@ -1,5 +1,5 @@
 const defaultPlaceholderVariables = [
-  { id: "PV-001", name: "项目名称", token: "{{项目名称}}", createdAt: 0 },
+  { id: "PV-001", name: "项目名称", token: "{{项目名称}}", prompt: "", createdAt: 0 },
 ];
 
 function normalizePlaceholderName(name) {
@@ -25,16 +25,19 @@ function createPlaceholderVariable(name = "新字段", variables = []) {
     id: getNextPlaceholderVariableId(variables),
     name: normalizedName,
     token: buildPlaceholderToken(normalizedName),
+    prompt: "",
     createdAt: Date.now(),
   };
 }
 
 function normalizePlaceholderVariable(variable = {}, index = 0) {
   const name = normalizePlaceholderName(variable.name || variable.label || variable.key) || `字段${index + 1}`;
+  const prompt = String(variable.prompt || variable.aiPrompt || variable.instruction || "").trim();
   return {
     id: String(variable.id || `PV-${String(index + 1).padStart(3, "0")}`),
     name,
     token: buildPlaceholderToken(name),
+    prompt,
     createdAt: Number(variable.createdAt || 0),
   };
 }

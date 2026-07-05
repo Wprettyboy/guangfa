@@ -491,7 +491,7 @@
 
 .placeholder-maintenance-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 36px;
+  grid-template-columns: minmax(180px, 0.45fr) minmax(260px, 1fr) 36px;
   gap: 12px;
   align-items: center;
   min-height: 54px;
