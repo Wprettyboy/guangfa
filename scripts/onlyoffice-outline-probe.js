@@ -551,30 +551,18 @@
     const manager = getBookmarkManager();
     const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
     if (!selected.ok) return postComplexFillResult("complex-fill-anchor-deleted", { ...selected, requestId });
-    const selectionState = safeCall(getLogicDocument(), "GetSelectionState", null);
-    if (!selectionState) {
-      return postComplexFillResult("complex-fill-anchor-deleted", {
-        ok: false,
-        requestId,
-        bookmarkName,
-        page: selected.page || 1,
-        error: "未能捕获复杂类填充书签选区，已取消删除以避免清除错误范围。",
-      });
-    }
     try {
+      const highlight = clearTextHighlightFromCurrentSelection();
       const removed = removeBookmark(manager, bookmarkName);
       const bookmarkDeleted = removed !== false;
-      const selectionRestored = restoreSelectionState(selectionState);
-      const highlight = selectionRestored ? clearTextHighlightFromCurrentSelection() : { ok: false, error: "未能恢复原选区清除高亮。" };
       saveOnlyOfficeDocument("complex-fill-anchor-delete");
       return postComplexFillResult("complex-fill-anchor-deleted", {
-        ok: bookmarkDeleted && selectionRestored && highlight?.ok !== false,
+        ok: bookmarkDeleted && highlight?.ok !== false,
         requestId,
         bookmarkName,
         page: selected.page || 1,
         bookmarkDeleted,
         highlight,
-        selectionRestored,
         error: bookmarkDeleted ? highlight?.error : "复杂类填充书签删除失败。",
       });
     } catch (error) {
