@@ -78,11 +78,14 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### 排版工作台
 
-- `src/pages/LayoutWorkspace.jsx`：排版工作台编排，上传 DOCX、生成排版计划、调用 OnlyOffice 执行排版并导出。
-- `src/features/docx/layout/gbRules.js`：GB/T 9704-2012 第一版规则配置；只放规则参数，不写页面逻辑。
-- `src/features/docx/layout/FormatControls.jsx`：排版工作台右侧操作面板。
+- `src/pages/LayoutWorkspace.jsx`：排版工作台编排，上传 DOCX、触发格式体检、生成修复计划、调用 OnlyOffice 执行修复并导出。
+- `src/features/docx/layout/standards/gbt9704-2012.js`：GB/T 9704-2012 规则库，按纸张版面、基础文字、版头、主体、附件、版记、页码、横排表格、特定格式拆分；只放标准条款、修复能力和规则参数。
+- `src/features/docx/layout/analyzer/report.js`：格式体检报告归一、缺失规则补齐和按规则域分组。
+- `src/features/docx/layout/planner/plan.js`：把可自动修复的 findings 转成 OnlyOffice 可执行 plan；需人工确认的规则不强行自动执行。
+- `src/features/docx/layout/gbRules.js`：旧导入兼容层，不再作为真实规则来源。
+- `src/features/docx/layout/FormatControls.jsx`：排版工作台右侧治理面板，展示格式体检、规则域、修复计划和执行结果。
 - `src/styles/layout-format.css`：排版工作台样式。
-- `scripts/onlyoffice-layout-format.js`：注入 OnlyOffice 的排版执行脚本，接收 `apply-layout-format` 并调用 OnlyOffice 文档 API 设置页面、正文、标题和落款格式。
+- `scripts/onlyoffice-layout-format.js`：注入 OnlyOffice 的排版执行脚本，接收 `analyze-layout-format` 做文档结构体检，接收 `apply-layout-format` 调用 OnlyOffice 文档 API 执行自动修复动作。
 
 ### OnlyOffice / DOCX 高频区
 
@@ -229,7 +232,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，优先按 `GF_CF_SEL_` 选区范围书签定位并选中对应范围，旧数据无选区书签时才回退到 `GF_CF_`。
 - `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，删除 `GF_CF_` 业务书签；清高亮只通过 `GF_CF_SEL_` 选区范围书签定位，清除后保留 `GF_CF_SEL_`，不删除书签范围内的文档文字。
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
-- `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
+- `requestOnlyOfficeAnalyzeLayoutFormat(standard)`：发送 `analyze-layout-format`，让排版注入脚本读取 OnlyOffice 文档段落并按标准规则返回 `layout-format-analyzed` findings。
+- `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按修复计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
 - `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
 - `requestOnlyOfficeDeletePlaceholderAnchor(anchor)`：发送 `delete-placeholder-anchor`，等待 `placeholder-anchor-deleted` 回传。
@@ -267,6 +271,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
 - `scripts/onlyoffice-layout-format.js`
+  - `analyzeLayoutDocument(standard)`：格式体检入口，读取 OnlyOffice 文档段落，按标准规则返回 findings；无法可靠自动判断的规则标为需人工确认。
   - `applyLayoutPlan(plan)`：排版脚本入口，按计划执行页面、正文、标题、落款等动作并回传结果。
   - `applyPageLayout(documentApi, action)`：优先通过 OnlyOffice section API 设置 A4 页面与页边距。
   - `applyBodyLayout(paragraphs, action)`：给非标题正文段落设置字体、字号、首行缩进和行距；`SetFontSize` 传半磅值，`SetSpacingLine` 参数顺序为 `(twips, "exact")`。

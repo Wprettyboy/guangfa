@@ -1,19 +1,22 @@
 import React, { useMemo, useRef, useState } from "react";
 import { DocumentFrame, createPreviewId } from "../features/docx/runtime.jsx";
-import { requestOnlyOfficeApplyLayoutFormat, requestOnlyOfficeDocumentDownloadAs } from "../features/docx/office/bridge.jsx";
+import { requestOnlyOfficeAnalyzeLayoutFormat, requestOnlyOfficeApplyLayoutFormat, requestOnlyOfficeDocumentDownloadAs } from "../features/docx/office/bridge.jsx";
 import FormatControls from "../features/docx/layout/FormatControls.jsx";
-import { buildGbLayoutPlan, gbOfficialDocumentRule } from "../features/docx/layout/gbRules.js";
+import { buildPendingLayoutReport, normalizeLayoutReport } from "../features/docx/layout/analyzer/report.js";
+import { buildLayoutRepairPlan, getDefaultSelectedFindingIds } from "../features/docx/layout/planner/plan.js";
+import { gbt9704Standard } from "../features/docx/layout/standards/gbt9704-2012.js";
 import { buildFormatRevisionFileName, formatFileSize } from "../utils/files.js";
 
 function LayoutWorkspace() {
   const fileInputRef = useRef(null);
   const [previewFile, setPreviewFile] = useState(null);
   const [officeDocId, setOfficeDocId] = useState("");
-  const [selectedActionIds, setSelectedActionIds] = useState(() => gbOfficialDocumentRule.actions.map((item) => item.id));
+  const [report, setReport] = useState(() => buildPendingLayoutReport(gbt9704Standard));
+  const [selectedFindingIds, setSelectedFindingIds] = useState(() => []);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [result, setResult] = useState(null);
-  const plan = useMemo(() => buildGbLayoutPlan(selectedActionIds), [selectedActionIds]);
+  const plan = useMemo(() => buildLayoutRepairPlan(gbt9704Standard, report, selectedFindingIds), [report, selectedFindingIds]);
 
   async function handleFileChange(event) {
     const file = event.target.files?.[0];
@@ -33,24 +36,49 @@ function LayoutWorkspace() {
       supported: true,
     });
     setOfficeDocId("");
-    setStatus("文档已加载，等待排版");
+    const pendingReport = buildPendingLayoutReport(gbt9704Standard);
+    setReport(pendingReport);
+    setSelectedFindingIds([]);
+    setStatus("文档已加载，等待格式体检");
     setResult(null);
   }
 
-  function toggleAction(actionId) {
-    setSelectedActionIds((ids) => (ids.includes(actionId) ? ids.filter((id) => id !== actionId) : [...ids, actionId]));
+  function toggleFinding(findingId) {
+    setSelectedFindingIds((ids) => (ids.includes(findingId) ? ids.filter((id) => id !== findingId) : [...ids, findingId]));
   }
 
-  function toggleSelectAll() {
-    setSelectedActionIds((ids) => (ids.length === gbOfficialDocumentRule.actions.length ? [] : gbOfficialDocumentRule.actions.map((item) => item.id)));
+  function toggleSelectFixable() {
+    const defaultIds = getDefaultSelectedFindingIds(report);
+    setSelectedFindingIds((ids) => (ids.length === defaultIds.length ? [] : defaultIds));
+  }
+
+  async function analyzeLayout() {
+    if (!previewFile?.buffer || busy) return;
+    setBusy(true);
+    setStatus("OnlyOffice 正在读取文档结构");
+    setResult(null);
+    try {
+      const response = await requestOnlyOfficeAnalyzeLayoutFormat(gbt9704Standard);
+      const nextReport = normalizeLayoutReport(response, gbt9704Standard);
+      setReport(nextReport);
+      setSelectedFindingIds(getDefaultSelectedFindingIds(nextReport));
+      setStatus("格式体检已完成");
+    } catch (error) {
+      setStatus(error?.message || "格式体检失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function previewPlan() {
     setResult({
-      summary: `已生成 ${plan.actions.length} 项排版计划，尚未修改文档。`,
-      items: plan.actions.map((action) => ({ id: action.id, title: action.title, ok: true, message: action.summary })),
+      summary: plan.summary,
+      items: [
+        ...plan.actions.map((action) => ({ id: action.id, title: action.title, ok: true, message: action.summary })),
+        ...plan.manualItems.map((item) => ({ id: item.id, title: item.title, ok: false, message: "需人工确认后处理。" })),
+      ],
     });
-    setStatus("排版计划已生成");
+    setStatus("修复计划已生成");
   }
 
   async function applyLayout() {
@@ -107,14 +135,17 @@ function LayoutWorkspace() {
       </section>
 
       <FormatControls
-        rule={gbOfficialDocumentRule}
-        selectedActionIds={selectedActionIds}
+        standard={gbt9704Standard}
+        report={report}
+        plan={plan}
+        selectedFindingIds={selectedFindingIds}
         busy={busy}
         hasDocument={Boolean(previewFile?.buffer && officeDocId)}
         status={status}
         result={result}
-        onToggleAction={toggleAction}
-        onSelectAll={toggleSelectAll}
+        onToggleFinding={toggleFinding}
+        onSelectFixable={toggleSelectFixable}
+        onAnalyze={analyzeLayout}
         onPreviewPlan={previewPlan}
         onApply={applyLayout}
         onExport={exportDocument}

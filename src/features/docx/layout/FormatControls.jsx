@@ -1,60 +1,98 @@
 import React from "react";
-import { Check, Download, FileText, Loader2, Wand2 } from "lucide-react";
+import { Check, ClipboardCheck, Download, FileText, Loader2, ShieldCheck, Wand2 } from "lucide-react";
+import { groupFindingsByDomain } from "./analyzer/report.js";
 
 function FormatControls({
-  rule,
-  selectedActionIds,
+  standard,
+  report,
+  plan,
+  selectedFindingIds,
   busy,
   hasDocument,
   status,
   result,
-  onToggleAction,
-  onSelectAll,
+  onToggleFinding,
+  onSelectFixable,
+  onAnalyze,
   onPreviewPlan,
   onApply,
   onExport,
 }) {
-  const allSelected = rule.actions.every((action) => selectedActionIds.includes(action.id));
+  const grouped = groupFindingsByDomain(report.findings, standard.domains);
+  const selectedCount = selectedFindingIds.length;
+  const fixableCount = report.findings.filter((item) => item.fixable && item.status !== "blocked").length;
   return (
     <aside className="right-panel field-panel layout-panel">
       <div className="panel-section grow-section">
         <div className="panel-title">
           <div>
-            <h2>公文排版</h2>
-            <span>{rule.name}</span>
+            <h2>公文格式治理</h2>
+            <span>{standard.name}</span>
           </div>
         </div>
 
         <div className="layout-action-bar">
-          <button className="tool-button" type="button" onClick={onSelectAll}>
-            <Check size={16} />
-            {allSelected ? "取消全选" : "全选规则"}
+          <button className="tool-button" type="button" onClick={onAnalyze} disabled={!hasDocument || busy}>
+            {busy ? <Loader2 size={16} className="spin" /> : <ClipboardCheck size={16} />}
+            格式体检
           </button>
-          <button className="tool-button" type="button" onClick={onPreviewPlan} disabled={!hasDocument || busy || selectedActionIds.length === 0}>
+          <button className="tool-button" type="button" onClick={onSelectFixable} disabled={!hasDocument || busy || fixableCount === 0}>
+            <Check size={16} />
+            {selectedCount === fixableCount && fixableCount > 0 ? "取消修复项" : "选择可修复"}
+          </button>
+          <button className="tool-button" type="button" onClick={onPreviewPlan} disabled={!hasDocument || busy || selectedCount === 0}>
             <FileText size={16} />
             生成计划
           </button>
-          <button className="tool-button primary" type="button" onClick={onApply} disabled={!hasDocument || busy || selectedActionIds.length === 0}>
+          <button className="tool-button primary" type="button" onClick={onApply} disabled={!hasDocument || busy || plan.actions.length === 0}>
             {busy ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
-            应用排版
+            执行修复
           </button>
         </div>
 
+        <div className="layout-summary-strip">
+          <Metric label="规则" value={report.findings.length} />
+          <Metric label="可修复" value={fixableCount} />
+          <Metric label="已选" value={selectedCount} />
+          <Metric label="需确认" value={report.findings.filter((item) => item.status === "needs-confirmation").length} />
+        </div>
+
         <div className="layout-rule-list">
-          {rule.actions.map((action) => (
-            <label className="layout-rule-item" key={action.id}>
-              <input type="checkbox" checked={selectedActionIds.includes(action.id)} onChange={() => onToggleAction(action.id)} disabled={busy} />
-              <span>
-                <strong>{action.title}</strong>
-                <em>{action.summary}</em>
-              </span>
-            </label>
+          {grouped.map((domain) => (
+            <section className="layout-domain" key={domain.id}>
+              <div className="layout-domain-head">
+                <strong>{domain.title}</strong>
+                <span>{domain.findings.length}</span>
+              </div>
+              {domain.findings.map((finding) => (
+                <label className={`layout-rule-item ${finding.fixable ? "fixable" : "manual"}`} key={finding.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedFindingIds.includes(finding.id)}
+                    onChange={() => onToggleFinding(finding.id)}
+                    disabled={busy || !finding.fixable || finding.status === "blocked"}
+                  />
+                  <span>
+                    <strong>{finding.title}</strong>
+                    <em>{finding.clause} · {statusLabel(finding)}</em>
+                    <small>{finding.finding}</small>
+                    {finding.evidence ? <small className="layout-evidence">{finding.evidence}</small> : null}
+                  </span>
+                </label>
+              ))}
+            </section>
           ))}
         </div>
 
         <div className="layout-result">
           <strong>{status || "等待上传文档"}</strong>
-          {result?.summary ? <span>{result.summary}</span> : <span>上传 DOCX 后，可先生成排版计划，再由 OnlyOffice 执行格式调整。</span>}
+          <span>{result?.summary || report.summary}</span>
+          {plan.actions.length > 0 ? (
+            <div className="layout-plan-inline">
+              <ShieldCheck size={15} />
+              <span>{plan.summary}</span>
+            </div>
+          ) : null}
           {Array.isArray(result?.items) && result.items.length > 0 ? (
             <div className="layout-result-list">
               {result.items.map((item) => (
@@ -70,12 +108,28 @@ function FormatControls({
         <div className="layout-export-bar">
           <button className="tool-button" type="button" onClick={onExport} disabled={!hasDocument || busy}>
             <Download size={16} />
-            导出排版文档
+            导出修复文档
           </button>
         </div>
       </div>
     </aside>
   );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="layout-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function statusLabel(finding) {
+  if (finding.status === "blocked") return "不可自动处理";
+  if (finding.status === "needs-confirmation") return "需人工确认";
+  if (finding.fixable) return "可自动修复";
+  return "需复核";
 }
 
 export default FormatControls;

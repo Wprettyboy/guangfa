@@ -17,6 +17,7 @@ let onlyOfficeFillRequestSeq = 0;
 let onlyOfficePlaceholderRequestSeq = 0;
 let onlyOfficeComplexFillRequestSeq = 0;
 let onlyOfficeLayoutRequestSeq = 0;
+let onlyOfficeLayoutAnalyzeRequestSeq = 0;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
@@ -192,6 +193,36 @@ function requestOnlyOfficeApplyLayoutFormat(plan, options = {}) {
       action: "apply-layout-format",
       requestId,
       plan,
+    }, 24);
+  });
+}
+
+function requestOnlyOfficeAnalyzeLayoutFormat(standard, options = {}) {
+  const requestId = options.requestId || `layout-analyze-${Date.now()}-${++onlyOfficeLayoutAnalyzeRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || 15000);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "layout-format-analyzed") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, summary: "OnlyOffice 未响应格式体检命令。", findings: [] }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    console.log("[guangfa-layout-format-analyze-command]", { requestId, rules: Array.isArray(standard?.rules) ? standard.rules.length : 0 });
+    postAllOnlyOfficeFrames({
+      source: "guangfa-parent",
+      action: "analyze-layout-format",
+      requestId,
+      standard,
     }, 24);
   });
 }
@@ -594,6 +625,7 @@ export {
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
   requestOnlyOfficeAddComplexFillAnchor,
+  requestOnlyOfficeAnalyzeLayoutFormat,
   requestOnlyOfficeApplyLayoutFormat,
   requestOnlyOfficeDeleteComplexFillAnchor,
   requestOnlyOfficeDocumentDownloadAs,

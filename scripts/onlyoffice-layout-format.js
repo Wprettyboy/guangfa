@@ -85,6 +85,102 @@
     };
   }
 
+  function analyzeLayoutDocument(standard) {
+    const documentApi = getApiDocument();
+    if (!documentApi) return { ok: false, summary: "OnlyOffice 文档 API 不可用。", findings: [] };
+
+    const paragraphs = getParagraphs(documentApi);
+    const texts = paragraphs.map(getParagraphText).filter(Boolean);
+    const documentType = detectDocumentType(texts);
+    const rules = Array.isArray(standard?.rules) ? standard.rules : [];
+    const findings = rules.map((rule) => inspectRule(rule, paragraphs, texts, documentType));
+    return {
+      ok: true,
+      documentType,
+      summary: `已读取 ${texts.length} 个非空段落，按 ${rules.length} 项标准规则完成体检。`,
+      findings,
+    };
+  }
+
+  function detectDocumentType(texts) {
+    const head = texts.slice(0, 12).join(" ");
+    if (/纪要/.test(head)) return "minutes";
+    if (/(命令|令)$/.test(texts[0] || "") || /第\s*\d+\s*号/.test(head)) return "order";
+    if (/函/.test(texts[0] || "") && !/通知|报告|请示/.test(texts[0] || "")) return "letter";
+    return "normal";
+  }
+
+  function inspectRule(rule, paragraphs, texts, documentType) {
+    if (rule.fixMode !== "auto") {
+      return buildFinding(rule, {
+        status: "needs-confirmation",
+        finding: manualFinding(rule, documentType),
+        evidence: documentType === "normal" ? "" : `当前识别为 ${documentTypeName(documentType)}。`,
+      });
+    }
+    if (rule.id === "page.a4-margins") {
+      const sections = getSections(getApiDocument());
+      return buildFinding(rule, {
+        status: sections.length > 0 ? "needs-fix" : "blocked",
+        finding: sections.length > 0 ? "已定位页面节，可按标准设置 A4 和页边距。" : "未获取到页面节，无法自动设置页面。",
+        evidence: sections.length > 0 ? `检测到 ${sections.length} 个页面节。` : "",
+      });
+    }
+    if (rule.id === "text.default-font" || rule.id === "body.paragraphs") {
+      const bodyCount = paragraphs.filter((paragraph, index) => {
+        const text = getParagraphText(paragraph);
+        return text && !isLikelyDocumentTitle(text, index) && !isHeadingText(text);
+      }).length;
+      return buildFinding(rule, {
+        status: bodyCount > 0 ? "needs-fix" : "blocked",
+        finding: bodyCount > 0 ? "已识别正文候选段落，可统一套用正文规格。" : "未识别到正文候选段落。",
+        evidence: bodyCount > 0 ? `正文候选段落 ${bodyCount} 个。` : "",
+      });
+    }
+    if (rule.id === "body.title") {
+      const title = paragraphs.find((paragraph, index) => isLikelyDocumentTitle(getParagraphText(paragraph), index));
+      return buildFinding(rule, {
+        status: title ? "needs-fix" : "blocked",
+        finding: title ? "已识别标题候选，可套用标题及层级字体。" : "未识别到标题候选。",
+        evidence: title ? `标题候选：${getParagraphText(title).slice(0, 80)}` : "",
+      });
+    }
+    return buildFinding(rule, { status: "needs-confirmation", finding: "该规则暂需人工确认后处理。" });
+  }
+
+  function buildFinding(rule, overrides) {
+    return {
+      id: rule.id,
+      ruleId: rule.id,
+      domainId: rule.domainId,
+      clause: rule.clause,
+      title: rule.title,
+      standard: rule.standard,
+      severity: rule.severity,
+      fixable: rule.fixMode === "auto" && overrides.status !== "blocked",
+      status: overrides.status || "needs-confirmation",
+      finding: overrides.finding || "",
+      evidence: overrides.evidence || "",
+    };
+  }
+
+  function manualFinding(rule, documentType) {
+    if (rule.domainId === "special") return "特定格式需要先确认文种，再按对应首页和末页图示处理。";
+    if (rule.domainId === "header") return "版头涉及发文机关、发文字号、签发人或红色线位置，需要结合文档语义确认。";
+    if (rule.domainId === "imprint") return "版记区域需要定位末页分隔线、抄送和印发机关后处理。";
+    if (rule.domainId === "page-number") return "页码涉及单双页、一字线、空白页和版记页例外，需确认装订场景。";
+    if (rule.domainId === "attachment") return "附件是否另面编排、是否与正文一起装订需要确认。";
+    if (rule.domainId === "landscape-table") return "横排表格需识别表格方向和单双页位置。";
+    return documentType === "normal" ? "该规则需要人工复核后处理。" : "当前文种可能适用特定格式，请先确认文档类型。";
+  }
+
+  function documentTypeName(type) {
+    if (type === "minutes") return "纪要格式";
+    if (type === "order") return "命令/令格式";
+    if (type === "letter") return "信函格式";
+    return "普通公文";
+  }
+
   function applyAction(documentApi, paragraphs, action) {
     if (action.id === "page") return applyPageLayout(documentApi, action);
     if (action.id === "body") return applyBodyLayout(paragraphs, action);
@@ -259,7 +355,7 @@
 
   window.guangfaApplyLayoutFormat = applyLayoutPlan;
   window.guangfaLayoutFormatReady = true;
-  try { console.log("[guangfa-layout-format-ready]", { version: 3 }); } catch {}
+  try { console.log("[guangfa-layout-format-ready]", { version: 4 }); } catch {}
 
   function postLayoutResult(result) {
     const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-applied", result };
@@ -270,6 +366,20 @@
 
   window.addEventListener("message", function (event) {
     const data = event.data || {};
+    if (data.source === "guangfa-parent" && data.action === "analyze-layout-format") {
+      const requestId = data.requestId || "";
+      let result;
+      try {
+        result = analyzeLayoutDocument(data.standard || {});
+      } catch (error) {
+        result = { ok: false, summary: error?.message || "OnlyOffice 格式体检失败。", findings: [] };
+      }
+      const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-analyzed", result: { ...result, requestId } };
+      try { console.log("[guangfa-layout-format-analyzed]", message.result); } catch {}
+      try { window.parent?.postMessage(message, "*"); } catch {}
+      try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+      return;
+    }
     if (data.source !== "guangfa-parent" || data.action !== "apply-layout-format") return;
     const requestId = data.requestId || "";
     let result;

@@ -24,7 +24,7 @@
 }
 
 .layout-panel .panel-section {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   gap: 12px;
 }
 
@@ -36,9 +36,63 @@
 
 .layout-rule-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   overflow: auto;
   min-height: 0;
+}
+
+.layout-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.layout-metric {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #dce3ee;
+  border-radius: 7px;
+  background: #f8fbff;
+}
+
+.layout-metric span {
+  color: #6c7a8f;
+  font-size: 11px;
+}
+
+.layout-metric strong {
+  color: #183765;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.layout-domain {
+  display: grid;
+  gap: 7px;
+}
+
+.layout-domain-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 2px;
+  color: #526179;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.layout-domain-head span {
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef3fa;
+  color: #607089;
 }
 
 .layout-rule-item {
@@ -52,12 +106,23 @@
   background: #fbfcfe;
 }
 
+.layout-rule-item.fixable {
+  border-color: #c9dcff;
+  background: #f8fbff;
+}
+
+.layout-rule-item.manual {
+  border-color: #ead8b8;
+  background: #fffaf2;
+}
+
 .layout-rule-item input {
   margin-top: 3px;
 }
 
 .layout-rule-item strong,
-.layout-rule-item em {
+.layout-rule-item em,
+.layout-rule-item small {
   display: block;
 }
 
@@ -72,6 +137,17 @@
   font-size: 12px;
   font-style: normal;
   line-height: 1.5;
+}
+
+.layout-rule-item small {
+  margin-top: 5px;
+  color: #536277;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.layout-rule-item .layout-evidence {
+  color: #0f63e9;
 }
 
 .layout-result {
@@ -99,6 +175,24 @@
 .layout-result-list {
   display: grid;
   gap: 7px;
+}
+
+.layout-plan-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #2557b8;
+  background: #f3f7ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 6px;
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.layout-plan-inline svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .layout-result-item {
