@@ -1,8 +1,8 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { apiMiddleware } from "./server/api/index.js";
 import { aiFillMiddleware } from "./server/ai.js";
 import { draftMiddleware } from "./server/draft.js";
-import { knowledgeBaseMiddleware } from "./server/knowledge-base.js";
 import { officeMiddleware } from "./server/office.js";
 import { outlineProbeMiddleware } from "./server/outline-probe.js";
 import { settingsMiddleware } from "./server/settings.js";
@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
           });
           server.middlewares.use(draftMiddleware());
           server.middlewares.use(templateLibraryMiddleware());
-          server.middlewares.use(knowledgeBaseMiddleware());
+          server.middlewares.use(apiMiddleware());
           server.middlewares.use(settingsMiddleware());
           server.middlewares.use(outlineProbeMiddleware());
           server.middlewares.use(officeMiddleware());
