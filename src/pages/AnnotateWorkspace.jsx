@@ -383,10 +383,13 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
           </button>
         </div>
         <div className="placeholder-maintenance-body">
-          <button className="placeholder-add-button" type="button" onClick={onAddVariable}>
-            <Plus size={15} />
-            新增字段
-          </button>
+          <div className="placeholder-maintenance-toolbar">
+            <button className="placeholder-add-button" type="button" onClick={onAddVariable}>
+              <Plus size={15} />
+              新增字段
+            </button>
+            <span>共 {variables.length} 个字段</span>
+          </div>
           <div className="placeholder-maintenance-list">
             {variables.length === 0 ? (
               <div className="empty-state compact">
