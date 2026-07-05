@@ -76,6 +76,7 @@ async function extractDocxTables(database, document) {
       rowCount: rows.length,
       columnCount,
       rows,
+      html: buildTableHtml(item.xml),
       plainText,
     });
   });
@@ -102,6 +103,100 @@ function extractTableRows(tableXml) {
     .filter((row) => row.length > 0);
 }
 
+function buildTableHtml(tableXml) {
+  const tableStyle = buildTableStyle(tableXml);
+  const tableBorder = getTableBorderStyle(tableXml);
+  const rows = [...tableXml.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((rowMatch) =>
+    [...rowMatch[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((cellMatch) => ({
+      xml: cellMatch[0],
+      text: extractCellHtml(cellMatch[0]),
+      colSpan: Math.max(1, Number(cellMatch[0].match(/<w:gridSpan\b[^>]*w:val="(\d+)"/)?.[1] || 1) || 1),
+      vMerge: cellMatch[0].match(/<w:vMerge\b[^>]*(?:w:val="([^"]+)")?/)?.[1] ?? null,
+      style: buildCellStyle(cellMatch[0], tableBorder),
+    })),
+  );
+  const activeMerges = new Map();
+  const htmlRows = rows.map((row) => {
+    let column = 0;
+    const cells = [];
+    row.forEach((cell) => {
+      while (activeMerges.has(column) && activeMerges.get(column).covered) column += 1;
+      const mergeKey = column;
+      const isContinueMerge = cell.vMerge === "";
+      if (isContinueMerge && activeMerges.has(mergeKey)) {
+        activeMerges.get(mergeKey).rowSpan += 1;
+        column += cell.colSpan;
+        return;
+      }
+      if (!cell.vMerge) {
+        for (let offset = 0; offset < cell.colSpan; offset += 1) activeMerges.delete(column + offset);
+      }
+      const outputCell = { ...cell, rowSpan: 1 };
+      cells.push(outputCell);
+      if (cell.vMerge === "restart") {
+        activeMerges.set(mergeKey, outputCell);
+        for (let offset = 1; offset < cell.colSpan; offset += 1) activeMerges.set(mergeKey + offset, { covered: true });
+      }
+      column += cell.colSpan;
+    });
+    return cells;
+  });
+  const body = htmlRows
+    .map((row) => `<tr>${row.map((cell) => {
+      const colSpan = cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : "";
+      const rowSpan = cell.rowSpan > 1 ? ` rowspan="${cell.rowSpan}"` : "";
+      return `<td${colSpan}${rowSpan} style="${cell.style}">${cell.text || "&nbsp;"}</td>`;
+    }).join("")}</tr>`)
+    .join("");
+  return `<table style="${tableStyle}"><tbody>${body}</tbody></table>`;
+}
+
+function buildTableStyle(tableXml) {
+  const width = tableXml.match(/<w:tblW\b[^>]*w:w="([^"]+)"[^>]*w:type="([^"]+)"/);
+  const styles = ["border-collapse:collapse", "table-layout:auto"];
+  if (width?.[2] === "pct") styles.push(`width:${Math.max(1, Number(width[1]) / 50)}%`);
+  else styles.push("width:100%");
+  return styles.join(";");
+}
+
+function getTableBorderStyle(tableXml) {
+  const borders = tableXml.match(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/)?.[0] || "";
+  const border = borders.match(/<w:(?:insideH|top|left|bottom|right)\b[^>]*w:val="([^"]+)"[^>]*?(?:w:sz="([^"]+)")?[^>]*?(?:w:color="([^"]+)")?[^>]*\/>/);
+  return buildBorderStyle(border?.[1], border?.[2], border?.[3]) || "1px solid #000000";
+}
+
+function buildCellStyle(cellXml, fallbackBorder) {
+  const styles = [
+    `border:${fallbackBorder}`,
+    "padding:4px 6px",
+    "vertical-align:top",
+    "word-break:break-word",
+  ];
+  const width = cellXml.match(/<w:tcW\b[^>]*w:w="([^"]+)"[^>]*w:type="([^"]+)"/);
+  if (width?.[2] === "dxa") styles.push(`width:${Math.max(12, Math.round(Number(width[1]) / 15))}px`);
+  const fill = normalizeColor(cellXml.match(/<w:shd\b[^>]*w:fill="([^"]+)"/)?.[1]);
+  if (fill) styles.push(`background-color:#${fill}`);
+  const vertical = cellXml.match(/<w:vAlign\b[^>]*w:val="([^"]+)"/)?.[1];
+  if (vertical === "center") styles.push("vertical-align:middle");
+  if (vertical === "bottom") styles.push("vertical-align:bottom");
+  return styles.join(";");
+}
+
+function buildBorderStyle(value, size, color) {
+  const borderValue = String(value || "").toLowerCase();
+  if (!borderValue || borderValue === "none" || borderValue === "nil") return "";
+  const px = Math.max(1, Math.round((Number(size || 8) || 8) / 8));
+  return `${px}px solid #${normalizeColor(color) || "000000"}`;
+}
+
+function extractCellHtml(cellXml) {
+  const paragraphs = [...cellXml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
+    .map((match) => extractText(match[0]))
+    .filter(Boolean)
+    .map(escapeHtml);
+  return paragraphs.length > 0 ? paragraphs.join("<br>") : escapeHtml(extractText(cellXml));
+}
+
 function extractText(xml) {
   const pieces = [];
   const tokenPattern = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\s*\/>|<w:br\b[^>]*\/>|<w:cr\s*\/>/g;
@@ -112,6 +207,22 @@ function extractText(xml) {
     else pieces.push("\n");
   }
   return normalizeText(pieces.join(""));
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeColor(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.toLowerCase() === "auto") return "";
+  const color = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+  if (!color) return "";
+  return color.length === 6 ? color : "";
 }
 
 function readDocumentPages(database, documentId) {

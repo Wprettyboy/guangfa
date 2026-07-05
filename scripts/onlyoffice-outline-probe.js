@@ -1680,6 +1680,15 @@
   async function insertKnowledgeTable(data) {
     const requestId = data.requestId || "";
     try {
+      const html = String(data.table?.html || "").trim();
+      if (html) {
+        const pasted = pasteKnowledgeTableHtml(html);
+        if (pasted.ok) {
+          saveOnlyOfficeDocument("insert-knowledge-table-html");
+          return postKnowledgeTableResult({ ...pasted, requestId });
+        }
+      }
+
       const rows = normalizeKnowledgeTableRows(data.table || {});
       if (rows.length === 0 || rows[0].length === 0) {
         return postKnowledgeTableResult({ ok: false, requestId, error: "所选表格为空，无法插入。" });
@@ -1749,6 +1758,26 @@
     } catch (error) {
       return postKnowledgeTableResult({ ok: false, requestId, error: error?.message || "资料表格插入失败" });
     }
+  }
+
+  function pasteKnowledgeTableHtml(html) {
+    const api = getEditorApi() || window.Asc?.editor || window.editor;
+    if (!api) return { ok: false, error: "OnlyOffice 编辑器接口不可用。" };
+    try {
+      if (typeof api.pluginMethod_PasteHtml === "function") {
+        api.pluginMethod_PasteHtml(html);
+        return { ok: true, source: "plugin-method-paste-html" };
+      }
+      if (typeof api.asc_PasteData === "function" && window.AscCommon?.c_oAscClipboardDataFormat?.HtmlElement) {
+        const container = document.createElement("div");
+        container.innerHTML = html;
+        api.asc_PasteData(window.AscCommon.c_oAscClipboardDataFormat.HtmlElement, container, undefined, undefined, true);
+        return { ok: true, source: "asc-paste-data-html-element" };
+      }
+    } catch (error) {
+      return { ok: false, error: error?.message || "OnlyOffice HTML 表格粘贴失败" };
+    }
+    return { ok: false, error: "OnlyOffice HTML 表格粘贴接口不可用。" };
   }
 
   function postKnowledgeTableResult(result) {
