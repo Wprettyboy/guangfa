@@ -186,12 +186,13 @@ function requestOnlyOfficeApplyLayoutFormat(plan, options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, summary: "OnlyOffice 未响应排版命令。", items: [] }), timeoutMs);
     window.addEventListener("message", handleMessage);
+    console.log("[guangfa-layout-format-command]", { requestId, actions: Array.isArray(plan?.actions) ? plan.actions.length : 0 });
     postAllOnlyOfficeFrames({
       source: "guangfa-parent",
       action: "apply-layout-format",
       requestId,
       plan,
-    }, 8);
+    }, 24);
   });
 }
 

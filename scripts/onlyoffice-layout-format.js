@@ -258,6 +258,8 @@
   }
 
   window.guangfaApplyLayoutFormat = applyLayoutPlan;
+  window.guangfaLayoutFormatReady = true;
+  try { console.log("[guangfa-layout-format-ready]", { version: 3 }); } catch {}
 
   function postLayoutResult(result) {
     const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-applied", result };
