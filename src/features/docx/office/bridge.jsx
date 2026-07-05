@@ -17,6 +17,8 @@ let onlyOfficeFillRequestSeq = 0;
 let onlyOfficePlaceholderRequestSeq = 0;
 let onlyOfficeComplexFillRequestSeq = 0;
 
+const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
+
 function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = true, mode, serverUrl, onReady, onError }) {
   const containerRef = useRef(null);
   const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
@@ -358,11 +360,27 @@ function requestOnlyOfficeFillComplexFillField(complexFill, options = {}) {
     },
     "OnlyOffice 未响应复杂类填充写入命令。",
     timeoutMs,
+    {
+      failureGraceMs: 4500,
+      postAttempts: 18,
+      shouldDeferFailure: isTransientComplexFillWriteFailure,
+    },
   );
 }
 
-function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeoutError, timeoutMs = 8000) {
+function isTransientComplexFillWriteFailure(result) {
+  const errors = [
+    result?.error,
+    ...(Array.isArray(result?.results) ? result.results.map((item) => item?.error) : []),
+  ].filter(Boolean).join("\n");
+  return complexFillWriteTransientErrorPattern.test(errors);
+}
+
+function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeoutError, timeoutMs = 8000, options = {}) {
   const requestId = `complex-fill-${Date.now()}-${++onlyOfficeComplexFillRequestSeq}`;
+  const failureGraceMs = Number.isFinite(Number(options.failureGraceMs)) ? Math.max(0, Number(options.failureGraceMs)) : 700;
+  const postAttempts = Number.isFinite(Number(options.postAttempts)) ? Math.max(0, Number(options.postAttempts)) : 8;
+  const shouldDeferFailure = typeof options.shouldDeferFailure === "function" ? options.shouldDeferFailure : () => true;
   const message = {
     source: "guangfa-parent",
     action,
@@ -389,14 +407,18 @@ function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeo
         finish(data.result);
         return;
       }
+      if (!shouldDeferFailure(data.result)) {
+        finish(data.result);
+        return;
+      }
       firstFailure ||= data.result;
       if (!failureTimer) {
-        failureTimer = window.setTimeout(() => finish(firstFailure), 700);
+        failureTimer = window.setTimeout(() => finish(firstFailure), failureGraceMs);
       }
     };
     const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 8);
+    postAllOnlyOfficeFrames(message, postAttempts);
   });
 }
 
