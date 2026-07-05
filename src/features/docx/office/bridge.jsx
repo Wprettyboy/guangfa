@@ -435,7 +435,7 @@ function requestOnlyOfficeFillComplexFillField(complexFill, options = {}) {
 
 function requestOnlyOfficeInsertKnowledgeTable(table, options = {}) {
   const requestId = options.requestId || `knowledge-table-${Date.now()}-${++onlyOfficeKnowledgeTableRequestSeq}`;
-  const timeoutMs = Number(options.timeoutMs || 10000);
+  const timeoutMs = Number(options.timeoutMs || 30000);
   const message = {
     source: "guangfa-parent",
     action: "insert-knowledge-table",
@@ -459,7 +459,7 @@ function requestOnlyOfficeInsertKnowledgeTable(table, options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应资料表格插入命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 8);
+    postAllOnlyOfficeFrames(message, 0);
   });
 }
 

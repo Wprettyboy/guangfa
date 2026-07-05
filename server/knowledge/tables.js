@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { getKnowledgeDatabase } from "./db.js";
 
+const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
+
 async function searchKnowledgeTables(payload = {}) {
   const kbIds = normalizeIds([...(payload.kbIds || []), ...(payload.globalKbIds || [])]);
   if (kbIds.length === 0) return [];
@@ -76,11 +78,47 @@ async function extractDocxTables(database, document) {
       rowCount: rows.length,
       columnCount,
       rows,
-      html: buildTableHtml(item.xml),
+      sourceDocxUrl: `${publicBaseUrl}/api/knowledge-tables/${encodeURIComponent(document.id)}/${tableIndex}/docx`,
       plainText,
     });
   });
   return tables;
+}
+
+async function readKnowledgeTableDocx(documentId, tableIndex) {
+  const database = await getKnowledgeDatabase();
+  const row = getKnowledgeDocumentRow(database, documentId);
+  if (!row?.filePath || !existsSync(row.filePath)) return null;
+  const zip = await JSZip.loadAsync(await readFile(row.filePath));
+  const xml = await zip.file("word/document.xml")?.async("text");
+  if (!xml) return null;
+  const tableItems = readBodyItems(xml).filter((item) => item.type === "table");
+  const index = Math.max(1, Number(tableIndex) || 1);
+  const table = tableItems[index - 1];
+  if (!table) return null;
+  zip.file("word/document.xml", buildSingleTableDocumentXml(xml, table.xml));
+  return {
+    fileName: `${sanitizeFileStem(row.fileName || row.name || "table")}-表格${index}.docx`,
+    buffer: Buffer.from(await zip.generateAsync({ type: "nodebuffer" })),
+  };
+}
+
+function getKnowledgeDocumentRow(database, documentId) {
+  return database.prepare(`
+    SELECT id, kb_id AS kbId, name, file_name AS fileName, file_ext AS fileExt,
+      file_path AS filePath
+    FROM knowledge_documents
+    WHERE id = ? AND deleted_at IS NULL
+  `).get(documentId);
+}
+
+function buildSingleTableDocumentXml(documentXml, tableXml) {
+  const sectPr = documentXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0] || "";
+  return documentXml.replace(/<w:body\b[^>]*>[\s\S]*<\/w:body>/, `<w:body>${tableXml}<w:p/>${sectPr}</w:body>`);
+}
+
+function sanitizeFileStem(value) {
+  return String(value || "table").replace(/\.(docx|doc)$/i, "").replace(/[\\/:*?"<>|]/g, "_").trim() || "table";
 }
 
 function readBodyItems(xml) {
@@ -103,100 +141,6 @@ function extractTableRows(tableXml) {
     .filter((row) => row.length > 0);
 }
 
-function buildTableHtml(tableXml) {
-  const tableStyle = buildTableStyle(tableXml);
-  const tableBorder = getTableBorderStyle(tableXml);
-  const rows = [...tableXml.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((rowMatch) =>
-    [...rowMatch[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((cellMatch) => ({
-      xml: cellMatch[0],
-      text: extractCellHtml(cellMatch[0]),
-      colSpan: Math.max(1, Number(cellMatch[0].match(/<w:gridSpan\b[^>]*w:val="(\d+)"/)?.[1] || 1) || 1),
-      vMerge: cellMatch[0].match(/<w:vMerge\b[^>]*(?:w:val="([^"]+)")?/)?.[1] ?? null,
-      style: buildCellStyle(cellMatch[0], tableBorder),
-    })),
-  );
-  const activeMerges = new Map();
-  const htmlRows = rows.map((row) => {
-    let column = 0;
-    const cells = [];
-    row.forEach((cell) => {
-      while (activeMerges.has(column) && activeMerges.get(column).covered) column += 1;
-      const mergeKey = column;
-      const isContinueMerge = cell.vMerge === "";
-      if (isContinueMerge && activeMerges.has(mergeKey)) {
-        activeMerges.get(mergeKey).rowSpan += 1;
-        column += cell.colSpan;
-        return;
-      }
-      if (!cell.vMerge) {
-        for (let offset = 0; offset < cell.colSpan; offset += 1) activeMerges.delete(column + offset);
-      }
-      const outputCell = { ...cell, rowSpan: 1 };
-      cells.push(outputCell);
-      if (cell.vMerge === "restart") {
-        activeMerges.set(mergeKey, outputCell);
-        for (let offset = 1; offset < cell.colSpan; offset += 1) activeMerges.set(mergeKey + offset, { covered: true });
-      }
-      column += cell.colSpan;
-    });
-    return cells;
-  });
-  const body = htmlRows
-    .map((row) => `<tr>${row.map((cell) => {
-      const colSpan = cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : "";
-      const rowSpan = cell.rowSpan > 1 ? ` rowspan="${cell.rowSpan}"` : "";
-      return `<td${colSpan}${rowSpan} style="${cell.style}">${cell.text || "&nbsp;"}</td>`;
-    }).join("")}</tr>`)
-    .join("");
-  return `<table style="${tableStyle}"><tbody>${body}</tbody></table>`;
-}
-
-function buildTableStyle(tableXml) {
-  const width = tableXml.match(/<w:tblW\b[^>]*w:w="([^"]+)"[^>]*w:type="([^"]+)"/);
-  const styles = ["border-collapse:collapse", "table-layout:auto"];
-  if (width?.[2] === "pct") styles.push(`width:${Math.max(1, Number(width[1]) / 50)}%`);
-  else styles.push("width:100%");
-  return styles.join(";");
-}
-
-function getTableBorderStyle(tableXml) {
-  const borders = tableXml.match(/<w:tblBorders\b[\s\S]*?<\/w:tblBorders>/)?.[0] || "";
-  const border = borders.match(/<w:(?:insideH|top|left|bottom|right)\b[^>]*w:val="([^"]+)"[^>]*?(?:w:sz="([^"]+)")?[^>]*?(?:w:color="([^"]+)")?[^>]*\/>/);
-  return buildBorderStyle(border?.[1], border?.[2], border?.[3]) || "1px solid #000000";
-}
-
-function buildCellStyle(cellXml, fallbackBorder) {
-  const styles = [
-    `border:${fallbackBorder}`,
-    "padding:4px 6px",
-    "vertical-align:top",
-    "word-break:break-word",
-  ];
-  const width = cellXml.match(/<w:tcW\b[^>]*w:w="([^"]+)"[^>]*w:type="([^"]+)"/);
-  if (width?.[2] === "dxa") styles.push(`width:${Math.max(12, Math.round(Number(width[1]) / 15))}px`);
-  const fill = normalizeColor(cellXml.match(/<w:shd\b[^>]*w:fill="([^"]+)"/)?.[1]);
-  if (fill) styles.push(`background-color:#${fill}`);
-  const vertical = cellXml.match(/<w:vAlign\b[^>]*w:val="([^"]+)"/)?.[1];
-  if (vertical === "center") styles.push("vertical-align:middle");
-  if (vertical === "bottom") styles.push("vertical-align:bottom");
-  return styles.join(";");
-}
-
-function buildBorderStyle(value, size, color) {
-  const borderValue = String(value || "").toLowerCase();
-  if (!borderValue || borderValue === "none" || borderValue === "nil") return "";
-  const px = Math.max(1, Math.round((Number(size || 8) || 8) / 8));
-  return `${px}px solid #${normalizeColor(color) || "000000"}`;
-}
-
-function extractCellHtml(cellXml) {
-  const paragraphs = [...cellXml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
-    .map((match) => extractText(match[0]))
-    .filter(Boolean)
-    .map(escapeHtml);
-  return paragraphs.length > 0 ? paragraphs.join("<br>") : escapeHtml(extractText(cellXml));
-}
-
 function extractText(xml) {
   const pieces = [];
   const tokenPattern = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\s*\/>|<w:br\b[^>]*\/>|<w:cr\s*\/>/g;
@@ -207,22 +151,6 @@ function extractText(xml) {
     else pieces.push("\n");
   }
   return normalizeText(pieces.join(""));
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function normalizeColor(value) {
-  const raw = String(value || "").trim();
-  if (!raw || raw.toLowerCase() === "auto") return "";
-  const color = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
-  if (!color) return "";
-  return color.length === 6 ? color : "";
 }
 
 function readDocumentPages(database, documentId) {
@@ -289,4 +217,4 @@ function decodeXmlText(value) {
     .replace(/&apos;/g, "'");
 }
 
-export { listKnowledgeDocumentTables, searchKnowledgeTables };
+export { listKnowledgeDocumentTables, readKnowledgeTableDocx, searchKnowledgeTables };

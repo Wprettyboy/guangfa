@@ -233,7 +233,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，优先按 `GF_CF_SEL_` 选区范围书签定位并选中对应范围，旧数据无选区书签时才回退到 `GF_CF_`。
 - `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，删除 `GF_CF_` 业务书签；清高亮只通过 `GF_CF_SEL_` 选区范围书签定位，清除后保留 `GF_CF_SEL_`，不删除书签范围内的文档文字。
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
-- `requestOnlyOfficeInsertKnowledgeTable(table)`：发送 `insert-knowledge-table`，让注入脚本优先用 OnlyOffice HTML 粘贴能力在当前光标插入带格式表格；不可用时回退创建普通表格。
+- `requestOnlyOfficeInsertKnowledgeTable(table)`：发送 `insert-knowledge-table`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入表格片段 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退创建普通表格。
 - `requestOnlyOfficeAnalyzeLayoutFormat(standard)`：发送 `analyze-layout-format`，让排版注入脚本读取 OnlyOffice 文档段落并按标准规则返回 `layout-format-analyzed` findings。
 - `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按修复计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
@@ -269,7 +269,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `selectComplexFillAnchor(payload)`：优先调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_SEL_` 选区范围书签，同时给该选区补灰色高亮；旧数据无选区书签时才回退到 `GF_CF_`。
   - `deleteComplexFillAnchor(payload)`：单独删除 `GF_CF_` 业务书签；再按 `GF_CF_SEL_` 选区范围书签选中原范围并调用 `clearTextHighlightFromCurrentSelection()` 清背景，清完保留 `GF_CF_SEL_` 供后续选区替换。
   - `fillComplexFillField(payload)`：优先按 `GF_CF_SEL_` 选区范围书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
-  - `insertKnowledgeTable(payload)`：优先调用 `pluginMethod_PasteHtml(html)` 或 `asc_PasteData(HtmlElement, ...)` 粘贴带 inline CSS 的表格 HTML；不可用时回退 `Asc.Editor.callCommand()` + `Api.CreateTable(rows, columns)` + `ApiDocument.InsertContent([table])` 创建普通表格；失败时返回 `knowledge-table-inserted` 错误结果。
+  - `insertKnowledgeTable(payload)`：调用 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入后端生成的单表格 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退 `Asc.Editor.callCommand()` + `Api.CreateTable(rows, columns)` + `ApiDocument.InsertContent([table])` 创建普通表格；按 `requestId` 去重，失败时返回 `knowledge-table-inserted` 错误结果。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
@@ -311,7 +311,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `logicDocument.RemoveBeforePaste()` / `Remove(...)`：删除当前选区文本。
 - `ParaRun.AddText(text)`：通过 OnlyOffice run 写入纯文本内容；不设置 run 直接字体属性时，字号等由当前位置的段落/样式体系决定。
 - `Asc.Editor.callCommand(callback)`：在 OnlyOffice 命令上下文中执行文档编辑动作，适合插入表格等需要编辑器事务包裹的操作。
-- `api.pluginMethod_PasteHtml(html)` / `api.asc_PasteData(AscCommon.c_oAscClipboardDataFormat.HtmlElement, element, ...)`：把 HTML 片段按粘贴方式写入当前光标位置，适合保留表格边框、底色、宽度和合并等可映射格式。
+- `api.asc_insertTextFromUrl(url)` / `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)`：把外部 DOCX 内容插入当前光标位置，适合 Word 到 Word 的内容复用。
 - `Api.CreateTable(rows, columns)`：创建 OnlyOffice 表格对象。
 - `ApiDocument.InsertContent([element])`：把表格等文档对象插入当前光标位置。
 - `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。

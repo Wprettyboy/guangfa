@@ -10,6 +10,7 @@ import {
 } from "../../knowledge/documents.js";
 import {
   listKnowledgeDocumentTables,
+  readKnowledgeTableDocx,
   searchKnowledgeTables,
 } from "../../knowledge/tables.js";
 import { defineRoute } from "../registry.js";
@@ -156,6 +157,32 @@ function registerKnowledgeRoutes() {
     },
     responses: { 200: "array" },
     handler: ({ body }) => searchKnowledgeTables(body),
+  });
+
+  defineRoute({
+    id: "knowledge.tables.docx",
+    method: "GET",
+    path: "/api/knowledge-tables/:documentId/:tableIndex/docx",
+    tags: ["knowledge"],
+    summary: "读取知识库表格临时 DOCX",
+    responses: { 200: "binary" },
+    handler: async ({ params }) => {
+      const file = await readKnowledgeTableDocx(params.documentId, params.tableIndex);
+      if (!file) {
+        const error = new Error("知识库表格原文不存在");
+        error.statusCode = 404;
+        throw error;
+      }
+      return {
+        kind: "buffer",
+        buffer: file.buffer,
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers: {
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(file.fileName)}"`,
+          "Cache-Control": "no-store",
+        },
+      };
+    },
   });
 }
 

@@ -1,5 +1,6 @@
 (function () {
   const complexFillHighlightColor = { r: 211, g: 211, b: 211, color: "D3D3D3" };
+  const handledKnowledgeTableRequestIds = new Set();
   let fallbackBookmarkIdSeed = 0;
 
   function getApplication() {
@@ -1679,14 +1680,20 @@
 
   async function insertKnowledgeTable(data) {
     const requestId = data.requestId || "";
+    if (requestId) {
+      if (handledKnowledgeTableRequestIds.has(requestId)) return null;
+      handledKnowledgeTableRequestIds.add(requestId);
+      window.setTimeout(function () {
+        handledKnowledgeTableRequestIds.delete(requestId);
+      }, 120000);
+    }
     try {
-      const html = String(data.table?.html || "").trim();
-      if (html) {
-        const pasted = pasteKnowledgeTableHtml(html);
-        if (pasted.ok) {
-          saveOnlyOfficeDocument("insert-knowledge-table-html");
-          return postKnowledgeTableResult({ ...pasted, requestId });
-        }
+      const sourceDocxUrl = String(data.table?.sourceDocxUrl || data.table?.docxUrl || "");
+      if (sourceDocxUrl) {
+        const inserted = insertKnowledgeTableDocx(sourceDocxUrl, requestId);
+        if (inserted.deferred) return inserted;
+        if (inserted.ok) return postKnowledgeTableResult({ ...inserted, requestId });
+        return postKnowledgeTableResult({ ...inserted, requestId });
       }
 
       const rows = normalizeKnowledgeTableRows(data.table || {});
@@ -1760,24 +1767,42 @@
     }
   }
 
-  function pasteKnowledgeTableHtml(html) {
+  function insertKnowledgeTableDocx(url, requestId) {
     const api = getEditorApi() || window.Asc?.editor || window.editor;
     if (!api) return { ok: false, error: "OnlyOffice 编辑器接口不可用。" };
     try {
-      if (typeof api.pluginMethod_PasteHtml === "function") {
-        api.pluginMethod_PasteHtml(html);
-        return { ok: true, source: "plugin-method-paste-html" };
+      const Manager = window.AscCommonWord?.CInsertDocumentManager;
+      if (typeof Manager === "function") {
+        const manager = new Manager(api);
+        const originalEndLongAction = manager.endLongAction?.bind(manager);
+        let finished = false;
+        manager.endLongAction = function () {
+          try {
+            originalEndLongAction?.();
+          } finally {
+            if (finished) return;
+            finished = true;
+            window.setTimeout(function () {
+              saveOnlyOfficeDocument("insert-knowledge-table-docx");
+              postKnowledgeTableResult({ ok: true, requestId, source: "insert-document-manager-url" });
+            }, 300);
+          }
+        };
+        manager.insertTextFromUrl(url);
+        return { deferred: true };
       }
-      if (typeof api.asc_PasteData === "function" && window.AscCommon?.c_oAscClipboardDataFormat?.HtmlElement) {
-        const container = document.createElement("div");
-        container.innerHTML = html;
-        api.asc_PasteData(window.AscCommon.c_oAscClipboardDataFormat.HtmlElement, container, undefined, undefined, true);
-        return { ok: true, source: "asc-paste-data-html-element" };
+      if (typeof api.asc_insertTextFromUrl === "function") {
+        api.asc_insertTextFromUrl(url);
+        window.setTimeout(function () {
+          saveOnlyOfficeDocument("insert-knowledge-table-docx");
+          postKnowledgeTableResult({ ok: true, requestId, source: "asc-insert-text-from-url" });
+        }, 1800);
+        return { deferred: true };
       }
     } catch (error) {
-      return { ok: false, error: error?.message || "OnlyOffice HTML 表格粘贴失败" };
+      return { ok: false, error: error?.message || "OnlyOffice DOCX 表格插入失败" };
     }
-    return { ok: false, error: "OnlyOffice HTML 表格粘贴接口不可用。" };
+    return { ok: false, error: "OnlyOffice DOCX 插入接口不可用。" };
   }
 
   function postKnowledgeTableResult(result) {
