@@ -341,6 +341,8 @@ function requestOnlyOfficeDeleteComplexFillAnchor(anchor) {
     "complex-fill-anchor-deleted",
     { bookmarkName: anchor?.bookmarkName, anchor },
     "OnlyOffice 未响应复杂类填充书签删除命令。",
+    8000,
+    { postAttempts: 0 },
   );
 }
 

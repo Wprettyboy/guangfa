@@ -1077,14 +1077,13 @@ export default function App() {
     } catch (error) {
       result = { ok: false, error: error?.message || "OnlyOffice 未能删除该复杂类填充书签。" };
     }
-    if (!result?.ok && !result?.bookmarkDeleted) {
+    if (!result?.ok) {
       window.alert(result?.error || "OnlyOffice 未能删除该复杂类填充书签。");
       return;
     }
     const nextAnchors = complexFillAnchorsRef.current.filter((current) => current.bookmarkName !== anchor.bookmarkName);
     setComplexFillAnchors(nextAnchors);
     updateComplexFillDraftSnapshot(complexFillFieldsRef.current, nextAnchors);
-    if (!result?.ok) window.alert(result?.error || "书签已删除，但背景色清除失败，请重新定位检查。");
     setSaveState("dirty");
   }
 
