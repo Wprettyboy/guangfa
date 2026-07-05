@@ -614,10 +614,10 @@
     const selectionBookmarkName = getComplexFillSelectionBookmarkName({ ...anchor, bookmarkName });
     const manager = getBookmarkManager();
     try {
-      const removed = removeBookmark(manager, bookmarkName);
-      const bookmarkDeleted = removed !== false;
       const selected = selectComplexFillAnchorRangeForMutation(manager, { ...anchor, bookmarkName, selectionBookmarkName });
       const highlight = selected.ok ? clearTextHighlightFromCurrentSelection() : { ok: false, error: selected.error || "未能选中复杂类填充选区书签" };
+      const removed = removeBookmark(manager, bookmarkName);
+      const bookmarkDeleted = removed !== false;
       saveOnlyOfficeDocument("complex-fill-anchor-delete");
       return postComplexFillResult("complex-fill-anchor-deleted", {
         ok: bookmarkDeleted && highlight?.ok !== false,
