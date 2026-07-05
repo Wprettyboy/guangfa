@@ -257,6 +257,7 @@ function PlaceholderPanel({
   onTemplateCategoryChange,
   onAddVariable,
   onRenameVariable,
+  onUpdateVariable,
   onDeleteVariable,
   onInsertVariable,
   onJumpAnchor,
