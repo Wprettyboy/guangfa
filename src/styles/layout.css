@@ -9,6 +9,19 @@
   margin-bottom: 16px;
 }
 
+.workspace-head-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.workspace-table-button {
+  flex: 0 0 auto;
+  background: #ffffff;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: #6e7c91;

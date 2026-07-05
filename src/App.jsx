@@ -31,6 +31,7 @@ import FormatAuditWorkspace from "./pages/FormatAuditWorkspace.jsx";
 import AnnotateWorkspace from "./pages/AnnotateWorkspace.jsx";
 import FillWorkspace from "./pages/FillWorkspace.jsx";
 import LayoutWorkspace from "./pages/LayoutWorkspace.jsx";
+import KnowledgeTablePicker from "./features/knowledge/KnowledgeTablePicker.jsx";
 import {
   currentProjectId,
   documentSlots,
@@ -56,6 +57,7 @@ import {
   requestOnlyOfficeFillField,
   requestOnlyOfficeFillComplexFillField,
   requestOnlyOfficeFillPlaceholderVariable,
+  requestOnlyOfficeInsertKnowledgeTable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectComplexFillAnchor,
   requestOnlyOfficeSelectPlaceholderAnchor,
@@ -140,6 +142,7 @@ import {
   MessageSquareText,
   Settings,
   ShieldCheck,
+  Table2,
 } from "lucide-react";
 
 gsap.registerPlugin(useGSAP);
@@ -168,6 +171,7 @@ export default function App() {
   const [annotatePreviewPage, setAnnotatePreviewPage] = useState(initialSession.annotatePreviewPage || 1);
   const [fillPreviewPage, setFillPreviewPage] = useState(initialSession.fillPreviewPage || 1);
   const [fillOfficeDocId, setFillOfficeDocId] = useState("");
+  const [knowledgeTablePickerOpen, setKnowledgeTablePickerOpen] = useState(false);
   const [filledTemplateFile, setFilledTemplateFile] = useState(null);
   const [fillFieldPageMap, setFillFieldPageMap] = useState({});
   const [saveState, setSaveState] = useState("idle");
@@ -1901,6 +1905,10 @@ export default function App() {
     setShowCitations(true);
   }
 
+  async function insertKnowledgeTable(table) {
+    return requestOnlyOfficeInsertKnowledgeTable(table);
+  }
+
   return (
     <div className="app-shell" ref={appRef}>
       <aside className="sidebar" aria-label="主导航">
@@ -1997,35 +2005,43 @@ export default function App() {
               <h1>{workspaceTitle}</h1>
             </div>
             {activeModule === "workspace" ? (
-              <div className="workspace-tabs" role="tablist" aria-label="工作台切换">
-                <button
-                  className={activeWorkspace === "annotate" ? "tab active" : "tab"}
-                  data-testid="tab-annotate"
-                  onClick={() => animateWorkspace("annotate")}
-                >
-                  模板标注工作台
-                </button>
-                <button
-                  className={activeWorkspace === "fill" ? "tab active" : "tab"}
-                  data-testid="tab-fill"
-                  onClick={() => animateWorkspace("fill")}
-                >
-                  填充确认工作台
-                </button>
-                <button
-                  className={activeWorkspace === "layout" ? "tab active" : "tab"}
-                  data-testid="tab-layout"
-                  onClick={() => animateWorkspace("layout")}
-                >
-                  排版工作台
-                </button>
-                <button
-                  className={activeWorkspace === "audit" ? "tab active" : "tab"}
-                  data-testid="tab-audit"
-                  onClick={() => animateWorkspace("audit")}
-                >
-                  格式审核工作台
-                </button>
+              <div className="workspace-head-controls">
+                {activeWorkspace === "fill" ? (
+                  <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeTablePickerOpen(true)}>
+                    <Table2 size={16} />
+                    插入资料表格
+                  </button>
+                ) : null}
+                <div className="workspace-tabs" role="tablist" aria-label="工作台切换">
+                  <button
+                    className={activeWorkspace === "annotate" ? "tab active" : "tab"}
+                    data-testid="tab-annotate"
+                    onClick={() => animateWorkspace("annotate")}
+                  >
+                    模板标注工作台
+                  </button>
+                  <button
+                    className={activeWorkspace === "fill" ? "tab active" : "tab"}
+                    data-testid="tab-fill"
+                    onClick={() => animateWorkspace("fill")}
+                  >
+                    填充确认工作台
+                  </button>
+                  <button
+                    className={activeWorkspace === "layout" ? "tab active" : "tab"}
+                    data-testid="tab-layout"
+                    onClick={() => animateWorkspace("layout")}
+                  >
+                    排版工作台
+                  </button>
+                  <button
+                    className={activeWorkspace === "audit" ? "tab active" : "tab"}
+                    data-testid="tab-audit"
+                    onClick={() => animateWorkspace("audit")}
+                  >
+                    格式审核工作台
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>
@@ -2150,6 +2166,14 @@ export default function App() {
           </div>
         </section>
       </main>
+      <KnowledgeTablePicker
+        open={knowledgeTablePickerOpen && activeModule === "workspace" && activeWorkspace === "fill"}
+        knowledgeBases={knowledgeBases}
+        selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
+        selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
+        onInsert={insertKnowledgeTable}
+        onClose={() => setKnowledgeTablePickerOpen(false)}
+      />
     </div>
   );
 }

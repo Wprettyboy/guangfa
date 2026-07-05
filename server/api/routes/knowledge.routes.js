@@ -8,6 +8,10 @@ import {
   reindexKnowledgeBase,
   searchKnowledgeBase,
 } from "../../knowledge/documents.js";
+import {
+  listKnowledgeDocumentTables,
+  searchKnowledgeTables,
+} from "../../knowledge/tables.js";
 import { defineRoute } from "../registry.js";
 
 function registerKnowledgeRoutes() {
@@ -127,6 +131,31 @@ function registerKnowledgeRoutes() {
         },
       };
     },
+  });
+
+  defineRoute({
+    id: "knowledge.documents.tables",
+    method: "GET",
+    path: "/api/knowledge-documents/:documentId/tables",
+    tags: ["knowledge"],
+    summary: "读取知识库资料原文表格",
+    responses: { 200: "array" },
+    handler: ({ params }) => listKnowledgeDocumentTables(params.documentId),
+  });
+
+  defineRoute({
+    id: "knowledge.tables.search",
+    method: "POST",
+    path: "/api/knowledge-tables/search",
+    tags: ["knowledge"],
+    summary: "检索知识库原文表格",
+    body: {
+      query: "string?",
+      kbIds: "array?",
+      globalKbIds: "array?",
+    },
+    responses: { 200: "array" },
+    handler: ({ body }) => searchKnowledgeTables(body),
   });
 }
 

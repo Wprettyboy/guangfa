@@ -55,7 +55,16 @@ async function removeKnowledgeBase(kbId) {
   return result;
 }
 
-
+async function searchKnowledgeTables(payload) {
+  const response = await fetch("/api/knowledge-tables/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "知识库表格读取失败");
+  return Array.isArray(result) ? result : [];
+}
 
 export {
   readKnowledgeBases,
@@ -63,5 +72,6 @@ export {
   postKnowledgeDocument,
   removeKnowledgeDocument,
   removeKnowledgeBase,
+  searchKnowledgeTables,
 };
 

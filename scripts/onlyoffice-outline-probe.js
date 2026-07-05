@@ -306,6 +306,36 @@
     return null;
   }
 
+  function getApiDocumentAny() {
+    const attempts = [
+      () => window.Api?.GetDocument?.(),
+      () => window.AscBuilder?.Word?.Api?.GetDocument?.(),
+      () => window.AscBuilder?.Api?.GetDocument?.(),
+    ];
+    for (const attempt of attempts) {
+      try {
+        const documentApi = attempt();
+        if (documentApi) return documentApi;
+      } catch {}
+    }
+    return null;
+  }
+
+  function getTableApiRoot() {
+    const attempts = [
+      () => window.Api,
+      () => window.AscBuilder?.Word?.Api,
+      () => window.AscBuilder?.Api,
+    ];
+    for (const attempt of attempts) {
+      try {
+        const apiRoot = attempt();
+        if (apiRoot && typeof apiRoot.CreateTable === "function") return apiRoot;
+      } catch {}
+    }
+    return null;
+  }
+
   function getComplexFillBookmarkName(item) {
     if (item?.bookmarkName) return String(item.bookmarkName);
     const id = String(item?.id || "").trim();
@@ -1616,6 +1646,118 @@
     return payload;
   }
 
+  function normalizeKnowledgeTableRows(table) {
+    const sourceRows = Array.isArray(table?.rows) ? table.rows : [];
+    const rows = sourceRows.map(function (row) {
+      const cells = Array.isArray(row) ? row : [];
+      const expanded = [];
+      cells.forEach(function (cell) {
+        const colSpan = Math.max(1, Number(cell?.colSpan || 1) || 1);
+        expanded.push(String(cell?.text || ""));
+        for (let index = 1; index < colSpan; index += 1) expanded.push("");
+      });
+      return expanded;
+    }).filter(function (row) {
+      return row.some(function (text) { return String(text || "").trim(); });
+    });
+    const columnCount = rows.reduce(function (max, row) { return Math.max(max, row.length); }, 0);
+    return rows.map(function (row) {
+      const nextRow = row.slice();
+      while (nextRow.length < columnCount) nextRow.push("");
+      return nextRow;
+    });
+  }
+
+  function writeKnowledgeTableCell(tableApi, rowIndex, columnIndex, text) {
+    const cell = safeCall(tableApi, "GetCell", null, rowIndex, columnIndex);
+    const content = safeCall(cell, "GetContent", null);
+    const paragraph = safeCall(content, "GetElement", null, 0);
+    if (!paragraph || typeof paragraph.AddText !== "function") return false;
+    paragraph.AddText(String(text || ""));
+    return true;
+  }
+
+  async function insertKnowledgeTable(data) {
+    const requestId = data.requestId || "";
+    try {
+      const rows = normalizeKnowledgeTableRows(data.table || {});
+      if (rows.length === 0 || rows[0].length === 0) {
+        return postKnowledgeTableResult({ ok: false, requestId, error: "所选表格为空，无法插入。" });
+      }
+      if (window.Asc?.Editor && typeof window.Asc.Editor.callCommand === "function") {
+        window.Asc.scope = window.Asc.scope || {};
+        window.Asc.scope.gfKnowledgeTableRows = rows;
+        window.Asc.scope.gfKnowledgeTableResult = null;
+        await window.Asc.Editor.callCommand(function () {
+          try {
+            const commandRows = Asc.scope.gfKnowledgeTableRows || [];
+            const doc = Api.GetDocument();
+            const table = Api.CreateTable(commandRows.length, commandRows[0].length);
+            table.SetWidth("percent", 100);
+            commandRows.forEach(function (row, rowIndex) {
+              row.forEach(function (text, columnIndex) {
+                const cell = table.GetCell(rowIndex, columnIndex);
+                const paragraph = cell?.GetContent?.()?.GetElement?.(0);
+                if (paragraph && typeof paragraph.AddText === "function") paragraph.AddText(String(text || ""));
+              });
+            });
+            doc.InsertContent([table]);
+            Asc.scope.gfKnowledgeTableResult = { ok: true, source: "asc-editor-command" };
+          } catch (error) {
+            Asc.scope.gfKnowledgeTableResult = { ok: false, error: error?.message || "资料表格插入失败" };
+          }
+        });
+        const commandResult = window.Asc.scope.gfKnowledgeTableResult || { ok: false, error: "OnlyOffice 表格插入命令未返回结果。" };
+        if (!commandResult.ok) return postKnowledgeTableResult({ ...commandResult, requestId });
+        saveOnlyOfficeDocument("insert-knowledge-table");
+        return postKnowledgeTableResult({
+          ...commandResult,
+          requestId,
+          rowCount: rows.length,
+          columnCount: rows[0].length,
+        });
+      }
+      const documentApi = getApiDocumentAny();
+      const tableApiRoot = getTableApiRoot();
+      if (!documentApi || !tableApiRoot) {
+        return postKnowledgeTableResult({ ok: false, requestId, error: "OnlyOffice 表格接口不可用。" });
+      }
+      if (typeof documentApi.InsertContent !== "function") {
+        return postKnowledgeTableResult({ ok: false, requestId, error: "OnlyOffice 当前光标插入接口不可用。" });
+      }
+
+      const tableApi = tableApiRoot.CreateTable(rows.length, rows[0].length);
+      if (!tableApi) return postKnowledgeTableResult({ ok: false, requestId, error: "OnlyOffice 表格创建失败。" });
+      safeCall(tableApi, "SetWidth", null, "percent", 100);
+      rows.forEach(function (row, rowIndex) {
+        row.forEach(function (text, columnIndex) {
+          writeKnowledgeTableCell(tableApi, rowIndex, columnIndex, text);
+        });
+      });
+      documentApi.InsertContent([tableApi]);
+      safeCall(getLogicDocument(), "Recalculate", null);
+      safeCall(getLogicDocument(), "UpdateInterface", null);
+      safeCall(getLogicDocument(), "UpdateSelection", null);
+      saveOnlyOfficeDocument("insert-knowledge-table");
+      return postKnowledgeTableResult({
+        ok: true,
+        requestId,
+        rowCount: rows.length,
+        columnCount: rows[0].length,
+        source: "api-create-table-insert-content",
+      });
+    } catch (error) {
+      return postKnowledgeTableResult({ ok: false, requestId, error: error?.message || "资料表格插入失败" });
+    }
+  }
+
+  function postKnowledgeTableResult(result) {
+    const message = { source: "guangfa-onlyoffice-custom", action: "knowledge-table-inserted", result };
+    try { window.parent?.postMessage(message, "*"); } catch {}
+    try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+    return result;
+  }
+
   let aiChatHistory = [];
 
   function getAiChatApiBase(context) {
@@ -2099,6 +2241,9 @@
         }, 80);
       }
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-fill", result: { ...result, requestId } }, "*");
+    }
+    if (data.source === "guangfa-parent" && data.action === "insert-knowledge-table") {
+      insertKnowledgeTable(data);
     }
     if (data.source === "guangfa-parent" && data.action === "sync-annotation-fields") {
       try { restoreOnlyOfficeAnnotationFields(data.fields); } catch {}
