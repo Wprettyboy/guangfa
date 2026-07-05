@@ -22,12 +22,7 @@ async function convertDocxToPdf({ documentId, sourcePath, outputPath, title }) {
   });
   if (!response.ok) throw new Error(`OnlyOffice 转换请求失败：${response.status}`);
   const raw = await response.text();
-  let result = null;
-  try {
-    result = JSON.parse(raw);
-  } catch {
-    throw new Error("OnlyOffice 转 PDF 未返回有效 JSON，已使用 DOCX 文本解析兜底。");
-  }
+  const result = parseConversionResponse(raw);
   if (result.error) throw new Error(`OnlyOffice 转换失败：${result.error}`);
   if (!result.fileUrl) throw new Error("OnlyOffice 未返回 PDF 下载地址");
   const fileResponse = await fetch(result.fileUrl, { signal: AbortSignal.timeout(12000) });
@@ -39,6 +34,36 @@ async function convertDocxToPdf({ documentId, sourcePath, outputPath, title }) {
     pdfPath: outputPath,
     bytes: buffer.byteLength,
   };
+}
+
+function parseConversionResponse(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const fileUrl = readXmlTag(raw, "FileUrl");
+    if (!fileUrl) throw new Error("OnlyOffice 转 PDF 未返回下载地址，已使用 DOCX 文本解析兜底。");
+    return {
+      fileUrl,
+      fileType: readXmlTag(raw, "FileType"),
+      percent: Number(readXmlTag(raw, "Percent") || 0),
+      endConvert: /^true$/i.test(readXmlTag(raw, "EndConvert")),
+      error: readXmlTag(raw, "Error"),
+    };
+  }
+}
+
+function readXmlTag(xml, tagName) {
+  const match = String(xml || "").match(new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "i"));
+  return match ? decodeXmlText(match[1]).trim() : "";
+}
+
+function decodeXmlText(value) {
+  return String(value || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'");
 }
 
 export { convertDocxToPdf };
