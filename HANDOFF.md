@@ -190,7 +190,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeAddInputPoint(field)`：发送 `add-input-point`，让注入脚本在当前光标处写入输入点书签。
 - `requestOnlyOfficeAddComplexFillAnchor(anchor)`：发送 `add-complex-fill-anchor`，让注入脚本读取 OnlyOffice 当前真实选区并创建 `GF_CF_` 选区书签，回传书签名、页码和选区原文。
 - `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，按 `GF_CF_` 书签定位并选中对应范围，回传动态页码。
-- `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，只移除对应 `GF_CF_` 书签，不删除书签范围内的文档文字。
+- `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，按 `GF_CF_` 书签选中范围并捕获 `SelectionState`；删除书签和恢复同一选区清除高亮是同一按钮触发的两个独立动作，不删除书签范围内的文档文字。
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，让注入脚本按 `GF_CF_` 书签替换选区内容并保留同名书签。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
 - `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
@@ -223,7 +223,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `clearTextHighlightFromCurrentSelection()`：优先调用 OnlyOffice 工具栏高亮同源接口 `api.SetMarkerFormat(true, false)` 清除当前选区高亮，随后 `api.SetMarkerFormat(false)` 关闭高亮工具状态；失败时兜底 `api.put_LineHighLight(false, 255, 255, 255)`。
   - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，先基于用户真实选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，再按书签范围选中并调用高亮工具，最后触发保存并回传 `{ anchor }`。
   - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补灰色高亮。
-  - `deleteComplexFillAnchor(payload)`：调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除 `GF_CF_` 书签，保留原文内容，并尝试清除该选区高亮。
+  - `deleteComplexFillAnchor(payload)`：先按 `GF_CF_` 书签选中范围并捕获 `logicDocument.GetSelectionState()` 作为共同定位依据；随后分别调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark` 删除书签、用 `SetSelectionState()` 恢复同一选区并清除高亮，回传 `bookmarkDeleted` 和 `highlight`，保留原文内容。
   - `fillComplexFillField(payload)`：按 `GF_CF_` 书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前书签选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留同名书签；不要先删除书签，否则选区可能塌缩成光标，导致新内容插在旧内容前。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
