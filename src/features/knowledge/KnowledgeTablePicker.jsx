@@ -13,6 +13,7 @@ function KnowledgeTablePicker({
 }) {
   const [query, setQuery] = useState("");
   const [tables, setTables] = useState([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
@@ -21,7 +22,10 @@ function KnowledgeTablePicker({
     () => [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
     [selectedGlobalKnowledgeBaseIds, selectedProjectKnowledgeBaseIds],
   );
-  const selectedTable = tables.find((table) => table.id === selectedTableId) || tables[0] || null;
+  const documents = useMemo(() => groupTablesByDocument(tables), [tables]);
+  const selectedDocument = documents.find((document) => document.id === selectedDocumentId) || documents[0] || null;
+  const documentTables = selectedDocument ? tables.filter((table) => table.documentId === selectedDocument.id) : [];
+  const selectedTable = documentTables.find((table) => table.id === selectedTableId) || documentTables[0] || null;
 
   useEffect(() => {
     if (!open) return;
@@ -41,10 +45,12 @@ function KnowledgeTablePicker({
         globalKbIds: selectedGlobalKnowledgeBaseIds,
       });
       setTables(nextTables);
+      setSelectedDocumentId(nextTables[0]?.documentId || "");
       setSelectedTableId(nextTables[0]?.id || "");
       setStatus("ready");
     } catch (loadError) {
       setTables([]);
+      setSelectedDocumentId("");
       setSelectedTableId("");
       setStatus("error");
       setError(loadError?.message || "知识库表格读取失败");
@@ -96,14 +102,34 @@ function KnowledgeTablePicker({
           {selectedIds.length === 0 ? "请先在填充工作台选择项目库或全局库。" : `当前范围：${selectedKnowledgeBaseNames.join("、")}`}
         </div>
         <div className="knowledge-table-body">
-          <aside className="knowledge-table-list">
+          <aside className="knowledge-table-documents">
             {status === "loading" ? (
               <div className="knowledge-table-empty"><Loader2 size={16} className="spin" /> 正在读取原文表格</div>
             ) : error ? (
               <div className="knowledge-table-empty error">{error}</div>
-            ) : tables.length === 0 ? (
-              <div className="knowledge-table-empty">未找到可插入表格</div>
-            ) : tables.map((table) => (
+            ) : documents.length === 0 ? (
+              <div className="knowledge-table-empty">未找到含表格的 Word 文档</div>
+            ) : documents.map((document) => (
+              <button
+                className={document.id === selectedDocument?.id ? "knowledge-table-document active" : "knowledge-table-document"}
+                type="button"
+                key={document.id}
+                onClick={() => {
+                  setSelectedDocumentId(document.id);
+                  setSelectedTableId(document.firstTableId);
+                  setInsertStatus("");
+                }}
+              >
+                <FileText size={16} />
+                <span>
+                  <strong title={document.name}>{document.name}</strong>
+                  <em>{document.knowledgeBaseName} · {document.tableCount} 个表格</em>
+                </span>
+              </button>
+            ))}
+          </aside>
+          <aside className="knowledge-table-list">
+            {selectedDocument ? documentTables.map((table) => (
               <button
                 className={table.id === selectedTable?.id ? "knowledge-table-item active" : "knowledge-table-item"}
                 type="button"
@@ -116,10 +142,10 @@ function KnowledgeTablePicker({
                 <Table2 size={16} />
                 <span>
                   <strong>{table.title || `表格 ${table.tableIndex}`}</strong>
-                  <em>{table.documentName} · {table.rowCount}行{table.columnCount}列{table.page ? ` · 第${table.page}页` : ""}</em>
+                  <em>{table.rowCount}行{table.columnCount}列{table.page ? ` · 第${table.page}页` : ""}</em>
                 </span>
               </button>
-            ))}
+            )) : <div className="knowledge-table-empty">请选择 Word 文档</div>}
           </aside>
           <main className="knowledge-table-preview">
             {selectedTable ? (
@@ -164,6 +190,26 @@ function KnowledgeTablePicker({
     </div>,
     document.body,
   );
+}
+
+function groupTablesByDocument(tables) {
+  const byDocument = new Map();
+  tables.forEach((table) => {
+    const id = table.documentId || table.fileName || table.documentName || "unknown";
+    if (!byDocument.has(id)) {
+      byDocument.set(id, {
+        id,
+        name: table.documentName || table.fileName || "未命名文档",
+        fileName: table.fileName || "",
+        knowledgeBaseName: table.knowledgeBaseName || "",
+        tableCount: 0,
+        firstTableId: table.id,
+      });
+    }
+    const document = byDocument.get(id);
+    document.tableCount += 1;
+  });
+  return [...byDocument.values()];
 }
 
 export default KnowledgeTablePicker;

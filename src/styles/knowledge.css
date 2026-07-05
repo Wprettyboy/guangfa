@@ -553,10 +553,11 @@
 .knowledge-table-body {
   min-height: 0;
   display: grid;
-  grid-template-columns: 310px minmax(0, 1fr);
+  grid-template-columns: 250px 280px minmax(0, 1fr);
   border-top: 1px solid #e5ecf5;
 }
 
+.knowledge-table-documents,
 .knowledge-table-list,
 .knowledge-table-preview {
   min-width: 0;
@@ -565,6 +566,7 @@
   background: #f7f9fc;
 }
 
+.knowledge-table-documents,
 .knowledge-table-list {
   display: grid;
   align-content: start;
@@ -573,6 +575,7 @@
   border-right: 1px solid #e5ecf5;
 }
 
+.knowledge-table-document,
 .knowledge-table-item {
   min-width: 0;
   display: grid;
@@ -588,12 +591,16 @@
   cursor: pointer;
 }
 
+.knowledge-table-document.active,
 .knowledge-table-item.active {
   border-color: #8db7ff;
   background: #eaf1ff;
   color: #0f56d9;
 }
 
+.knowledge-table-document span,
+.knowledge-table-document strong,
+.knowledge-table-document em,
 .knowledge-table-item span,
 .knowledge-table-item strong,
 .knowledge-table-item em {
@@ -604,6 +611,7 @@
   white-space: nowrap;
 }
 
+.knowledge-table-document em,
 .knowledge-table-item em {
   margin-top: 3px;
   color: #6d7b91;
