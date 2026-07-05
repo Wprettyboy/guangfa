@@ -16,7 +16,7 @@ function PlaceholderFillCards({
   function toggleVariable(variableId) {
     setCollapsedVariables((current) => ({
       ...current,
-      [variableId]: !(current[variableId] ?? false),
+      [variableId]: !(current[variableId] ?? true),
     }));
   }
 
@@ -35,7 +35,7 @@ function PlaceholderFillCards({
     <section className="placeholder-fill-panel">
       <div className="placeholder-fill-list">
         {cards.map((card) => {
-          const expanded = collapsedVariables[card.id] !== true;
+          const expanded = collapsedVariables[card.id] === false;
           const listId = `placeholder-fill-anchor-list-${card.id}`;
           const isGenerating = card.status === "生成中";
           const canApply = Boolean(card.value.trim()) && !isGenerating && !generatingAll;

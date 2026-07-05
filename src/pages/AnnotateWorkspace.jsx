@@ -267,14 +267,14 @@ function PlaceholderPanel({
   function toggleVariable(variableId) {
     setCollapsedVariables((current) => ({
       ...current,
-      [variableId]: !(current[variableId] ?? false),
+      [variableId]: !(current[variableId] ?? true),
     }));
   }
 
   return (
     <div className="panel-section placeholder-panel-section standalone">
       <div className="panel-title">
-        <h2>自动字段设置</h2>
+        <h2>字段设置</h2>
         <div className="panel-actions">
           <span className="soft-count">字段 {variables.length} 个</span>
           <button className="text-button" type="button" onClick={() => setMaintenanceOpen(true)}>
@@ -307,7 +307,7 @@ function PlaceholderPanel({
         ) : variables.map((variable) => {
           const variableAnchors = anchors.filter((anchor) => anchor.variableId === variable.id).sort(comparePlaceholderAnchors);
           const anchorRows = labelPlaceholderAnchorPages(variableAnchors);
-          const expanded = collapsedVariables[variable.id] !== true;
+          const expanded = collapsedVariables[variable.id] === false;
           const listId = `placeholder-anchor-list-${variable.id}`;
           return (
             <article className="placeholder-variable-card" key={variable.id}>
