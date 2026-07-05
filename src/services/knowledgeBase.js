@@ -26,8 +26,10 @@ async function postKnowledgeDocument(kbId, material) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name: material.name,
+      fileName: material.fileName || material.name,
+      fileType: material.fileType || "",
       size: material.size,
-      text: material.text,
+      fileBase64: material.fileBase64,
     }),
   });
   const result = await response.json();

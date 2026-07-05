@@ -321,8 +321,8 @@ function KnowledgeBaseManagement({
                   onClick={() => setSelectedResultId(result.id)}
                 >
                   <strong>{result.documentName}</strong>
-                  <span>{result.scope === "global" ? "全局库" : "项目库"} · 片段{result.chunkIndex} · {result.mode} · 相关度 {result.score}</span>
-                  <p>{renderKnowledgeText(getKnowledgePreview(result.text, searchTerm), searchTerm)}</p>
+                  <span>{result.scope === "global" ? "全局库" : "项目库"} · {result.sourceLocation || `片段${result.chunkIndex}`} · {result.mode} · 相关度 {result.score}</span>
+                  <p>{renderKnowledgeText(getKnowledgePreview(result.sourceText || result.text, searchTerm), searchTerm)}</p>
                 </button>
               ))
             )}
@@ -330,8 +330,8 @@ function KnowledgeBaseManagement({
           {selectedResult ? (
             <div className="knowledge-result-detail">
               <strong>{selectedResult.documentName}</strong>
-              <span>相关度 {selectedResult.score} · {selectedResult.scope === "global" ? "全局库" : "项目库"}</span>
-              <p>{renderKnowledgeText(selectedResult.text, searchTerm)}</p>
+              <span>{selectedResult.sourceLocation || "旧资料缺少原文页码"} · 相关度 {selectedResult.score} · {selectedResult.scope === "global" ? "全局库" : "项目库"}</span>
+              <p>{renderKnowledgeText(selectedResult.sourceText || selectedResult.text, searchTerm)}</p>
             </div>
           ) : null}
         </aside>

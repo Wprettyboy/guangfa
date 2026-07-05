@@ -163,8 +163,8 @@ function formatKnowledgeSnippets(snippets) {
   return snippets
     .map((item, index) => {
       const scopeName = item.scope === "global" ? "全局库" : "项目库";
-      const location = item.page ? ` 第${item.page}页` : ` 片段${item.chunkIndex || index + 1}`;
-      return `知识库${index + 1}（${scopeName}｜${item.documentName || "未命名资料"}${location}｜相关度${item.score || 0}）：\n${item.text || ""}`;
+      const location = item.sourceLocation || `${item.documentName || "未命名资料"}${item.page ? ` 第${item.page}页` : ` 片段${item.chunkIndex || index + 1}`}`;
+      return `知识库${index + 1}（${scopeName}｜${location}｜相关度${item.score || 0}）：\n${item.text || ""}`;
     })
     .join("\n\n");
 }

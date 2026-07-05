@@ -242,13 +242,15 @@ function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = [], 
   const tokens = createSearchTokens(query);
   const knowledge = knowledgeSnippets.map((item, index) => {
     const scopeName = item.scope === "global" ? "全局库" : "项目库";
-    const location = item.page ? `第${item.page}页` : `片段${item.chunkIndex || index + 1}`;
+    const location = item.sourceLocation || `${item.documentName || "未命名资料"} ${item.page ? `第${item.page}页` : `片段${item.chunkIndex || index + 1}`}`;
     const text = String(item.text || "").trim();
+    const sourceText = String(item.sourceText || text).trim();
     return {
       rank: index,
       score: Number(item.score || 0),
-      source: `知识库${index + 1}（${scopeName}｜${item.documentName || "未命名资料"} ${location}）`,
+      source: `知识库${index + 1}（${scopeName}｜${location}）`,
       text,
+      sourceText,
       tokenScore: scoreText(text, tokens),
     };
   });
@@ -290,7 +292,7 @@ function applySystemCitation(result, citation) {
       sourceSnippetText: "",
     };
   }
-  const text = citation.text.slice(0, 2000);
+  const text = (citation.sourceText || citation.text || "").slice(0, 2000);
   return {
     ...result,
     aiReason,
@@ -326,7 +328,7 @@ function attachSupplementCitation(result, citation) {
       sourceSnippetText: "",
     };
   }
-  const text = citation.text.slice(0, 2000);
+  const text = (citation.sourceText || citation.text || "").slice(0, 2000);
   const preview = text.slice(0, 500);
   return {
     ...result,

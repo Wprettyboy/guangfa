@@ -21,13 +21,14 @@ async function readMaterialFile(file) {
 }
 
 async function readKnowledgeDocumentFile(file) {
-  const isDocx = /\.docx$/i.test(file.name);
-  const text = isDocx ? await readDocxText(file) : await file.text();
+  const buffer = await file.arrayBuffer();
   return {
     id: `KDOC-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: file.name,
+    fileName: file.name,
+    fileType: file.type || "",
     size: formatFileSize(file.size),
-    text: text.replace(/\s+/g, " ").trim().slice(0, 250000),
+    fileBase64: arrayBufferToBase64(buffer),
   };
 }
 
@@ -75,6 +76,16 @@ function getExportStatusText(state) {
   if (state === "no-file") return "未加载模板";
   if (state === "error") return "导出失败";
   return "";
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 

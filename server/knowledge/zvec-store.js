@@ -5,10 +5,10 @@ import { getEmbeddingConfig } from "../embedding.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const zvecDir = path.join(knowledgeDir, "zvec");
-const knowledgeZvecCollectionPath = path.join(zvecDir, "chunks_v2");
+const knowledgeZvecCollectionPath = path.join(zvecDir, "chunks_v3");
 const vectorFieldName = "embedding";
 const textFieldName = "text";
-const outputFields = ["kbId", "scope", "projectId", "documentId", "documentName", "chunkIndex", "page", "text", "createdAt"];
+const outputFields = ["kbId", "scope", "projectId", "documentId", "documentName", "chunkIndex", "page", "paragraphStart", "paragraphEnd", "text", "createdAt"];
 
 function createKnowledgeZvecSchema(zvec, dimension = getEmbeddingConfig().dimension) {
   return new zvec.ZVecCollectionSchema({
@@ -30,6 +30,8 @@ function createKnowledgeZvecSchema(zvec, dimension = getEmbeddingConfig().dimens
       { name: "documentName", dataType: zvec.ZVecDataType.STRING },
       { name: "chunkIndex", dataType: zvec.ZVecDataType.INT32 },
       { name: "page", dataType: zvec.ZVecDataType.STRING, nullable: true },
+      { name: "paragraphStart", dataType: zvec.ZVecDataType.INT32, nullable: true },
+      { name: "paragraphEnd", dataType: zvec.ZVecDataType.INT32, nullable: true },
       { name: textFieldName, dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.FTS } },
       { name: "createdAt", dataType: zvec.ZVecDataType.STRING },
     ],
@@ -44,9 +46,11 @@ function createKnowledgeZvecFields(chunk) {
     documentId: chunk.documentId,
     documentName: chunk.documentName,
     chunkIndex: chunk.chunkIndex,
-    page: chunk.page || "",
+    page: chunk.page ? String(chunk.page) : "",
+    paragraphStart: Number(chunk.paragraphStart || 0) || null,
+    paragraphEnd: Number(chunk.paragraphEnd || 0) || null,
     text: chunk.text,
-    createdAt: chunk.createdAt,
+    createdAt: String(chunk.createdAt || ""),
   };
 }
 
@@ -162,6 +166,8 @@ function normalizeZvecResult(row, mode) {
     documentName: fields.documentName,
     chunkIndex: fields.chunkIndex,
     page: fields.page,
+    paragraphStart: fields.paragraphStart,
+    paragraphEnd: fields.paragraphEnd,
     text: fields.text,
     createdAt: fields.createdAt,
   };
