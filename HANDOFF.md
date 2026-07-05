@@ -109,6 +109,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/ai/fill-rules.js`：填充模式、字段契约、金额/日期/选择型规则、证据约束辅助。
 - `server/ai/knowledge-query.js`：AI 填充前的核心检索词提取与知识库召回查询。
 - `server/ai/chat.js`：自研知识库聊天接口。
+- `server/ai/chat-completions.js`：OpenAI-compatible `/chat/completions` 调用封装；支持同一配置内多个 API Key 轮询和限流/异常时切换下一个 Key。
 - `server/ai/format-outline.js`：格式/大纲 AI 审查接口。
 - `server/ai/model.js`：模型调用封装。
 - `server/ai/debug-log.js`：AI 填充调试日志。
@@ -174,6 +175,13 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 当前只迁移知识库接口：`/api/knowledge-bases`、`/api/knowledge-bases/search`、知识库资料上传/删除/重建索引、`/api/knowledge-documents/:documentId/file`。
 - 迁移后的知识库路由只做协议层定义，仍调用 `server/knowledge/documents.js` 中的原有业务函数；`server/knowledge-base.js` 保留兼容导出。
 - 后续新增或迁移本地 API 时，优先新增对应 `server/api/routes/<module>.routes.js`，在 `server/api/index.js` 注册；不要把 handler 写成大路由分发文件。
+
+### Gemini 3.1 Flash Lite 文本模型
+
+- 系统设置的“云端 API”已提供 `Gemini 3.1 Flash Lite` 预设，使用 Google Gemini OpenAI-compatible 地址 `https://generativelanguage.googleapis.com/v1beta/openai` 和模型名 `gemini-3.1-flash-lite`。
+- Gemini Flash Lite 属于普通文本输出模型，接入现有 `/chat/completions` 链路；不要把它和 Live API 实时音频翻译链路混用。
+- 云端 API Key 字段支持多个 Key，用英文逗号、分号、换行或转义换行分隔；`server/ai/chat-completions.js` 会按请求轮询起始 Key，遇到 401、403、429、5xx 时尝试下一个 Key。
+- 日志和调试输出不要记录完整 API Key；配置文件和 `.env.local` 里也不要写入文档或聊天窗口。
 
 ### OnlyOffice 通用接口与本地封装
 

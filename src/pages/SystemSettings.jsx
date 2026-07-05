@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { Check, CircleAlert, Database, Loader2, Save, Settings, Sparkles } from "lucide-react";
 
+const geminiFlashLitePreset = {
+  label: "Gemini 3.1 Flash Lite",
+  baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+  model: "gemini-3.1-flash-lite",
+};
+
 const emptyModelConfig = {
   provider: "local",
   local: { baseUrl: "", model: "", apiKey: "" },
@@ -146,10 +152,24 @@ function SystemSettings() {
 
         <ModelRuntimeCard
           title="云端 API"
-          desc="适配 DeepSeek、OpenAI-compatible 云服务。"
+          desc="适配 DeepSeek、Gemini OpenAI-compatible 等云服务。"
           runtime={config.cloud}
           active={config.provider === "cloud"}
+          apiKeyPlaceholder="多个 Key 用英文逗号或分号分隔"
+          apiKeyHint="配置多个 Key 后，请求会按顺序轮询；限流或 Key 异常时自动尝试下一个。"
           onChange={(key, value) => updateSection("cloud", key, value)}
+          presets={[geminiFlashLitePreset]}
+          onApplyPreset={(preset) => {
+            setConfig((current) => ({
+              ...current,
+              provider: "cloud",
+              cloud: {
+                ...current.cloud,
+                baseUrl: preset.baseUrl,
+                model: preset.model,
+              },
+            }));
+          }}
         />
 
         <section className="settings-card embedding-card">
@@ -177,7 +197,17 @@ function SystemSettings() {
   );
 }
 
-function ModelRuntimeCard({ title, desc, runtime, active, onChange }) {
+function ModelRuntimeCard({
+  title,
+  desc,
+  runtime,
+  active,
+  presets = [],
+  apiKeyPlaceholder = "本地服务可留空，云端必填",
+  apiKeyHint = "",
+  onApplyPreset,
+  onChange,
+}) {
   return (
     <section className={active ? "settings-card active" : "settings-card"}>
       <div className="settings-card-title">
@@ -187,18 +217,35 @@ function ModelRuntimeCard({ title, desc, runtime, active, onChange }) {
           <span>{desc}</span>
         </div>
       </div>
+      {presets.length ? (
+        <div className="model-presets" aria-label={`${title}预设`}>
+          {presets.map((preset) => (
+            <button className="tool-button" key={preset.model} type="button" onClick={() => onApplyPreset?.(preset)}>
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <SettingsField label="Base URL" value={runtime.baseUrl} placeholder="http://127.0.0.1:8129/v1" onChange={(value) => onChange("baseUrl", value)} />
       <SettingsField label="模型名称" value={runtime.model} placeholder="qwen3.6-35b-a3b" onChange={(value) => onChange("model", value)} />
-      <SettingsField label="API Key" type="password" value={runtime.apiKey} placeholder="本地服务可留空，云端必填" onChange={(value) => onChange("apiKey", value)} />
+      <SettingsField
+        label="API Key"
+        type="password"
+        value={runtime.apiKey}
+        placeholder={apiKeyPlaceholder}
+        hint={apiKeyHint}
+        onChange={(value) => onChange("apiKey", value)}
+      />
     </section>
   );
 }
 
-function SettingsField({ label, value, placeholder, type = "text", onChange }) {
+function SettingsField({ label, value, placeholder, hint = "", type = "text", onChange }) {
   return (
     <label className="settings-field">
       <span>{label}</span>
       <input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} autoComplete="off" />
+      {hint ? <small>{hint}</small> : null}
     </label>
   );
 }

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { requestChatCompletion, splitApiKeys } from "./ai/chat-completions.js";
 
 const settingsDir = path.resolve(process.cwd(), "data", "settings");
 const settingsFile = path.join(settingsDir, "model-config.json");
@@ -101,36 +102,21 @@ async function testLlm(runtime) {
     throw error;
   }
   const isLocal = isLocalEndpoint(runtime.baseUrl);
-  if (!runtime.apiKey && !isLocal) {
+  if (!splitApiKeys(runtime.apiKey).length && !isLocal) {
     const error = new Error("云端 API 需要填写 API Key。");
     error.statusCode = 400;
     throw error;
   }
 
-  const response = await fetch(`${runtime.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(runtime.apiKey ? { Authorization: `Bearer ${runtime.apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model: runtime.model,
-      temperature: 0,
-      max_tokens: 32,
-      ...(isLocal ? { reasoning: false } : {}),
-      messages: [
-        { role: "system", content: "只返回 JSON，不要输出思考过程。" },
-        { role: "user", content: '返回 {"ok":true}' },
-      ],
-    }),
+  await requestChatCompletion(runtime, {
+    temperature: 0,
+    max_tokens: 32,
+    ...(isLocal ? { reasoning: false } : {}),
+    messages: [
+      { role: "system", content: "只返回 JSON，不要输出思考过程。" },
+      { role: "user", content: '返回 {"ok":true}' },
+    ],
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    const error = new Error(`模型接口异常：${response.status} ${text.slice(0, 160)}`);
-    error.statusCode = 502;
-    throw error;
-  }
   return { ok: true, message: "当前模型连接正常" };
 }
 
