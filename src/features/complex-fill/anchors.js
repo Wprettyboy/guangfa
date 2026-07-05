@@ -1,4 +1,5 @@
 const complexFillBookmarkPrefix = "GF_CF_";
+const complexFillSelectionBookmarkPrefix = "GF_CF_SEL_";
 
 function normalizeComplexFillText(value, maxLength = 1000) {
   return String(value || "")
@@ -27,6 +28,16 @@ function buildComplexFillBookmarkName(fieldId, index = 1) {
   return `${complexFillBookmarkPrefix}${safeId}_${safeIndex}`;
 }
 
+function buildComplexFillSelectionBookmarkName(bookmarkName) {
+  const value = String(bookmarkName || "");
+  if (!value) return "";
+  if (value.startsWith(complexFillSelectionBookmarkPrefix)) return value;
+  if (value.startsWith(complexFillBookmarkPrefix)) {
+    return `${complexFillSelectionBookmarkPrefix}${value.slice(complexFillBookmarkPrefix.length)}`;
+  }
+  return `${complexFillSelectionBookmarkPrefix}${value.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40)}`;
+}
+
 function createComplexFillField(fields = []) {
   return {
     id: getNextComplexFillFieldId(fields),
@@ -44,6 +55,7 @@ function createComplexFillAnchorDraft(field, anchors = []) {
     fieldId: field?.id || "",
     fieldSummary: field?.fieldSummary || "",
     bookmarkName: buildComplexFillBookmarkName(field?.id, index),
+    selectionBookmarkName: buildComplexFillSelectionBookmarkName(buildComplexFillBookmarkName(field?.id, index)),
     page: 1,
     sourceText: "",
     index,
@@ -72,6 +84,12 @@ function normalizeComplexFillAnchor(anchor = {}, order = 1, existing = null) {
   const fieldId = String(anchor.fieldId || anchor.itemId || anchor.id || existing?.fieldId || "");
   const index = Math.max(1, Number(anchor.index || anchor.anchorIndex || existing?.index || order) || order);
   const bookmarkName = String(anchor.bookmarkName || existing?.bookmarkName || buildComplexFillBookmarkName(fieldId, index));
+  const selectionBookmarkName = String(
+    anchor.selectionBookmarkName
+      || anchor.rangeBookmarkName
+      || existing?.selectionBookmarkName
+      || buildComplexFillSelectionBookmarkName(bookmarkName),
+  );
   if (!fieldId || !bookmarkName) return null;
   const page = Math.max(1, Number(anchor.page || existing?.page || 1) || 1);
   return {
@@ -79,6 +97,7 @@ function normalizeComplexFillAnchor(anchor = {}, order = 1, existing = null) {
     fieldId,
     fieldSummary: normalizeComplexFillText(anchor.fieldSummary || anchor.description || existing?.fieldSummary, 300),
     bookmarkName,
+    selectionBookmarkName,
     page,
     sourceText: normalizeComplexFillText(anchor.sourceText || anchor.selectedText || existing?.sourceText, 2000),
     selectionState: anchor.selectionState ?? existing?.selectionState ?? null,
@@ -158,9 +177,11 @@ function buildComplexFillStateFromTemplate(template = {}) {
 export {
   applyComplexFillAnchors,
   buildComplexFillBookmarkName,
+  buildComplexFillSelectionBookmarkName,
   buildComplexFillStateFromTemplate,
   compareComplexFillAnchors,
   complexFillBookmarkPrefix,
+  complexFillSelectionBookmarkPrefix,
   createComplexFillAnchorDraft,
   createComplexFillField,
   getNextComplexFillAnchorIndex,

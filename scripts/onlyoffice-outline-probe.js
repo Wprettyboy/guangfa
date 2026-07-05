@@ -281,6 +281,16 @@
     return safeId ? "GF_CF_" + safeId : "";
   }
 
+  function getComplexFillSelectionBookmarkName(item) {
+    if (item?.selectionBookmarkName) return String(item.selectionBookmarkName);
+    if (item?.rangeBookmarkName) return String(item.rangeBookmarkName);
+    const bookmarkName = typeof item === "string" ? item : getComplexFillBookmarkName(item);
+    if (!bookmarkName) return "";
+    if (bookmarkName.indexOf("GF_CF_SEL_") === 0) return bookmarkName;
+    if (bookmarkName.indexOf("GF_CF_") === 0) return "GF_CF_SEL_" + bookmarkName.slice("GF_CF_".length);
+    return "GF_CF_SEL_" + String(bookmarkName).replace(/[^A-Za-z0-9_]/g, "_").slice(0, 40);
+  }
+
   function hasBookmark(manager, bookmarkName) {
     try {
       if (typeof manager?.asc_HaveBookmark === "function") return manager.asc_HaveBookmark(bookmarkName);
@@ -423,6 +433,47 @@
     return selected;
   }
 
+  function selectComplexFillAnchorRangeForMutation(manager, anchor) {
+    const bookmarkName = getComplexFillBookmarkName(anchor);
+    const selectionBookmarkName = getComplexFillSelectionBookmarkName(anchor);
+    const names = [selectionBookmarkName, bookmarkName].filter(function (name, index, items) {
+      return name && items.indexOf(name) === index;
+    });
+    let firstFailure = null;
+    for (let index = 0; index < names.length; index += 1) {
+      const selected = selectComplexFillBookmarkForMutation(manager, names[index]);
+      if (selected.ok) {
+        return {
+          ...selected,
+          bookmarkName,
+          selectionBookmarkName,
+          activeBookmarkName: names[index],
+          usedSelectionBookmark: names[index] === selectionBookmarkName,
+        };
+      }
+      if (!firstFailure) firstFailure = selected;
+    }
+    return {
+      ...(firstFailure || { ok: false, bookmarkName, error: "未找到对应复杂类填充书签" }),
+      ok: false,
+      bookmarkName,
+      selectionBookmarkName,
+    };
+  }
+
+  function addComplexFillBusinessBookmark(manager, bookmarkName, selectionBookmarkName) {
+    if (!manager || !bookmarkName || !selectionBookmarkName) return { ok: false, error: "复杂类填充业务书签接口不可用" };
+    removeBookmark(manager, bookmarkName);
+    const moved = goToBookmark(manager, selectionBookmarkName);
+    try {
+      const added = manager.AddBookmark(bookmarkName);
+      const selected = selectBookmarkRange(manager, selectionBookmarkName);
+      return { ok: added !== false, moved, selected };
+    } catch (error) {
+      return { ok: false, moved, error: error?.message || "复杂类填充业务书签写入失败" };
+    }
+  }
+
   function restoreSelectionState(selectionState) {
     const logicDocument = getLogicDocument();
     if (!selectionState || !logicDocument || typeof logicDocument.SetSelectionState !== "function") return false;
@@ -499,21 +550,29 @@
     const logicDocument = getLogicDocument();
     const manager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
     const bookmarkName = getComplexFillBookmarkName(anchor);
-    if (!manager || !bookmarkName) {
+    const selectionBookmarkName = getComplexFillSelectionBookmarkName({ ...anchor, bookmarkName });
+    if (!manager || !bookmarkName || !selectionBookmarkName) {
       return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, error: "复杂类填充书签接口不可用" });
     }
 
     try {
       restoreSelectionState(selection.selectionState);
-      if (typeof manager.RemoveBookmark === "function") manager.RemoveBookmark(bookmarkName);
-      manager.AddBookmark(bookmarkName);
-      const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
+      removeBookmark(manager, bookmarkName);
+      removeBookmark(manager, selectionBookmarkName);
+      manager.AddBookmark(selectionBookmarkName);
+      const selected = selectComplexFillBookmarkForMutation(manager, selectionBookmarkName);
       if (!selected.ok) {
+        removeBookmark(manager, selectionBookmarkName);
         removeBookmark(manager, bookmarkName);
         return postComplexFillResult("complex-fill-anchor-added", { ...selected, requestId });
       }
       const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
-      selectBookmarkRange(manager, bookmarkName);
+      const businessBookmark = addComplexFillBusinessBookmark(manager, bookmarkName, selectionBookmarkName);
+      if (!businessBookmark.ok) {
+        removeBookmark(manager, selectionBookmarkName);
+        return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, selectionBookmarkName, error: businessBookmark.error || "复杂类填充业务书签写入失败" });
+      }
+      selectBookmarkRange(manager, selectionBookmarkName);
       const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
       const page = pageInfo.page || selection.page || 1;
       saveOnlyOfficeDocument("complex-fill-anchor");
@@ -525,6 +584,7 @@
           id: anchor.id,
           fieldId: anchor.fieldId || anchor.id,
           bookmarkName,
+          selectionBookmarkName,
           page,
           sourceText: selection.text,
           selectionState: selection.selectionState,
@@ -540,46 +600,48 @@
 
   function selectComplexFillAnchor(payload = {}) {
     const requestId = payload.requestId || "";
-    const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
-    const result = selectBookmarkRange(getBookmarkManager(), bookmarkName);
+    const anchor = payload.anchor || payload.item || {};
+    const bookmarkName = String(payload.bookmarkName || anchor.bookmarkName || "");
+    const result = selectComplexFillAnchorRangeForMutation(getBookmarkManager(), { ...anchor, bookmarkName });
     const highlight = result.ok ? applyTextHighlightToCurrentSelection(complexFillHighlightColor) : null;
     return postComplexFillResult("complex-fill-anchor-selected", { ...result, requestId, highlight });
   }
 
   function deleteComplexFillAnchor(payload = {}) {
     const requestId = payload.requestId || "";
-    const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
-    const selectionState = payload.anchor?.selectionState || payload.item?.selectionState || null;
+    const anchor = payload.anchor || payload.item || {};
+    const bookmarkName = String(payload.bookmarkName || anchor.bookmarkName || "");
+    const selectionBookmarkName = getComplexFillSelectionBookmarkName({ ...anchor, bookmarkName });
     const manager = getBookmarkManager();
-    const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
-    if (!selected.ok) return postComplexFillResult("complex-fill-anchor-deleted", { ...selected, requestId });
     try {
-      if (selectionState) restoreSelectionState(selectionState);
-      const highlight = clearTextHighlightFromCurrentSelection();
       const removed = removeBookmark(manager, bookmarkName);
       const bookmarkDeleted = removed !== false;
+      const selected = selectComplexFillAnchorRangeForMutation(manager, { ...anchor, bookmarkName, selectionBookmarkName });
+      const highlight = selected.ok ? clearTextHighlightFromCurrentSelection() : { ok: false, error: selected.error || "未能选中复杂类填充选区书签" };
       saveOnlyOfficeDocument("complex-fill-anchor-delete");
       return postComplexFillResult("complex-fill-anchor-deleted", {
         ok: bookmarkDeleted && highlight?.ok !== false,
         requestId,
         bookmarkName,
+        selectionBookmarkName,
         page: selected.page || 1,
         bookmarkDeleted,
         highlight,
         error: bookmarkDeleted ? highlight?.error : "复杂类填充书签删除失败。",
       });
     } catch (error) {
-      return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, page: selected.page || 1, error: error?.message || "复杂类填充书签删除失败" });
+      return postComplexFillResult("complex-fill-anchor-deleted", { ok: false, requestId, bookmarkName, selectionBookmarkName, page: 1, error: error?.message || "复杂类填充书签删除失败" });
     }
   }
 
   function fillComplexFillAnchor(anchor, value) {
     const bookmarkName = String(anchor?.bookmarkName || "");
+    const selectionBookmarkName = getComplexFillSelectionBookmarkName(anchor);
     const manager = getBookmarkManager();
-    if (!manager || !bookmarkName) {
+    if (!manager || !bookmarkName || !selectionBookmarkName) {
       return { ok: false, bookmarkName, error: "复杂类填充书签接口不可用" };
     }
-    const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
+    const selected = selectComplexFillAnchorRangeForMutation(manager, anchor);
     if (!selected.ok) return selected;
     try {
       clearTextHighlightFromCurrentSelection();
@@ -588,14 +650,20 @@
         return { ok: false, bookmarkName, page: selected.page, error: removeResult.error || "复杂类填充原选区删除失败" };
       }
       removeBookmark(manager, bookmarkName);
-      const insertResult = insertBookmarkedPlainText(value, bookmarkName, manager, { removeBeforeInsert: false });
+      removeBookmark(manager, selectionBookmarkName);
+      const insertResult = insertBookmarkedPlainText(value, selectionBookmarkName, manager, { removeBeforeInsert: false });
       if (!insertResult.ok) {
         return { ok: false, bookmarkName, page: selected.page, error: insertResult.error || "复杂类填充内容写入失败" };
       }
-      const bookmarkResult = selectBookmarkRange(manager, bookmarkName);
+      const bookmarkResult = selectBookmarkRange(manager, selectionBookmarkName);
+      if (bookmarkResult.ok) {
+        addComplexFillBusinessBookmark(manager, bookmarkName, selectionBookmarkName);
+        selectBookmarkRange(manager, selectionBookmarkName);
+      }
       return {
         ok: true,
         bookmarkName,
+        selectionBookmarkName,
         page: bookmarkResult.page || selected.page || currentSelectionPage(),
         source: insertResult.source,
         removeSource: removeResult.source,

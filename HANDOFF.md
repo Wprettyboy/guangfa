@@ -188,10 +188,10 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeFillField(field, options)`：组装写入 payload，发送 `fill-field-value`，等待 `field-fill` 回传。
 - `requestOnlyOfficeAddFieldBookmark(field)`：发送 `add-field-bookmark`，让注入脚本按已有选区状态写入书签。
 - `requestOnlyOfficeAddInputPoint(field)`：发送 `add-input-point`，让注入脚本在当前光标处写入输入点书签。
-- `requestOnlyOfficeAddComplexFillAnchor(anchor)`：发送 `add-complex-fill-anchor`，让注入脚本读取 OnlyOffice 当前真实选区并创建 `GF_CF_` 选区书签，回传书签名、页码和选区原文。
-- `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，按 `GF_CF_` 书签定位并选中对应范围，回传动态页码。
-- `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，清高亮优先恢复创建书签时保存的 `selectionState`，删除书签使用 `GF_CF_` 书签名；两者是同一按钮触发的两个独立动作，不删除书签范围内的文档文字。
-- `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，让注入脚本按 `GF_CF_` 书签替换选区内容并保留同名书签。
+- `requestOnlyOfficeAddComplexFillAnchor(anchor)`：发送 `add-complex-fill-anchor`，让注入脚本读取 OnlyOffice 当前真实选区并创建两类书签：`GF_CF_` 业务书签和 `GF_CF_SEL_` 选区范围书签；回传书签名、选区书签名、页码和选区原文。
+- `requestOnlyOfficeSelectComplexFillAnchor(anchor)`：发送 `select-complex-fill-anchor`，优先按 `GF_CF_SEL_` 选区范围书签定位并选中对应范围，旧数据无选区书签时才回退到 `GF_CF_`。
+- `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，删除 `GF_CF_` 业务书签；清高亮只通过 `GF_CF_SEL_` 选区范围书签定位，清除后保留 `GF_CF_SEL_`，不删除书签范围内的文档文字。
+- `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
 - `requestOnlyOfficeSelectPlaceholderAnchor(anchor)`：发送 `select-placeholder-anchor`，等待 `placeholder-anchor-selected` 回传。
 - `requestOnlyOfficeDeletePlaceholderAnchor(anchor)`：发送 `delete-placeholder-anchor`，等待 `placeholder-anchor-deleted` 回传。
@@ -221,10 +221,10 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `highlightOnlyOfficeSelection(selectionState)`：恢复选区并调用高亮。
   - `applyTextHighlightToCurrentSelection(options)`：优先调用 OnlyOffice 工具栏高亮同源接口 `api.SetMarkerFormat(true, true, r, g, b)` 给当前选区加高亮，失败时兜底 `api.put_LineHighLight(true, r, g, b)`；不传 options 时默认黄色。
   - `clearTextHighlightFromCurrentSelection()`：优先调用 OnlyOffice 工具栏高亮同源接口 `api.SetMarkerFormat(true, false)` 清除当前选区高亮，随后 `api.SetMarkerFormat(false)` 关闭高亮工具状态；失败时兜底 `api.put_LineHighLight(false, 255, 255, 255)`。
-  - `addComplexFillAnchor(payload)`：读取当前选区文本和 `selectionState`，先基于用户真实选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_` 选区书签，再按书签范围选中并调用高亮工具，最后触发保存并回传 `{ anchor }`；复杂类 anchor 会保留创建时的 `selectionState` 作为后续恢复同一选区的定位数据。
-  - `selectComplexFillAnchor(payload)`：调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_` 书签，同时给该选区补灰色高亮。
-  - `deleteComplexFillAnchor(payload)`：先按 `GF_CF_` 书签确认可定位；清高亮优先用 anchor 上保存的 `selectionState` 恢复创建时选区，再调用 `clearTextHighlightFromCurrentSelection()`；删除书签单独调用书签管理器的 `RemoveBookmark` / `asc_RemoveBookmark`，回传 `bookmarkDeleted` 和 `highlight`，保留原文内容。
-  - `fillComplexFillField(payload)`：按 `GF_CF_` 书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前书签选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留同名书签；不要先删除书签，否则选区可能塌缩成光标，导致新内容插在旧内容前。
+  - `addComplexFillAnchor(payload)`：读取当前选区文本，基于用户真实选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_SEL_` 选区范围书签并添加灰色高亮，再回到选区起点创建 `GF_CF_` 业务书签，最后触发保存并回传 `{ anchor }`。
+  - `selectComplexFillAnchor(payload)`：优先调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_SEL_` 选区范围书签，同时给该选区补灰色高亮；旧数据无选区书签时才回退到 `GF_CF_`。
+  - `deleteComplexFillAnchor(payload)`：单独删除 `GF_CF_` 业务书签；再按 `GF_CF_SEL_` 选区范围书签选中原范围并调用 `clearTextHighlightFromCurrentSelection()` 清背景，清完保留 `GF_CF_SEL_` 供后续选区替换。
+  - `fillComplexFillField(payload)`：优先按 `GF_CF_SEL_` 选区范围书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
