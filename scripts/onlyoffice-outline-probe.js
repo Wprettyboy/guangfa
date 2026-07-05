@@ -764,7 +764,7 @@
     if (!manager || !bookmarkName || !selectionBookmarkName) {
       return { ok: false, bookmarkName, error: "复杂类填充书签接口不可用" };
     }
-    const selected = selectComplexFillAnchorRangeForMutation(manager, anchor);
+    const selected = selectComplexFillAnchorRangeForMutation(manager, anchor, { requireExpectedText: false });
     if (!selected.ok) return selected;
     try {
       const selectedText = readSelectedText(getLogicDocument()) || readSelectedText(getEditorApi());
