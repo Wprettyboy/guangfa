@@ -218,6 +218,16 @@
 
   function clearTextHighlightFromCurrentSelection() {
     const api = getEditorApi();
+    if (api && typeof api.SetMarkerFormat === "function") {
+      try {
+        api.SetMarkerFormat(true, false);
+        window.setTimeout(function () {
+          try { api.SetMarkerFormat(false); } catch {}
+        }, 0);
+        if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
+        return { ok: true, source: "set-marker-format-clear" };
+      } catch {}
+    }
     if (api && typeof api.put_LineHighLight === "function") {
       api.put_LineHighLight(false, 255, 255, 255);
       if (typeof api.asc_Save === "function") window.setTimeout(function () { api.asc_Save(false); }, 80);
