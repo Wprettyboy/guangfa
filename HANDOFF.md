@@ -6,7 +6,7 @@
 
 本项目根目录：`C:\Users\23811\Desktop\广发new`
 
-当前已是可用 git 仓库，远端为 `https://github.com/Wprettyboy/guangfa.git`，本地 `main` 跟踪 `origin/main`。改代码前先读文件，避免误改用户未提交内容。
+当前已是可用 git 仓库，远端为 `https://github.com/Wprettyboy/guangfa.git`。当前工作分支为 `feature/refactor-main`，跟踪 `origin/feature/refactor-main`。改代码前先读文件，避免误改用户未提交内容。
 
 不要把 `.env.local` 里的云端 API Key 发到聊天窗口或文档里。
 
@@ -312,8 +312,9 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 注意：
 
+- 业务聊天、知识库问答、内容审查等项目链路默认走自研接口和自研面板，不把 OnlyOffice 原生 AI Chatbot 当业务默认入口。
 - 手工 POST `http://127.0.0.1:8080/ai-proxy` 会 403，因为缺 OnlyOffice 编辑器运行时 JWT；这不是模型地址问题。
-- 浏览器自动化向 OnlyOffice 插件 iframe 输入测试消息不稳定，但聊天面板能打开且没有未配置模型/403 报错。
+- OnlyOffice 原生 AI 插件只作为独立编辑器能力记录；需要验证时必须先获得用户允许再使用浏览器控制。
 
 ### OnlyOffice 自定义组件
 
@@ -351,7 +352,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ## 当前建议接手方式
 
 1. 先运行 `npm run build`、`node --check server\ai.js`、`node --check server\office.js`。
-2. 打开 `http://127.0.0.1:5173`。
+2. 浏览器控制默认关闭；只有用户明确允许浏览器 QA 时，才打开 `http://127.0.0.1:5173` 做页面验证。
 3. 如果 OnlyOffice 没起来，运行 `npm run office`。
 4. 如果 AI 不响应，先测：
 
@@ -365,9 +366,11 @@ PY"
 
 5. 做业务修复前，先按上面的文件地图找完整调用链，不要从 `src/main.jsx` 入口文件下手，也不要只改当前按钮事件。
 
-## 下一步可能继续的方向
+## 备选方向记录
 
-- 继续验证 OnlyOffice 原生 AI 插件在聊天/摘要/翻译中的实际响应效果。
-- 继续优化填充确认工作台：填空输入点、选择型字段、长文本字段的通用写入策略。
-- 继续稳定模板标注工作台：刷新后字段高亮持久化、字段页码与当前页联动。
-- 继续评估是否能移除客户端 `docx-preview` fallback；确认 OnlyOffice 覆盖所有预览场景后，再删除依赖和 `.docx-preview-host` 样式。
+以下只作为历史备选方向，不代表新会话可主动开展；只有用户明确提出对应需求时再处理。
+
+- 验证 OnlyOffice 原生 AI 插件在聊天/摘要/翻译中的实际响应效果。
+- 优化填充确认工作台：填空输入点、选择型字段、长文本字段的通用写入策略。
+- 稳定模板标注工作台：刷新后字段高亮持久化、字段页码与当前页联动。
+- 评估是否能移除客户端 `docx-preview` fallback；确认 OnlyOffice 覆盖所有预览场景后，再删除依赖和 `.docx-preview-host` 样式。
