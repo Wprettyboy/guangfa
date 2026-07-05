@@ -104,6 +104,7 @@ import {
   markComplexFillFailure,
   requestComplexFillAiFill,
 } from "./features/complex-fill/fill.js";
+import { validateComplexFillAnchorsInDocx } from "./features/complex-fill/docxBookmarks.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -527,6 +528,13 @@ export default function App() {
     filledTemplateBufferRef.current = null;
     filledTemplateDraftFileRef.current = null;
     setFilledTemplateFile(null);
+  }
+
+  function alertMissingComplexFillBookmarks(missingAnchors = [], prefix = "模板文件缺失复杂类填充书签") {
+    if (!missingAnchors.length) return;
+    const lines = missingAnchors.slice(0, 8).map((anchor) => `- ${anchor.fieldSummary || anchor.fieldId || anchor.bookmarkName}`);
+    const suffix = missingAnchors.length > lines.length ? `\n等 ${missingAnchors.length} 处` : "";
+    window.alert(`${prefix}：\n${lines.join("\n")}${suffix}\n请回到模板标注工作台重新建立对应标签并保存模板。`);
   }
 
   function syncAnnotatedOfficeDocument(
@@ -1166,6 +1174,14 @@ export default function App() {
     const normalizedTemplateFields = templateFields.map(normalizeTemplateFieldForRuntime);
     const normalizedComplexFillFields = normalizeComplexFillFields(complexFillFields);
     const normalizedComplexFillAnchors = normalizeComplexFillAnchors(complexFillAnchors);
+    if (normalizedComplexFillAnchors.length > 0) {
+      const validation = await validateComplexFillAnchorsInDocx(fileBuffer, normalizedComplexFillAnchors);
+      if (!validation.ok) {
+        setSaveState("incomplete");
+        alertMissingComplexFillBookmarks(validation.missingAnchors, "模板文件没有保存以下复杂类填充书签，已停止保存");
+        return;
+      }
+    }
 
     const savedTemplate = {
       id: `TPL-${Date.now()}`,
@@ -1239,12 +1255,18 @@ export default function App() {
     const templateToUse = storedTemplate ?? template;
     const templateFieldsToUse = (templateToUse.fields || []).map(normalizeTemplateFieldForRuntime);
     const complexFillState = buildComplexFillStateFromTemplate(templateToUse);
+    let complexFillAnchorsToUse = complexFillState.anchors;
+    if (templateToUse.fileBuffer && complexFillAnchorsToUse.length > 0) {
+      const validation = await validateComplexFillAnchorsInDocx(templateToUse.fileBuffer, complexFillAnchorsToUse);
+      complexFillAnchorsToUse = validation.validAnchors;
+      if (!validation.ok) alertMissingComplexFillBookmarks(validation.missingAnchors, "当前模板文件缺失部分复杂类填充书签，已跳过这些无效选区");
+    }
     const mappedFields = createFillFieldsFromTemplate(templateFieldsToUse);
     setTemplateFields(templateFieldsToUse);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToUse.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToUse.placeholderAnchors || []));
     setComplexFillFields(complexFillState.fields);
-    setComplexFillAnchors(complexFillState.anchors);
+    setComplexFillAnchors(complexFillAnchorsToUse);
     setPlaceholderFills({});
     setComplexFillFills({});
     clearFilledTemplateDraft();
@@ -1287,11 +1309,17 @@ export default function App() {
     const templateToEdit = storedTemplate ?? template;
     const fields = (templateToEdit.fields || []).map(normalizeTemplateFieldForRuntime);
     const complexFillState = buildComplexFillStateFromTemplate(templateToEdit);
+    let complexFillAnchorsToEdit = complexFillState.anchors;
+    if (templateToEdit.fileBuffer && complexFillAnchorsToEdit.length > 0) {
+      const validation = await validateComplexFillAnchorsInDocx(templateToEdit.fileBuffer, complexFillAnchorsToEdit);
+      complexFillAnchorsToEdit = validation.validAnchors;
+      if (!validation.ok) alertMissingComplexFillBookmarks(validation.missingAnchors, "当前模板文件缺失部分复杂类填充书签，已跳过这些无效选区");
+    }
     setTemplateFields(fields);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToEdit.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToEdit.placeholderAnchors || []));
     setComplexFillFields(complexFillState.fields);
-    setComplexFillAnchors(complexFillState.anchors);
+    setComplexFillAnchors(complexFillAnchorsToEdit);
     setPlaceholderFills({});
     setComplexFillFills({});
     clearFilledTemplateDraft();
