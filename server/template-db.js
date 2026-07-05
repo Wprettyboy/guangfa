@@ -24,6 +24,7 @@ async function initializeTemplateDatabase() {
   const database = new DatabaseSync(dbPath);
   database.exec("PRAGMA foreign_keys = ON");
   database.exec(schemaSql);
+  ensureTemplateSchemaMigrations(database);
   await migrateLegacyTemplateLibrary(database);
   return database;
 }
@@ -142,11 +143,11 @@ function replaceTemplatesInDatabase(database, templates) {
     `);
     const insertComplexFillAnchor = database.prepare(`
       INSERT INTO template_complex_fill_anchors (
-        template_id, id, field_id, field_summary, bookmark_name, page,
+        template_id, id, field_id, field_summary, bookmark_name, selection_bookmark_name, page,
         source_text, anchor_index, document_order, sort_order,
         payload_json, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     database.exec("DELETE FROM template_complex_fill_anchors");
@@ -259,6 +260,7 @@ function replaceTemplatesInDatabase(database, templates) {
           String(anchor.fieldId || anchor.id || ""),
           textOrNull(anchor.fieldSummary || anchor.description),
           String(anchor.bookmarkName || ""),
+          textOrNull(anchor.selectionBookmarkName || anchor.rangeBookmarkName),
           numberOrDefault(anchor.page, 1),
           textOrNull(anchor.sourceText),
           numberOrDefault(anchor.index || anchor.anchorIndex, anchorIndex + 1),
@@ -397,6 +399,7 @@ function rowToComplexFillAnchor(row) {
     fieldId: row.field_id,
     fieldSummary: row.field_summary ?? anchor.fieldSummary,
     bookmarkName: row.bookmark_name,
+    selectionBookmarkName: row.selection_bookmark_name ?? anchor.selectionBookmarkName,
     page: row.page,
     sourceText: row.source_text ?? anchor.sourceText,
     index: row.anchor_index,
@@ -515,6 +518,23 @@ function setSchemaMeta(database, key, value) {
 
 function tableExists(database, tableName) {
   return Boolean(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
+}
+
+function columnExists(database, tableName, columnName) {
+  return database.prepare(`PRAGMA table_info(${tableName})`).all().some((column) => column.name === columnName);
+}
+
+function ensureTemplateSchemaMigrations(database) {
+  if (!columnExists(database, "template_complex_fill_anchors", "selection_bookmark_name")) {
+    database.exec("ALTER TABLE template_complex_fill_anchors ADD COLUMN selection_bookmark_name TEXT");
+    const rows = database.prepare("SELECT template_id, id, payload_json FROM template_complex_fill_anchors").all();
+    const update = database.prepare("UPDATE template_complex_fill_anchors SET selection_bookmark_name = ? WHERE template_id = ? AND id = ?");
+    rows.forEach((row) => {
+      const payload = parseJson(row.payload_json, {});
+      const selectionBookmarkName = payload?.selectionBookmarkName || payload?.rangeBookmarkName || "";
+      if (selectionBookmarkName) update.run(selectionBookmarkName, row.template_id, row.id);
+    });
+  }
 }
 
 function stableId(prefix, value) {
@@ -676,6 +696,7 @@ CREATE TABLE IF NOT EXISTS template_complex_fill_anchors (
   field_id TEXT NOT NULL,
   field_summary TEXT,
   bookmark_name TEXT NOT NULL,
+  selection_bookmark_name TEXT,
   page INTEGER DEFAULT 1,
   source_text TEXT,
   anchor_index INTEGER DEFAULT 1,
