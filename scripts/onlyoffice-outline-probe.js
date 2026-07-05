@@ -367,12 +367,6 @@
 
     let actionStarted = false;
     try {
-      const changeType = window.AscCommon?.changestype_Paragraph_AddText;
-      const isLocked = changeType && typeof logicDocument.IsSelectionLocked === "function"
-        ? logicDocument.IsSelectionLocked(changeType, null, false, safeCall(logicDocument, "IsFormFieldEditing", false))
-        : false;
-      if (isLocked) return { ok: false, error: "当前选区被锁定，无法写入复杂类填充内容。" };
-
       const historyType = window.AscDFH?.historydescription_Document_AddTextWithProperties;
       if (typeof logicDocument.StartAction === "function") {
         logicDocument.StartAction(historyType);
@@ -467,6 +461,12 @@
     const moved = goToBookmark(manager, selectionBookmarkName);
     try {
       const added = manager.AddBookmark(bookmarkName);
+      if (added === false || !hasBookmark(manager, bookmarkName)) {
+        selectBookmarkRange(manager, selectionBookmarkName);
+        const rangeAdded = manager.AddBookmark(bookmarkName);
+        const rangeSelected = selectBookmarkRange(manager, selectionBookmarkName);
+        return { ok: rangeAdded !== false && hasBookmark(manager, bookmarkName), moved, selected: rangeSelected, fallback: "range-bookmark" };
+      }
       const selected = selectBookmarkRange(manager, selectionBookmarkName);
       return { ok: added !== false, moved, selected };
     } catch (error) {
@@ -644,6 +644,17 @@
     const selected = selectComplexFillAnchorRangeForMutation(manager, anchor);
     if (!selected.ok) return selected;
     try {
+      const selectedText = readSelectedText(getLogicDocument()) || readSelectedText(getEditorApi());
+      if (normalizeSelectionText(selectedText) === normalizeSelectionText(value)) {
+        return {
+          ok: true,
+          bookmarkName,
+          selectionBookmarkName,
+          page: selected.page || currentSelectionPage(),
+          source: "complex-fill-already-applied",
+          removeSource: "skipped-same-text",
+        };
+      }
       clearTextHighlightFromCurrentSelection();
       const removeResult = removeSelectedTextForReplacement();
       if (!removeResult.ok) {

@@ -221,7 +221,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `highlightOnlyOfficeSelection(selectionState)`：恢复选区并调用高亮。
   - `applyTextHighlightToCurrentSelection(options)`：优先调用 OnlyOffice 工具栏高亮同源接口 `api.SetMarkerFormat(true, true, r, g, b)` 给当前选区加高亮，失败时兜底 `api.put_LineHighLight(true, r, g, b)`；不传 options 时默认黄色。
   - `clearTextHighlightFromCurrentSelection()`：优先调用 OnlyOffice 工具栏高亮同源接口 `api.SetMarkerFormat(true, false)` 清除当前选区高亮，随后 `api.SetMarkerFormat(false)` 关闭高亮工具状态；失败时兜底 `api.put_LineHighLight(false, 255, 255, 255)`。
-  - `addComplexFillAnchor(payload)`：读取当前选区文本，基于用户真实选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_SEL_` 选区范围书签并添加灰色高亮，再回到选区起点创建 `GF_CF_` 业务书签，最后触发保存并回传 `{ anchor }`。
+  - `addComplexFillAnchor(payload)`：读取当前选区文本，基于用户真实选区调用书签管理器 `AddBookmark()` 创建 `GF_CF_SEL_` 选区范围书签并添加灰色高亮，再回到选区起点创建 `GF_CF_` 业务书签；如果 OnlyOffice 不接受起点书签，则回退为范围业务书签，最后触发保存并回传 `{ anchor }`。
   - `selectComplexFillAnchor(payload)`：优先调用书签管理器的 `GoToBookmark` / `SelectBookmark` 或 `asc_*` 变体定位并选中 `GF_CF_SEL_` 选区范围书签，同时给该选区补灰色高亮；旧数据无选区书签时才回退到 `GF_CF_`。
   - `deleteComplexFillAnchor(payload)`：单独删除 `GF_CF_` 业务书签；再按 `GF_CF_SEL_` 选区范围书签选中原范围并调用 `clearTextHighlightFromCurrentSelection()` 清背景，清完保留 `GF_CF_SEL_` 供后续选区替换。
   - `fillComplexFillField(payload)`：优先按 `GF_CF_SEL_` 选区范围书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留 `GF_CF_SEL_` 和 `GF_CF_`。

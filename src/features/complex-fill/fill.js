@@ -116,8 +116,8 @@ function createManualComplexFill(value, currentFill = {}) {
     value,
     status: "待确认",
     confidence: currentFill.confidence || 100,
-    source: currentFill.source || "人工修改",
-    evidence: currentFill.evidence || "用户手动填写并写入复杂类填充选区。",
+    source: "人工修改",
+    evidence: "用户手动填写并写入复杂类填充选区。",
   };
 }
 
