@@ -269,7 +269,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/onlyoffice-layout-format.js`
   - `applyLayoutPlan(plan)`：排版脚本入口，按计划执行页面、正文、标题、落款等动作并回传结果。
   - `applyPageLayout(documentApi, action)`：优先通过 OnlyOffice section API 设置 A4 页面与页边距。
-  - `applyBodyLayout(paragraphs, action)`：给非标题正文段落设置字体、字号、首行缩进和行距。
+  - `applyBodyLayout(paragraphs, action)`：给非标题正文段落设置字体、字号、首行缩进和行距；`SetFontSize` 传半磅值，`SetSpacingLine` 参数顺序为 `(twips, "exact")`。
   - `applyHeadingLayout(paragraphs, action)`：按公文标题编号规则识别标题层级并套用标题格式。
   - `applySignatureLayout(paragraphs, action)`：识别短落款/日期段落并右对齐。
 - `scripts/onlyoffice-placeholder-fields.js`
@@ -305,6 +305,9 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。
 - `logicDocument.Recalculate()`、`UpdateInterface()`、`UpdateSelection()`：插入或删除后刷新文档状态和 UI。
 - `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
+- `ApiParagraph.GetParaPr()` / `ApiParagraph.GetTextPr()`：取得段落属性和文本属性对象，格式调整优先改属性对象，不要只猜测段落对象上是否有同名 setter。
+- `ApiTextPr.SetFontFamily(font)` / `SetFontSize(halfPoints)` / `SetBold(enabled)`：设置文本字体、字号、加粗；字号单位是半磅值，例如 16pt 传 `32`。
+- `ApiParaPr.SetJc(value)` / `SetIndFirstLine(twips)` / `SetSpacingLine(twips, "exact")` / `SetSpacingBefore(twips)` / `SetSpacingAfter(twips)`：设置段落对齐、首行缩进和段前段后/行距；行距接口参数顺序不要写反。
 - `api.SetMarkerFormat(true, true, r, g, b)`：OnlyOffice 工具栏高亮按钮同源接口，给当前选区套用指定高亮色。
 - `api.SetMarkerFormat(true, false)`：OnlyOffice 工具栏“无高亮/透明色”同源接口，用于清除当前选区高亮。
 - `api.put_LineHighLight(true, r, g, b)`：给当前选区加高亮，可作为 `SetMarkerFormat` 不可用时的兜底。

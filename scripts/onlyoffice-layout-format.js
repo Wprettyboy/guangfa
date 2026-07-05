@@ -159,27 +159,29 @@
   }
 
   function applyParagraphFormat(paragraph, format) {
+    const paragraphPr = safeCall(paragraph, "GetParaPr", null);
     const alignment = normalizeAlignment(format.alignment);
-    if (alignment) callAny(paragraph, ["SetJc", "SetAlign"], [alignment]);
+    if (alignment) callAnyTarget([paragraphPr, paragraph], ["SetJc", "SetAlign"], [alignment]);
     if (Number.isFinite(Number(format.firstLineChars))) {
-      callAny(paragraph, ["SetIndFirstLine", "SetFirstLineIndent"], [charsToTwips(format.firstLineChars, format.fontSizePt || 16)]);
+      callAnyTarget([paragraphPr, paragraph], ["SetIndFirstLine", "SetFirstLineIndent"], [charsToTwips(format.firstLineChars, format.fontSizePt || 16)]);
     }
     if (Number.isFinite(Number(format.lineSpacingPt))) {
-      callAny(paragraph, ["SetSpacingLine"], ["exact", ptToTwips(format.lineSpacingPt)]);
+      callAnyTarget([paragraphPr, paragraph], ["SetSpacingLine"], [ptToTwips(format.lineSpacingPt), "exact"]);
     }
-    if (Number.isFinite(Number(format.beforePt))) callAny(paragraph, ["SetSpacingBefore"], [ptToTwips(format.beforePt)]);
-    if (Number.isFinite(Number(format.afterPt))) callAny(paragraph, ["SetSpacingAfter"], [ptToTwips(format.afterPt)]);
+    if (Number.isFinite(Number(format.beforePt))) callAnyTarget([paragraphPr, paragraph], ["SetSpacingBefore"], [ptToTwips(format.beforePt)]);
+    if (Number.isFinite(Number(format.afterPt))) callAnyTarget([paragraphPr, paragraph], ["SetSpacingAfter"], [ptToTwips(format.afterPt)]);
     applyTextFormat(paragraph, format);
   }
 
   function applyTextFormat(paragraph, format) {
     const fonts = [format.fontFamily, ...(Array.isArray(format.fallbackFonts) ? format.fallbackFonts : [])].filter(Boolean);
-    const fontSize = Number(format.fontSizePt);
+    const fontSize = ptToHalfPoints(format.fontSizePt);
     const targets = collectTextTargets(paragraph);
     targets.forEach((target) => {
-      fonts.some((font) => callAny(target, ["SetFontFamily", "SetFont"], [font]));
-      if (Number.isFinite(fontSize)) callAny(target, ["SetFontSize"], [fontSize]);
-      if (typeof format.bold === "boolean") callAny(target, ["SetBold"], [format.bold]);
+      const textPr = safeCall(target, "GetTextPr", null);
+      fonts.some((font) => callAnyTarget([target, textPr], ["SetFontFamily", "SetFont"], [font]));
+      if (Number.isFinite(fontSize)) callAnyTarget([target, textPr], ["SetFontSize"], [fontSize]);
+      if (typeof format.bold === "boolean") callAnyTarget([target, textPr], ["SetBold"], [format.bold]);
     });
   }
 
@@ -226,12 +228,20 @@
     });
   }
 
+  function callAnyTarget(targets, names, args) {
+    return targets.some((target) => callAny(target, names, args));
+  }
+
   function mmToTwips(value) {
     return Math.round(Number(value || 0) * twipsPerMm);
   }
 
   function ptToTwips(value) {
     return Math.round(Number(value || 0) * twipsPerPt);
+  }
+
+  function ptToHalfPoints(value) {
+    return Math.round(Number(value || 0) * 2);
   }
 
   function charsToTwips(chars, fontSizePt) {
@@ -249,6 +259,13 @@
 
   window.guangfaApplyLayoutFormat = applyLayoutPlan;
 
+  function postLayoutResult(result) {
+    const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-applied", result };
+    try { console.log("[guangfa-layout-format]", result); } catch {}
+    try { window.parent?.postMessage(message, "*"); } catch {}
+    try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+  }
+
   window.addEventListener("message", function (event) {
     const data = event.data || {};
     if (data.source !== "guangfa-parent" || data.action !== "apply-layout-format") return;
@@ -259,6 +276,6 @@
     } catch (error) {
       result = { ok: false, summary: error?.message || "OnlyOffice 排版执行失败。", items: [] };
     }
-    window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "layout-format-applied", result: { ...result, requestId } }, "*");
+    postLayoutResult({ ...result, requestId });
   });
 })();
