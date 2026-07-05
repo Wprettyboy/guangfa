@@ -13,6 +13,7 @@ import { getFillModeLabel, getTemplateFieldSourceText, normalizeFieldCategory, n
 import { inferTemplateCategory, normalizeTemplateCategory } from "../utils/templates.js";
 
 const promptCommonTextStorageKey = "guangfa.placeholderPrompt.commonTexts";
+const defaultPromptCommonCategoryId = "default";
 
 function AnnotateWorkspace({
   templateFile,
@@ -378,21 +379,72 @@ function PlaceholderPanel({
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onUpdateVariable, onDeleteVariable, onClose }) {
   const [expandedPromptId, setExpandedPromptId] = useState("");
-  const [commonTexts, setCommonTexts] = useState(() => loadPromptCommonTexts());
+  const [commonConfig, setCommonConfig] = useState(() => loadPromptCommonTextConfig());
+  const [selectedCommonCategoryId, setSelectedCommonCategoryId] = useState(() => loadPromptCommonTextConfig().categories[0]?.id || defaultPromptCommonCategoryId);
 
-  function updateCommonTexts(nextTexts) {
-    setCommonTexts(nextTexts);
-    savePromptCommonTexts(nextTexts);
+  function updateCommonConfig(updater) {
+    setCommonConfig((current) => {
+      const nextConfig = typeof updater === "function" ? updater(current) : updater;
+      const normalized = normalizePromptCommonTextConfig(nextConfig);
+      savePromptCommonTextConfig(normalized);
+      return normalized;
+    });
   }
 
-  function addCommonText(text) {
+  function addCommonCategory(name) {
+    const normalizedName = normalizeCommonText(name, 30);
+    if (!normalizedName) return;
+    const existing = commonConfig.categories.find((category) => category.name === normalizedName);
+    if (existing) {
+      setSelectedCommonCategoryId(existing.id);
+      return;
+    }
+    const category = { id: createPromptCommonId("PCC"), name: normalizedName };
+    updateCommonConfig((current) => ({ ...current, categories: [...current.categories, category] }));
+    setSelectedCommonCategoryId(category.id);
+  }
+
+  function renameCommonCategory(categoryId, name) {
+    const normalizedName = normalizeCommonText(name, 30);
+    if (!normalizedName) return;
+    updateCommonConfig((current) => ({
+      ...current,
+      categories: current.categories.map((category) => (category.id === categoryId ? { ...category, name: normalizedName } : category)),
+    }));
+  }
+
+  function deleteCommonCategory(categoryId) {
+    if (categoryId === defaultPromptCommonCategoryId) return;
+    updateCommonConfig((current) => ({
+      categories: current.categories.filter((category) => category.id !== categoryId),
+      items: current.items.filter((item) => item.categoryId !== categoryId),
+    }));
+    if (selectedCommonCategoryId === categoryId) setSelectedCommonCategoryId(defaultPromptCommonCategoryId);
+  }
+
+  function addCommonText(categoryId, text) {
     const normalized = normalizeCommonText(text);
     if (!normalized) return;
-    updateCommonTexts([normalized, ...commonTexts.filter((item) => item !== normalized)].slice(0, 20));
+    updateCommonConfig((current) => ({
+      ...current,
+      items: [
+        { id: createPromptCommonId("PCT"), categoryId, text: normalized, createdAt: Date.now(), updatedAt: Date.now() },
+        ...current.items.filter((item) => !(item.categoryId === categoryId && item.text === normalized)),
+      ].slice(0, 200),
+    }));
   }
 
-  function deleteCommonText(text) {
-    updateCommonTexts(commonTexts.filter((item) => item !== text));
+  function updateCommonText(itemId, text) {
+    const normalized = normalizeCommonText(text);
+    if (!normalized) return;
+    updateCommonConfig((current) => ({
+      ...current,
+      items: current.items.map((item) => (item.id === itemId ? { ...item, text: normalized, updatedAt: Date.now() } : item)),
+    }));
+  }
+
+  function deleteCommonText(itemId) {
+    updateCommonConfig((current) => ({ ...current, items: current.items.filter((item) => item.id !== itemId) }));
   }
 
   return createPortal(
@@ -431,8 +483,14 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
                       expanded={expandedPromptId === variable.id}
                       onExpand={() => setExpandedPromptId(variable.id)}
                       onChange={(prompt) => onUpdateVariable?.(variable.id, { prompt })}
-                      commonTexts={commonTexts}
+                      commonConfig={commonConfig}
+                      selectedCommonCategoryId={selectedCommonCategoryId}
+                      onSelectCommonCategory={setSelectedCommonCategoryId}
+                      onAddCommonCategory={addCommonCategory}
+                      onRenameCommonCategory={renameCommonCategory}
+                      onDeleteCommonCategory={deleteCommonCategory}
                       onAddCommonText={addCommonText}
+                      onUpdateCommonText={updateCommonText}
                       onDeleteCommonText={deleteCommonText}
                     />
                   </label>
@@ -452,22 +510,64 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
   );
 }
 
-function normalizeCommonText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim().slice(0, 300);
+function createPromptCommonId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
-function loadPromptCommonTexts() {
+function normalizeCommonText(value, maxLength = 300) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function normalizePromptCommonTextConfig(config) {
+  if (Array.isArray(config)) {
+    return {
+      categories: [{ id: defaultPromptCommonCategoryId, name: "默认分类" }],
+      items: config.map((text, index) => ({
+        id: `PCT-legacy-${index + 1}`,
+        categoryId: defaultPromptCommonCategoryId,
+        text: normalizeCommonText(text),
+        createdAt: 0,
+        updatedAt: 0,
+      })).filter((item) => item.text),
+    };
+  }
+  const rawCategories = Array.isArray(config?.categories) ? config.categories : [];
+  const categories = rawCategories
+    .map((category, index) => ({
+      id: String(category?.id || (index === 0 ? defaultPromptCommonCategoryId : createPromptCommonId("PCC"))),
+      name: normalizeCommonText(category?.name, 30) || `分类${index + 1}`,
+    }))
+    .filter((category) => category.id && category.name);
+  if (!categories.some((category) => category.id === defaultPromptCommonCategoryId)) {
+    categories.unshift({ id: defaultPromptCommonCategoryId, name: "默认分类" });
+  }
+  const validCategoryIds = new Set(categories.map((category) => category.id));
+  const fallbackCategoryId = categories[0]?.id || defaultPromptCommonCategoryId;
+  const items = (Array.isArray(config?.items) ? config.items : [])
+    .map((item, index) => ({
+      id: String(item?.id || `PCT-${index + 1}`),
+      categoryId: validCategoryIds.has(String(item?.categoryId || "")) ? String(item.categoryId) : fallbackCategoryId,
+      text: normalizeCommonText(item?.text || item?.value || item),
+      createdAt: Number(item?.createdAt || 0),
+      updatedAt: Number(item?.updatedAt || 0),
+    }))
+    .filter((item) => item.text)
+    .slice(0, 200);
+  return { categories, items };
+}
+
+function loadPromptCommonTextConfig() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(promptCommonTextStorageKey) || "[]");
-    return Array.isArray(parsed) ? parsed.map(normalizeCommonText).filter(Boolean).slice(0, 20) : [];
+    return normalizePromptCommonTextConfig(parsed);
   } catch {
-    return [];
+    return normalizePromptCommonTextConfig([]);
   }
 }
 
-function savePromptCommonTexts(texts) {
+function savePromptCommonTextConfig(config) {
   try {
-    window.localStorage.setItem(promptCommonTextStorageKey, JSON.stringify(texts));
+    window.localStorage.setItem(promptCommonTextStorageKey, JSON.stringify(normalizePromptCommonTextConfig(config)));
   } catch {}
 }
 
@@ -496,11 +596,24 @@ function escapePromptText(value) {
     .replace(/\n/g, "<br>");
 }
 
-function RichPromptEditor({ value, expanded, onExpand, onChange, commonTexts = [], onAddCommonText, onDeleteCommonText }) {
+function RichPromptEditor({
+  value,
+  expanded,
+  onExpand,
+  onChange,
+  commonConfig,
+  selectedCommonCategoryId,
+  onSelectCommonCategory,
+  onAddCommonCategory,
+  onRenameCommonCategory,
+  onDeleteCommonCategory,
+  onAddCommonText,
+  onUpdateCommonText,
+  onDeleteCommonText,
+}) {
   const editorRef = useRef(null);
   const lastRangeRef = useRef(null);
-  const [commonOpen, setCommonOpen] = useState(false);
-  const [commonDraft, setCommonDraft] = useState("");
+  const [commonModalOpen, setCommonModalOpen] = useState(false);
 
   useEffect(() => {
     if (!editorRef.current || document.activeElement === editorRef.current) return;
@@ -548,14 +661,6 @@ function RichPromptEditor({ value, expanded, onExpand, onChange, commonTexts = [
     document.execCommand("insertHTML", false, escapePromptText(text));
     emitChange();
     saveSelection();
-    setCommonOpen(false);
-  }
-
-  function submitCommonText() {
-    const normalized = normalizeCommonText(commonDraft);
-    if (!normalized) return;
-    onAddCommonText?.(normalized);
-    setCommonDraft("");
   }
 
   return (
@@ -574,42 +679,15 @@ function RichPromptEditor({ value, expanded, onExpand, onChange, commonTexts = [
           <div className="placeholder-common-text">
             <button
               type="button"
-              className={commonOpen ? "active" : ""}
+              className={commonModalOpen ? "active" : ""}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 saveSelection();
-                setCommonOpen((open) => !open);
+                setCommonModalOpen(true);
               }}
             >
               常用文本
             </button>
-            {commonOpen ? (
-              <div className="placeholder-common-menu" onMouseDown={(event) => event.stopPropagation()}>
-                <div className="placeholder-common-form">
-                  <input
-                    value={commonDraft}
-                    placeholder="设置常用文本"
-                    onChange={(event) => setCommonDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") submitCommonText();
-                    }}
-                  />
-                  <button type="button" onClick={submitCommonText}>添加</button>
-                </div>
-                <div className="placeholder-common-list">
-                  {commonTexts.length === 0 ? (
-                    <span className="placeholder-common-empty">暂无常用文本</span>
-                  ) : commonTexts.map((text) => (
-                    <div className="placeholder-common-item" key={text}>
-                      <button type="button" title={text} onClick={() => insertCommonText(text)}>{text}</button>
-                      <button type="button" aria-label="删除常用文本" onClick={() => onDeleteCommonText?.(text)}>
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -627,7 +705,187 @@ function RichPromptEditor({ value, expanded, onExpand, onChange, commonTexts = [
         onBlur={saveSelection}
         suppressContentEditableWarning
       />
+      {commonModalOpen ? (
+        <CommonTextManagerModal
+          config={commonConfig}
+          selectedCategoryId={selectedCommonCategoryId}
+          onSelectCategory={onSelectCommonCategory}
+          onAddCategory={onAddCommonCategory}
+          onRenameCategory={onRenameCommonCategory}
+          onDeleteCategory={onDeleteCommonCategory}
+          onAddText={onAddCommonText}
+          onUpdateText={onUpdateCommonText}
+          onDeleteText={onDeleteCommonText}
+          onInsert={insertCommonText}
+          onClose={() => setCommonModalOpen(false)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function CommonTextManagerModal({
+  config,
+  selectedCategoryId,
+  onSelectCategory,
+  onAddCategory,
+  onRenameCategory,
+  onDeleteCategory,
+  onAddText,
+  onUpdateText,
+  onDeleteText,
+  onInsert,
+  onClose,
+}) {
+  const categories = config?.categories?.length ? config.categories : [{ id: defaultPromptCommonCategoryId, name: "默认分类" }];
+  const selectedCategory = categories.find((category) => category.id === selectedCategoryId) || categories[0];
+  const items = (config?.items || []).filter((item) => item.categoryId === selectedCategory.id);
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [textDraft, setTextDraft] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState("");
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingTextId, setEditingTextId] = useState("");
+  const [editingTextValue, setEditingTextValue] = useState("");
+
+  function submitCategory() {
+    const name = normalizeCommonText(categoryDraft, 30);
+    if (!name) return;
+    onAddCategory?.(name);
+    setCategoryDraft("");
+  }
+
+  function submitText() {
+    const text = normalizeCommonText(textDraft);
+    if (!text) return;
+    onAddText?.(selectedCategory.id, text);
+    setTextDraft("");
+  }
+
+  return createPortal(
+    <div className="common-text-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="common-text-modal" role="dialog" aria-modal="true" aria-label="常用文本管理" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title">
+          <h2>常用文本</h2>
+          <button className="icon-button quiet" type="button" onClick={onClose} aria-label="关闭">
+            <X size={17} />
+          </button>
+        </div>
+        <div className="common-text-manager">
+          <aside className="common-text-tree">
+            <div className="common-text-add-row">
+              <input
+                value={categoryDraft}
+                placeholder="新增分类"
+                onChange={(event) => setCategoryDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") submitCategory();
+                }}
+              />
+              <button type="button" onClick={submitCategory}>新增</button>
+            </div>
+            <div className="common-text-category-list">
+              {categories.map((category) => {
+                const active = category.id === selectedCategory.id;
+                const editing = editingCategoryId === category.id;
+                return (
+                  <div className={active ? "common-text-category active" : "common-text-category"} key={category.id}>
+                    {editing ? (
+                      <input
+                        value={editingCategoryName}
+                        autoFocus
+                        onChange={(event) => setEditingCategoryName(event.target.value)}
+                        onBlur={() => {
+                          onRenameCategory?.(category.id, editingCategoryName);
+                          setEditingCategoryId("");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                        }}
+                      />
+                    ) : (
+                      <button type="button" title={category.name} onClick={() => onSelectCategory?.(category.id)}>
+                        {category.name}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label="编辑分类"
+                      onClick={() => {
+                        setEditingCategoryId(category.id);
+                        setEditingCategoryName(category.name);
+                      }}
+                    >
+                      编辑
+                    </button>
+                    <button type="button" aria-label="删除分类" disabled={category.id === defaultPromptCommonCategoryId} onClick={() => onDeleteCategory?.(category.id)}>
+                      删除
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+          <main className="common-text-table-panel">
+            <div className="common-text-add-row">
+              <input
+                value={textDraft}
+                placeholder={`新增${selectedCategory.name}常用文本`}
+                onChange={(event) => setTextDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") submitText();
+                }}
+              />
+              <button type="button" onClick={submitText}>新增</button>
+            </div>
+            <div className="common-text-table">
+              <div className="common-text-table-head">
+                <span>常用文本</span>
+                <span>操作</span>
+              </div>
+              {items.length === 0 ? (
+                <div className="common-text-empty">当前分类暂无常用文本</div>
+              ) : items.map((item) => {
+                const editing = editingTextId === item.id;
+                return (
+                  <div className="common-text-table-row" key={item.id}>
+                    {editing ? (
+                      <input
+                        value={editingTextValue}
+                        autoFocus
+                        onChange={(event) => setEditingTextValue(event.target.value)}
+                        onBlur={() => {
+                          onUpdateText?.(item.id, editingTextValue);
+                          setEditingTextId("");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                        }}
+                      />
+                    ) : (
+                      <span title={item.text}>{item.text}</span>
+                    )}
+                    <div className="common-text-row-actions">
+                      <button type="button" onClick={() => onInsert?.(item.text)}>插入</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingTextId(item.id);
+                          setEditingTextValue(item.text);
+                        }}
+                      >
+                        编辑
+                      </button>
+                      <button type="button" onClick={() => onDeleteText?.(item.id)}>删除</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </main>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }
 
