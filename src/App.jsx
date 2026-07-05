@@ -530,13 +530,6 @@ export default function App() {
     setFilledTemplateFile(null);
   }
 
-  function alertMissingComplexFillBookmarks(missingAnchors = [], prefix = "模板文件缺失复杂类填充书签") {
-    if (!missingAnchors.length) return;
-    const lines = missingAnchors.slice(0, 8).map((anchor) => `- ${anchor.fieldSummary || anchor.fieldId || anchor.bookmarkName}`);
-    const suffix = missingAnchors.length > lines.length ? `\n等 ${missingAnchors.length} 处` : "";
-    window.alert(`${prefix}：\n${lines.join("\n")}${suffix}\n请回到模板标注工作台重新建立对应标签并保存模板。`);
-  }
-
   function syncAnnotatedOfficeDocument(
     fieldsSnapshot,
     sourceOfficeDocId = templateOfficeDocId,
@@ -1041,7 +1034,6 @@ export default function App() {
 
   function createComplexFillAnchor(field) {
     if (!isComplexFillFieldComplete(field)) {
-      window.alert("请先在维护字段里填写字段简述、格式要求、内容要求。");
       return;
     }
     const draftAnchor = createComplexFillAnchorDraft(field, complexFillAnchorsRef.current);
@@ -1054,10 +1046,6 @@ export default function App() {
         setSaveState("dirty");
         return;
       }
-      if (result?.timeout || result?.ok === false) {
-        const fieldLabel = field?.fieldSummary || field?.id || "复杂类填充字段";
-        window.alert(`${fieldLabel}：${result.error || "OnlyOffice 未能建立复杂类填充书签，请确认左侧文档已加载并选中文字。"}`);
-      }
     });
   }
 
@@ -1065,7 +1053,6 @@ export default function App() {
     setAnnotateSidePanelMode("complex-fill");
     requestOnlyOfficeSelectComplexFillAnchor(anchor).then((result) => {
       if (result?.timeout || !result?.ok) {
-        window.alert(result?.error || "OnlyOffice 未能定位该复杂类填充书签。");
         return;
       }
       const page = Math.max(1, Number(result.page || anchor?.page) || 1);
@@ -1089,7 +1076,6 @@ export default function App() {
       result = { ok: false, error: error?.message || "OnlyOffice 未能删除该复杂类填充书签。" };
     }
     if (!result?.ok) {
-      window.alert(result?.error || "OnlyOffice 未能删除该复杂类填充书签。");
       return;
     }
     const nextAnchors = complexFillAnchorsRef.current.filter((current) => current.bookmarkName !== anchor.bookmarkName);
@@ -1146,8 +1132,6 @@ export default function App() {
       setSaveState("incomplete");
       if (setupIssues.length > 0) {
         window.alert(`有 ${setupIssues.length} 个字段缺少稳定写入位置：\n${setupIssues.slice(0, 6).map(({ field, issue }) => `- ${getTemplateFieldSourceText(field) || field.name || field.id}：${issue}`).join("\n")}`);
-      } else if (incompleteComplexFillFields.length > 0) {
-        window.alert(`有 ${incompleteComplexFillFields.length} 个复杂类填充字段未完善：\n${incompleteComplexFillFields.slice(0, 6).map((field) => `- ${field.fieldSummary || field.id}：请填写字段简述、格式要求、内容要求`).join("\n")}`);
       }
       return;
     }
@@ -1181,7 +1165,6 @@ export default function App() {
       const validation = await validateComplexFillAnchorsInDocx(fileBuffer, normalizedComplexFillAnchors);
       if (!validation.ok) {
         setSaveState("incomplete");
-        alertMissingComplexFillBookmarks(validation.missingAnchors, "模板文件没有保存以下复杂类填充书签，已停止保存");
         return;
       }
     }
@@ -1262,7 +1245,6 @@ export default function App() {
     if (templateToUse.fileBuffer && complexFillAnchorsToUse.length > 0) {
       const validation = await validateComplexFillAnchorsInDocx(templateToUse.fileBuffer, complexFillAnchorsToUse);
       complexFillAnchorsToUse = validation.validAnchors;
-      if (!validation.ok) alertMissingComplexFillBookmarks(validation.missingAnchors, "当前模板文件缺失部分复杂类填充书签，已跳过这些无效选区");
     }
     const mappedFields = createFillFieldsFromTemplate(templateFieldsToUse);
     setTemplateFields(templateFieldsToUse);
@@ -1316,7 +1298,6 @@ export default function App() {
     if (templateToEdit.fileBuffer && complexFillAnchorsToEdit.length > 0) {
       const validation = await validateComplexFillAnchorsInDocx(templateToEdit.fileBuffer, complexFillAnchorsToEdit);
       complexFillAnchorsToEdit = validation.validAnchors;
-      if (!validation.ok) alertMissingComplexFillBookmarks(validation.missingAnchors, "当前模板文件缺失部分复杂类填充书签，已跳过这些无效选区");
     }
     setTemplateFields(fields);
     setPlaceholderVariables(normalizePlaceholderVariables(templateToEdit.placeholderVariables));
@@ -1635,7 +1616,6 @@ export default function App() {
   function jumpToComplexFillAnchorFromFill(anchor) {
     requestOnlyOfficeSelectComplexFillAnchor(anchor).then((result) => {
       if (result?.timeout || !result?.ok) {
-        window.alert(result?.error || "OnlyOffice 未能定位该复杂类填充书签。");
         return;
       }
       const page = Math.max(1, Number(result.page || anchor?.page) || 1);
