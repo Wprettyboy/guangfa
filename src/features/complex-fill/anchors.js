@@ -81,6 +81,7 @@ function normalizeComplexFillAnchor(anchor = {}, order = 1, existing = null) {
     bookmarkName,
     page,
     sourceText: normalizeComplexFillText(anchor.sourceText || anchor.selectedText || existing?.sourceText, 2000),
+    selectionState: anchor.selectionState ?? existing?.selectionState ?? null,
     index,
     documentOrder: Math.max(1, Number(anchor.documentOrder || existing?.documentOrder || page * 1000000 + index) || page * 1000000 + index),
     createdAt: Number(anchor.createdAt || existing?.createdAt || Date.now()),

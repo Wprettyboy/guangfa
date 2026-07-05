@@ -527,6 +527,7 @@
           bookmarkName,
           page,
           sourceText: selection.text,
+          selectionState: selection.selectionState,
           fieldSummary: anchor.fieldSummary || "",
           index: Math.max(1, Number(anchor.index || 1) || 1),
           documentOrder: page * 1000000 + Math.max(1, Number(anchor.index || 1) || 1),
@@ -548,10 +549,12 @@
   function deleteComplexFillAnchor(payload = {}) {
     const requestId = payload.requestId || "";
     const bookmarkName = String(payload.bookmarkName || payload.anchor?.bookmarkName || payload.item?.bookmarkName || "");
+    const selectionState = payload.anchor?.selectionState || payload.item?.selectionState || null;
     const manager = getBookmarkManager();
     const selected = selectComplexFillBookmarkForMutation(manager, bookmarkName);
     if (!selected.ok) return postComplexFillResult("complex-fill-anchor-deleted", { ...selected, requestId });
     try {
+      if (selectionState) restoreSelectionState(selectionState);
       const highlight = clearTextHighlightFromCurrentSelection();
       const removed = removeBookmark(manager, bookmarkName);
       const bookmarkDeleted = removed !== false;
