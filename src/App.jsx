@@ -1054,7 +1054,10 @@ export default function App() {
         setSaveState("dirty");
         return;
       }
-      if (result?.timeout || result?.ok === false) window.alert(result.error || "OnlyOffice 未能建立复杂类填充书签，请确认左侧文档已加载并选中文字。");
+      if (result?.timeout || result?.ok === false) {
+        const fieldLabel = field?.fieldSummary || field?.id || "复杂类填充字段";
+        window.alert(`${fieldLabel}：${result.error || "OnlyOffice 未能建立复杂类填充书签，请确认左侧文档已加载并选中文字。"}`);
+      }
     });
   }
 

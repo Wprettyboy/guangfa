@@ -599,6 +599,47 @@
     }
   }
 
+  function verifyComplexFillAnchorCreated(manager, bookmarkName, selectionBookmarkName, expectedText) {
+    if (!manager || !bookmarkName || !selectionBookmarkName) {
+      return { ok: false, bookmarkName, selectionBookmarkName, error: "复杂类填充书签接口不可用" };
+    }
+    if (!hasBookmark(manager, selectionBookmarkName)) {
+      return { ok: false, bookmarkName, selectionBookmarkName, error: "复杂类填充选区书签未写入文档" };
+    }
+    if (!hasBookmark(manager, bookmarkName)) {
+      return { ok: false, bookmarkName, selectionBookmarkName, error: "复杂类填充业务书签未写入文档" };
+    }
+    const selected = selectComplexFillBookmarkForMutation(manager, selectionBookmarkName);
+    if (!selected.ok) {
+      return {
+        ...selected,
+        ok: false,
+        bookmarkName,
+        selectionBookmarkName,
+        error: selected.error || "复杂类填充选区书签无法定位",
+      };
+    }
+    const selectedText = readCurrentSelectedText();
+    if (!selectedText || isCurrentSelectionEmpty()) {
+      return { ok: false, bookmarkName, selectionBookmarkName, error: "复杂类填充选区书签范围为空，请重新选中文本建立书签。" };
+    }
+    if (!matchesExpectedSelectionText(selectedText, expectedText)) {
+      return { ok: false, bookmarkName, selectionBookmarkName, selectedText, error: "复杂类填充选区书签范围与当前选区不一致，请重新标注。" };
+    }
+    const selectionState = safeCall(getLogicDocument(), "GetSelectionState", null);
+    const pageInfo = extractOnlyOfficePage(selectionState);
+    return {
+      ...selected,
+      ok: true,
+      bookmarkName,
+      selectionBookmarkName,
+      selectedText,
+      selectionState,
+      page: pageInfo.page || selected.page,
+      pageSource: pageInfo.source || selected.pageSource,
+    };
+  }
+
   function restoreSelectionState(selectionState) {
     const logicDocument = getLogicDocument();
     if (!selectionState || !logicDocument || typeof logicDocument.SetSelectionState !== "function") return false;
@@ -688,16 +729,20 @@
         removeBookmark(manager, bookmarkName);
         return postComplexFillResult("complex-fill-anchor-added", { ...selected, requestId });
       }
-      const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
       const businessBookmark = addComplexFillBusinessBookmark(manager, bookmarkName, selectionBookmarkName);
       if (!businessBookmark.ok) {
         removeBookmark(manager, selectionBookmarkName);
         return postComplexFillResult("complex-fill-anchor-added", { ok: false, requestId, bookmarkName, selectionBookmarkName, error: businessBookmark.error || "复杂类填充业务书签写入失败" });
       }
-      selectBookmarkRange(manager, selectionBookmarkName);
-      const anchoredSelectionState = safeCall(getLogicDocument(), "GetSelectionState", null) || selection.selectionState;
-      const pageInfo = extractOnlyOfficePage(anchoredSelectionState);
-      const page = pageInfo.page || selection.page || 1;
+      const verified = verifyComplexFillAnchorCreated(manager, bookmarkName, selectionBookmarkName, selection.text);
+      if (!verified.ok) {
+        removeBookmark(manager, bookmarkName);
+        removeBookmark(manager, selectionBookmarkName);
+        return postComplexFillResult("complex-fill-anchor-added", { ...verified, requestId });
+      }
+      const highlight = applyTextHighlightToCurrentSelection(complexFillHighlightColor);
+      const anchoredSelectionState = verified.selectionState || selection.selectionState;
+      const page = verified.page || selection.page || 1;
       saveOnlyOfficeDocument("complex-fill-anchor");
       return postComplexFillResult("complex-fill-anchor-added", {
         ok: true,
