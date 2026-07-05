@@ -1,5 +1,19 @@
+function normalizePromptText(value) {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function buildPlaceholderAiField(card) {
-  const prompt = String(card.prompt || "").trim();
+  const prompt = normalizePromptText(card.prompt);
   const context = `自动字段：${card.name}；模板标记：${card.token}${prompt ? `；提示词：${prompt}` : ""}`;
   const field = {
     id: card.id,

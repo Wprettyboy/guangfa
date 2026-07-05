@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { ChevronDown, ChevronRight, Highlighter, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
+import { Bold, ChevronDown, ChevronRight, Highlighter, Italic, List, Loader2, Plus, Save, Settings2, Trash2, X } from "lucide-react";
 import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
 import ComplexFillPanel from "../features/complex-fill/ComplexFillPanel.jsx";
@@ -373,6 +373,8 @@ function PlaceholderPanel({
 }
 
 function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRenameVariable, onUpdateVariable, onDeleteVariable, onClose }) {
+  const [expandedPromptId, setExpandedPromptId] = useState("");
+
   return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="placeholder-maintenance-modal" role="dialog" aria-modal="true" aria-label="自动字段维护" onMouseDown={(event) => event.stopPropagation()}>
@@ -402,9 +404,14 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
                     <span>字段名称</span>
                     <input value={variable.name} onChange={(event) => onRenameVariable?.(variable.id, event.target.value)} />
                   </label>
-                  <label>
+                  <label className="placeholder-prompt-field">
                     <span>提示词</span>
-                    <input value={variable.prompt || ""} onChange={(event) => onUpdateVariable?.(variable.id, { prompt: event.target.value })} />
+                    <RichPromptEditor
+                      value={variable.prompt || ""}
+                      expanded={expandedPromptId === variable.id}
+                      onExpand={() => setExpandedPromptId(variable.id)}
+                      onChange={(prompt) => onUpdateVariable?.(variable.id, { prompt })}
+                    />
                   </label>
                   <button className="icon-button quiet" type="button" aria-label={`删除${variable.name || "字段"}`} onClick={() => onDeleteVariable?.(variable.id)}>
                     <Trash2 size={15} />
@@ -419,6 +426,71 @@ function PlaceholderMaintenanceModal({ variables, anchors, onAddVariable, onRena
       </section>
     </div>,
     document.body,
+  );
+}
+
+function sanitizePromptHtml(html) {
+  const value = String(html || "").trim();
+  if (!value) return "";
+  const container = document.createElement("div");
+  container.innerHTML = value;
+  const allowedTags = new Set(["B", "BR", "DIV", "EM", "I", "LI", "OL", "P", "STRONG", "U", "UL"]);
+  container.querySelectorAll("*").forEach((node) => {
+    if (!allowedTags.has(node.tagName)) {
+      node.replaceWith(...node.childNodes);
+      return;
+    }
+    [...node.attributes].forEach((attribute) => node.removeAttribute(attribute.name));
+  });
+  return container.innerHTML.replace(/<div><br><\/div>/g, "").trim();
+}
+
+function RichPromptEditor({ value, expanded, onExpand, onChange }) {
+  const editorRef = useRef(null);
+
+  useEffect(() => {
+    if (!editorRef.current || document.activeElement === editorRef.current) return;
+    const nextHtml = sanitizePromptHtml(value);
+    if (editorRef.current.innerHTML !== nextHtml) editorRef.current.innerHTML = nextHtml;
+  }, [value]);
+
+  function emitChange() {
+    onChange?.(sanitizePromptHtml(editorRef.current?.innerHTML || ""));
+  }
+
+  function applyCommand(command) {
+    editorRef.current?.focus();
+    document.execCommand(command, false, null);
+    emitChange();
+  }
+
+  return (
+    <div className={expanded ? "placeholder-rich-prompt expanded" : "placeholder-rich-prompt"}>
+      {expanded ? (
+        <div className="placeholder-rich-toolbar" aria-label="提示词格式工具">
+          <button type="button" aria-label="加粗" onMouseDown={(event) => event.preventDefault()} onClick={() => applyCommand("bold")}>
+            <Bold size={14} />
+          </button>
+          <button type="button" aria-label="斜体" onMouseDown={(event) => event.preventDefault()} onClick={() => applyCommand("italic")}>
+            <Italic size={14} />
+          </button>
+          <button type="button" aria-label="列表" onMouseDown={(event) => event.preventDefault()} onClick={() => applyCommand("insertUnorderedList")}>
+            <List size={14} />
+          </button>
+        </div>
+      ) : null}
+      <div
+        ref={editorRef}
+        className="placeholder-rich-editor"
+        contentEditable
+        role="textbox"
+        aria-multiline="true"
+        data-placeholder="点击编辑提示词"
+        onFocus={onExpand}
+        onInput={emitChange}
+        suppressContentEditableWarning
+      />
+    </div>
   );
 }
 

@@ -551,6 +551,77 @@
   outline: none;
 }
 
+.placeholder-prompt-field {
+  align-self: stretch;
+}
+
+.placeholder-rich-prompt {
+  display: grid;
+  min-width: 0;
+  border: 1px solid #d8e0ec;
+  border-radius: 6px;
+  background: #ffffff;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.placeholder-rich-prompt:focus-within {
+  border-color: #7aa7ff;
+  box-shadow: 0 0 0 3px rgba(64, 123, 255, 0.12);
+}
+
+.placeholder-rich-prompt.expanded {
+  min-height: 132px;
+}
+
+.placeholder-rich-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-bottom: 1px solid #e4ebf5;
+  background: #f8fbff;
+}
+
+.placeholder-rich-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  color: #44546a;
+  background: transparent;
+  cursor: pointer;
+}
+
+.placeholder-rich-toolbar button:hover {
+  color: #1f5eff;
+  background: #eaf1ff;
+}
+
+.placeholder-rich-editor {
+  min-width: 0;
+  height: 32px;
+  padding: 7px 9px;
+  color: #25324a;
+  line-height: 18px;
+  overflow: hidden;
+  outline: none;
+  white-space: nowrap;
+}
+
+.placeholder-rich-prompt.expanded .placeholder-rich-editor {
+  min-height: 94px;
+  height: auto;
+  overflow: auto;
+  white-space: normal;
+}
+
+.placeholder-rich-editor:empty::before {
+  color: #a0aec0;
+  content: attr(data-placeholder);
+}
+
 .placeholder-card-anchor-list {
   display: grid;
   min-width: 0;
