@@ -905,6 +905,13 @@
   white-space: nowrap;
 }
 
+.placeholder-reuse-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .placeholder-reuse-list {
   min-height: 0;
   overflow: auto;

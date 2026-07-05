@@ -566,6 +566,10 @@ function PlaceholderReuseModal({ sources, existingVariables, onImport, onClose }
   const selectedSource = sources.find((source) => source.id === selectedSourceId) || sources[0] || null;
   const existingNames = new Set(existingVariables.map((variable) => normalizePlaceholderName(variable.name)));
   const importableVariables = selectedSource?.variables || [];
+  const selectableVariableIds = importableVariables
+    .filter((variable) => !existingNames.has(normalizePlaceholderName(variable.name)))
+    .map((variable) => variable.id);
+  const allSelected = selectableVariableIds.length > 0 && selectableVariableIds.every((id) => selectedIds.includes(id));
 
   useEffect(() => {
     setSelectedIds([]);
@@ -573,6 +577,10 @@ function PlaceholderReuseModal({ sources, existingVariables, onImport, onClose }
 
   function toggleVariable(variableId) {
     setSelectedIds((ids) => (ids.includes(variableId) ? ids.filter((id) => id !== variableId) : [...ids, variableId]));
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(allSelected ? [] : selectableVariableIds);
   }
 
   function importSelected() {
@@ -609,9 +617,14 @@ function PlaceholderReuseModal({ sources, existingVariables, onImport, onClose }
           <main className="placeholder-reuse-fields">
             <div className="placeholder-reuse-head">
               <strong>{selectedSource?.name || "请选择来源"}</strong>
-              <button className="tool-button primary" type="button" onClick={importSelected} disabled={selectedIds.length === 0}>
-                导入所选
-              </button>
+              <div className="placeholder-reuse-actions">
+                <button className="tool-button" type="button" onClick={toggleSelectAll} disabled={selectableVariableIds.length === 0}>
+                  {allSelected ? "清空" : "全选"}
+                </button>
+                <button className="tool-button primary" type="button" onClick={importSelected} disabled={selectedIds.length === 0}>
+                  导入所选
+                </button>
+              </div>
             </div>
             <div className="placeholder-reuse-list">
               {importableVariables.length === 0 ? (
