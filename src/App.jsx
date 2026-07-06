@@ -1154,13 +1154,15 @@ export default function App() {
       return;
     }
 
+    const latestPlaceholderVariables = normalizePlaceholderVariables(placeholderVariablesRef.current);
+    const latestPlaceholderAnchors = applyPlaceholderAnchors([], placeholderAnchorsRef.current);
     const invalidFields = templateFields.filter((field) => !getTemplateFieldSourceText(field) || !(field.category || field.type || "").trim());
     const setupIssues = templateFields
       .map((field) => ({ field, issue: getFieldSetupIssue(field) }))
       .filter((item) => item.issue);
     const incompleteComplexFillFields = complexFillFields.filter((field) => !isComplexFillFieldComplete(field));
     const hasPendingFields = templateFields.some((field) => field.status !== "已标注");
-    const hasTemplateMarkers = templateFields.length > 0 || placeholderAnchors.length > 0 || complexFillAnchors.length > 0;
+    const hasTemplateMarkers = templateFields.length > 0 || latestPlaceholderAnchors.length > 0 || complexFillAnchors.length > 0;
     const isComplete = hasTemplateMarkers && invalidFields.length === 0 && setupIssues.length === 0 && incompleteComplexFillFields.length === 0 && !hasPendingFields;
 
     if (!isComplete) {
@@ -1173,6 +1175,7 @@ export default function App() {
 
     setSaveState("saving");
     let fileBuffer = (annotatedTemplateBufferRef.current || templateFile.buffer).slice(0);
+    const sourceTemplateId = templateFile.sourceTemplateId || "";
     if (templateOfficeDocId) {
       try {
         const officeBuffer = await resolveOfficeDocumentBuffer(templateOfficeDocId, fileBuffer, {
@@ -1205,7 +1208,7 @@ export default function App() {
     }
 
     const savedTemplate = {
-      id: `TPL-${Date.now()}`,
+      id: sourceTemplateId || `TPL-${Date.now()}`,
       name: templateFile.name.replace(/\.(docx|doc)$/i, ""),
       category: normalizeTemplateCategory(category || inferTemplateCategory(templateFile.name)),
       fileName: templateFile.name,
@@ -1215,12 +1218,12 @@ export default function App() {
       uploadedAt: templateFile.uploadedAt,
       supported: templateFile.supported,
       fieldCount: normalizedTemplateFields.length,
-      placeholderCount: placeholderAnchors.length,
+      placeholderCount: latestPlaceholderAnchors.length,
       confirmedCount: normalizedTemplateFields.filter((field) => field.status === "已标注").length,
       typeSummary: summarizeFieldTypes(normalizedTemplateFields),
       fields: normalizedTemplateFields,
-      placeholderVariables,
-      placeholderAnchors,
+      placeholderVariables: latestPlaceholderVariables,
+      placeholderAnchors: latestPlaceholderAnchors,
       complexFillFields: normalizedComplexFillFields,
       complexFillAnchors: normalizedComplexFillAnchors,
       fileBuffer,
@@ -1228,7 +1231,10 @@ export default function App() {
 
     try {
       const currentTemplates = await readStoredTemplates();
-      const nextTemplates = [savedTemplate, ...currentTemplates.filter((item) => item.fileName !== templateFile.name)];
+      const nextTemplates = [
+        savedTemplate,
+        ...currentTemplates.filter((item) => (sourceTemplateId ? item.id !== sourceTemplateId : item.fileName !== templateFile.name)),
+      ];
       await storeTemplates(nextTemplates);
       setTemplateLibrary(nextTemplates);
     } catch {
@@ -1237,6 +1243,20 @@ export default function App() {
     }
 
     setTemplateFields(normalizedTemplateFields);
+    setPlaceholderVariables(latestPlaceholderVariables);
+    setPlaceholderAnchors(latestPlaceholderAnchors);
+    placeholderVariablesRef.current = latestPlaceholderVariables;
+    placeholderAnchorsRef.current = latestPlaceholderAnchors;
+    setTemplateFile((file) =>
+      file?.buffer
+        ? {
+            ...file,
+            sourceTemplateId: savedTemplate.id,
+            buffer: fileBuffer.slice(0),
+            size: formatFileSize(fileBuffer.byteLength),
+          }
+        : file,
+    );
     setComplexFillFields(normalizedComplexFillFields);
     setComplexFillAnchors(normalizedComplexFillAnchors);
     complexFillFieldsRef.current = normalizedComplexFillFields;
@@ -1248,10 +1268,10 @@ export default function App() {
       activeModule,
       activeWorkspace: "annotate",
       annotateSidePanelMode,
-      templateFile: getDraftTemplateFile({ ...templateFile, buffer: fileBuffer, size: formatFileSize(fileBuffer.byteLength) }),
+      templateFile: getDraftTemplateFile({ ...templateFile, sourceTemplateId: savedTemplate.id, buffer: fileBuffer, size: formatFileSize(fileBuffer.byteLength) }),
       templateFields: normalizedTemplateFields,
-      placeholderVariables,
-      placeholderAnchors,
+      placeholderVariables: latestPlaceholderVariables,
+      placeholderAnchors: latestPlaceholderAnchors,
       complexFillFields: normalizedComplexFillFields,
       complexFillAnchors: normalizedComplexFillAnchors,
       placeholderFills,
