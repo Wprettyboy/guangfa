@@ -3,7 +3,6 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Archive, FileCheck2, FolderOpen, Highlighter, Trash2, Upload, Wand2 } from "lucide-react";
 import { templateCategories } from "../constants/templates.js";
-import { normalizeFieldCategory } from "../utils/fields.js";
 import {
   buildContractFolders,
   getContractFolder,
@@ -13,6 +12,20 @@ import {
   normalizeTemplateCategory,
   summarizeFieldTypes,
 } from "../utils/templates.js";
+
+function getTemplateInsertedFieldCount(template = {}) {
+  if (Array.isArray(template.placeholderAnchors)) return template.placeholderAnchors.length;
+  return Number(template.placeholderCount ?? template.fieldCount ?? template.fields?.length ?? 0) || 0;
+}
+
+function getTemplateMaintainedFieldCount(template = {}) {
+  if (Array.isArray(template.placeholderVariables)) return template.placeholderVariables.length;
+  if (Array.isArray(template.fields)) return template.fields.length;
+  if (Array.isArray(template.typeSummary)) {
+    return template.typeSummary.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+  }
+  return 0;
+}
 
 function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDeleteTemplate, onUpdateCategory, onCreateTemplate }) {
   const managerRef = useRef(null);
@@ -33,8 +46,8 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
     { dependencies: [templates.length], scope: managerRef },
   );
 
-  const totalFields = templates.reduce((sum, template) => sum + (template.fieldCount || template.fields?.length || 0), 0);
-  const allTypes = new Set(templates.flatMap((template) => (template.fields || []).map((field) => normalizeFieldCategory(field.type || field.category))));
+  const totalInsertedFields = templates.reduce((sum, template) => sum + getTemplateInsertedFieldCount(template), 0);
+  const totalMaintainedFields = templates.reduce((sum, template) => sum + getTemplateMaintainedFieldCount(template), 0);
   const normalizedTemplates = templates.map((template) => ({
     ...template,
     category: normalizeTemplateCategory(template.category || inferTemplateCategory(template.name || template.fileName)),
@@ -92,13 +105,13 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
         </div>
         <div className="summary-card">
           <span>字段总数</span>
-          <strong>{totalFields}</strong>
-          <em>可填充字段</em>
+          <strong>{totalInsertedFields}</strong>
+          <em>已插入字段</em>
         </div>
         <div className="summary-card">
-          <span>自动填充类别</span>
-          <strong>{allTypes.size}</strong>
-          <em>已配置</em>
+          <span>字段类型数量</span>
+          <strong>{totalMaintainedFields}</strong>
+          <em>维护字段</em>
         </div>
       </div>
 
@@ -180,9 +193,9 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
       ) : (
         <div className="template-grid">
           {visibleTemplates.map((template) => {
-            const fieldCount = template.fieldCount || template.fields?.length || 0;
+            const fieldCount = getTemplateInsertedFieldCount(template);
             const fieldTypeSummary = template.typeSummary || summarizeFieldTypes(template.fields || []);
-            const fieldTypeCount = fieldTypeSummary.length;
+            const fieldTypeCount = getTemplateMaintainedFieldCount(template);
             return (
               <article className="template-card" key={template.id}>
               <div className="template-card-head">
