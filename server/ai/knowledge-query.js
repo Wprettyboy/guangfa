@@ -144,7 +144,16 @@ function buildKnowledgeSearchQuery(plan) {
     uniqueParts.push(part);
   }
   const query = uniqueParts.join(" ").slice(0, 80).trim();
-  return query;
+  return query || buildFallbackKnowledgeSearchQuery(plan.rawQuery);
+}
+
+function buildFallbackKnowledgeSearchQuery(rawQuery = "") {
+  return cleanKnowledgeQueryTerm(rawQuery)
+    .replace(/自动字段|模板标记|提示词|填空|短文本填空|长文本填空|只输出可替换模板标记的值/g, " ")
+    .replace(/[{}《》【】"'“”]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 function buildFieldRetrievalQuery(field) {
