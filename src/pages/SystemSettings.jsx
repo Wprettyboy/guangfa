@@ -155,8 +155,9 @@ function SystemSettings() {
           desc="适配 DeepSeek、Gemini OpenAI-compatible 等云服务。"
           runtime={config.cloud}
           active={config.provider === "cloud"}
-          apiKeyPlaceholder="多个 Key 用英文逗号或分号分隔"
-          apiKeyHint="配置多个 Key 后，请求会按顺序轮询；限流或 Key 异常时自动尝试下一个。"
+          apiKeyMultiline
+          apiKeyPlaceholder={"每行填写一个 Key\nAIza...\nAIza..."}
+          apiKeyHint="每行一个 Key；请求会按顺序轮询，限流或 Key 异常时自动尝试下一个。"
           onChange={(key, value) => updateSection("cloud", key, value)}
           presets={[geminiFlashLitePreset]}
           onApplyPreset={(preset) => {
@@ -205,6 +206,7 @@ function ModelRuntimeCard({
   presets = [],
   apiKeyPlaceholder = "本地服务可留空，云端必填",
   apiKeyHint = "",
+  apiKeyMultiline = false,
   onApplyPreset,
   onChange,
 }) {
@@ -230,7 +232,7 @@ function ModelRuntimeCard({
       <SettingsField label="模型名称" value={runtime.model} placeholder="qwen3.6-35b-a3b" onChange={(value) => onChange("model", value)} />
       <SettingsField
         label="API Key"
-        type="password"
+        type={apiKeyMultiline ? "textarea" : "password"}
         value={runtime.apiKey}
         placeholder={apiKeyPlaceholder}
         hint={apiKeyHint}
@@ -244,7 +246,11 @@ function SettingsField({ label, value, placeholder, hint = "", type = "text", on
   return (
     <label className="settings-field">
       <span>{label}</span>
-      <input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} autoComplete="off" />
+      {type === "textarea" ? (
+        <textarea value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} rows={5} autoComplete="off" spellCheck={false} />
+      ) : (
+        <input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} autoComplete="off" />
+      )}
       {hint ? <small>{hint}</small> : null}
     </label>
   );
@@ -254,9 +260,17 @@ function mergeModelConfig(data = {}) {
   return {
     provider: data.provider === "cloud" ? "cloud" : "local",
     local: { ...emptyModelConfig.local, ...(data.local || {}) },
-    cloud: { ...emptyModelConfig.cloud, ...(data.cloud || {}) },
+    cloud: { ...emptyModelConfig.cloud, ...(data.cloud || {}), apiKey: formatApiKeysForEditor(data.cloud?.apiKey) },
     embedding: { ...emptyModelConfig.embedding, ...(data.embedding || {}) },
   };
+}
+
+function formatApiKeysForEditor(value = "") {
+  return String(value || "")
+    .split(/\r?\n|\\n|[,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("\n");
 }
 
 export default SystemSettings;

@@ -135,7 +135,8 @@
   line-height: 1.45;
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field textarea {
   width: 100%;
   min-height: 36px;
   border: 1px solid #cdd7e6;
@@ -146,7 +147,16 @@
   outline: none;
 }
 
-.settings-field input:focus {
+.settings-field textarea {
+  min-height: 118px;
+  padding: 9px 10px;
+  line-height: 1.55;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.settings-field input:focus,
+.settings-field textarea:focus {
   border-color: #0f63e9;
   box-shadow: 0 0 0 3px rgba(15, 99, 233, 0.1);
 }
