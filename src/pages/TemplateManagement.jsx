@@ -179,8 +179,12 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
         </div>
       ) : (
         <div className="template-grid">
-          {visibleTemplates.map((template) => (
-            <article className="template-card" key={template.id}>
+          {visibleTemplates.map((template) => {
+            const fieldCount = template.fieldCount || template.fields?.length || 0;
+            const fieldTypeSummary = template.typeSummary || summarizeFieldTypes(template.fields || []);
+            const fieldTypeCount = fieldTypeSummary.length;
+            return (
+              <article className="template-card" key={template.id}>
               <div className="template-card-head">
                 <FileCheck2 size={20} />
                 <div>
@@ -197,12 +201,12 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
               ) : null}
               <dl className="template-meta">
                 <div>
-                  <dt>字段数</dt>
-                  <dd>{template.fieldCount || template.fields?.length || 0}</dd>
+                  <dt>总字段</dt>
+                  <dd>{fieldCount}个</dd>
                 </div>
                 <div>
-                  <dt>已确认</dt>
-                  <dd>{template.confirmedCount ?? template.fields?.filter((field) => field.status === "已标注").length ?? 0}</dd>
+                  <dt>字段类型</dt>
+                  <dd>{fieldTypeCount}个</dd>
                 </div>
                 <div>
                   <dt>文件大小</dt>
@@ -225,7 +229,7 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
                 </select>
               </label>
               <div className="template-type-list">
-                {(template.typeSummary || summarizeFieldTypes(template.fields || [])).map((item) => (
+                {fieldTypeSummary.map((item) => (
                   <span key={item.type}>{item.type} {item.count}</span>
                 ))}
               </div>
@@ -245,8 +249,9 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
                   </button>
                 </div>
               </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
           {visibleTemplates.length === 0 ? (
             <div className="template-empty inline">
               <Archive size={24} />
