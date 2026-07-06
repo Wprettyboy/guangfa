@@ -72,6 +72,7 @@ import {
   normalizeDraftFillState,
 } from "./features/docx/fill/draftState.js";
 import {
+  alignPlaceholderAnchorsToVariables,
   applyPlaceholderAnchors,
   buildPlaceholderToken,
   buildPlaceholderFillCards,
@@ -1155,7 +1156,7 @@ export default function App() {
     }
 
     const latestPlaceholderVariables = normalizePlaceholderVariables(placeholderVariablesRef.current);
-    const latestPlaceholderAnchors = applyPlaceholderAnchors([], placeholderAnchorsRef.current);
+    const latestPlaceholderAnchors = alignPlaceholderAnchorsToVariables(placeholderAnchorsRef.current, latestPlaceholderVariables);
     const invalidFields = templateFields.filter((field) => !getTemplateFieldSourceText(field) || !(field.category || field.type || "").trim());
     const setupIssues = templateFields
       .map((field) => ({ field, issue: getFieldSetupIssue(field) }))

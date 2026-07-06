@@ -84,6 +84,20 @@ function applyPlaceholderAnchors(existingAnchors = [], incomingAnchors = []) {
     .sort((a, b) => a.documentOrder - b.documentOrder || a.bookmarkName.localeCompare(b.bookmarkName));
 }
 
+function alignPlaceholderAnchorsToVariables(anchors = [], variables = []) {
+  const variableById = new Map(normalizePlaceholderVariables(variables).map((variable) => [variable.id, variable]));
+  return applyPlaceholderAnchors([], anchors).map((anchor) => {
+    const variable = variableById.get(anchor.variableId);
+    return variable
+      ? {
+          ...anchor,
+          variableName: variable.name,
+          token: variable.token,
+        }
+      : anchor;
+  });
+}
+
 function updatePlaceholderAnchorPage(anchors = [], bookmarkName, page) {
   const nextPage = Math.max(1, Number(page) || 1);
   if (!bookmarkName || !Number.isFinite(nextPage)) return anchors;
@@ -153,6 +167,7 @@ function buildPlaceholderFillCards(variables = [], anchors = [], fills = {}) {
 }
 
 export {
+  alignPlaceholderAnchorsToVariables,
   applyPlaceholderAnchors,
   buildPlaceholderToken,
   buildPlaceholderFillCards,
