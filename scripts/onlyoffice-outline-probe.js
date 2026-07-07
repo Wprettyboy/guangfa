@@ -1,6 +1,7 @@
 (function () {
   const complexFillHighlightColor = { r: 211, g: 211, b: 211, color: "D3D3D3" };
   const handledKnowledgeTableRequestIds = new Set();
+  const handledKnowledgeImageRequestIds = new Set();
   let fallbackBookmarkIdSeed = 0;
 
   function getApplication() {
@@ -1812,6 +1813,73 @@
     return result;
   }
 
+  async function insertKnowledgeImage(data) {
+    const requestId = data.requestId || "";
+    if (requestId) {
+      if (handledKnowledgeImageRequestIds.has(requestId)) return null;
+      handledKnowledgeImageRequestIds.add(requestId);
+      window.setTimeout(function () {
+        handledKnowledgeImageRequestIds.delete(requestId);
+      }, 120000);
+    }
+    try {
+      const sourceDocxUrl = String(data.image?.sourceDocxUrl || data.image?.docxUrl || "");
+      if (!sourceDocxUrl) {
+        return postKnowledgeImageResult({ ok: false, requestId, error: "所选图片缺少 DOCX 片段，无法插入。" });
+      }
+      const inserted = insertKnowledgeImageDocx(sourceDocxUrl, requestId);
+      if (inserted.deferred) return inserted;
+      return postKnowledgeImageResult({ ...inserted, requestId });
+    } catch (error) {
+      return postKnowledgeImageResult({ ok: false, requestId, error: error?.message || "资料图片插入失败" });
+    }
+  }
+
+  function insertKnowledgeImageDocx(url, requestId) {
+    const api = getEditorApi() || window.Asc?.editor || window.editor;
+    if (!api) return { ok: false, error: "OnlyOffice 编辑器接口不可用。" };
+    try {
+      const Manager = window.AscCommonWord?.CInsertDocumentManager;
+      if (typeof Manager === "function") {
+        const manager = new Manager(api);
+        const originalEndLongAction = manager.endLongAction?.bind(manager);
+        let finished = false;
+        manager.endLongAction = function () {
+          try {
+            originalEndLongAction?.();
+          } finally {
+            if (finished) return;
+            finished = true;
+            window.setTimeout(function () {
+              saveOnlyOfficeDocument("insert-knowledge-image-docx");
+              postKnowledgeImageResult({ ok: true, requestId, source: "insert-document-manager-url" });
+            }, 300);
+          }
+        };
+        manager.insertTextFromUrl(url);
+        return { deferred: true };
+      }
+      if (typeof api.asc_insertTextFromUrl === "function") {
+        api.asc_insertTextFromUrl(url);
+        window.setTimeout(function () {
+          saveOnlyOfficeDocument("insert-knowledge-image-docx");
+          postKnowledgeImageResult({ ok: true, requestId, source: "asc-insert-text-from-url" });
+        }, 1800);
+        return { deferred: true };
+      }
+    } catch (error) {
+      return { ok: false, error: error?.message || "OnlyOffice DOCX 图片插入失败" };
+    }
+    return { ok: false, error: "OnlyOffice DOCX 插入接口不可用。" };
+  }
+
+  function postKnowledgeImageResult(result) {
+    const message = { source: "guangfa-onlyoffice-custom", action: "knowledge-image-inserted", result };
+    try { window.parent?.postMessage(message, "*"); } catch {}
+    try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+    return result;
+  }
+
   let aiChatHistory = [];
 
   function getAiChatApiBase(context) {
@@ -2298,6 +2366,9 @@
     }
     if (data.source === "guangfa-parent" && data.action === "insert-knowledge-table") {
       insertKnowledgeTable(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "insert-knowledge-image") {
+      insertKnowledgeImage(data);
     }
     if (data.source === "guangfa-parent" && data.action === "sync-annotation-fields") {
       try { restoreOnlyOfficeAnnotationFields(data.fields); } catch {}

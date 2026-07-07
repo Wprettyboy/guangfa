@@ -31,6 +31,7 @@ import FormatAuditWorkspace from "./pages/FormatAuditWorkspace.jsx";
 import AnnotateWorkspace from "./pages/AnnotateWorkspace.jsx";
 import FillWorkspace from "./pages/FillWorkspace.jsx";
 import LayoutWorkspace from "./pages/LayoutWorkspace.jsx";
+import KnowledgeImagePicker from "./features/knowledge/KnowledgeImagePicker.jsx";
 import KnowledgeTablePicker from "./features/knowledge/KnowledgeTablePicker.jsx";
 import {
   currentProjectId,
@@ -57,6 +58,7 @@ import {
   requestOnlyOfficeFillField,
   requestOnlyOfficeFillComplexFillField,
   requestOnlyOfficeFillPlaceholderVariable,
+  requestOnlyOfficeInsertKnowledgeImage,
   requestOnlyOfficeInsertKnowledgeTable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectComplexFillAnchor,
@@ -138,6 +140,7 @@ import {
   Archive,
   BookOpenText,
   ChevronDown,
+  Image as ImageIcon,
   LayoutDashboard,
   Menu,
   MessageSquareText,
@@ -172,6 +175,7 @@ export default function App() {
   const [annotatePreviewPage, setAnnotatePreviewPage] = useState(initialSession.annotatePreviewPage || 1);
   const [fillPreviewPage, setFillPreviewPage] = useState(initialSession.fillPreviewPage || 1);
   const [fillOfficeDocId, setFillOfficeDocId] = useState("");
+  const [knowledgeImagePickerOpen, setKnowledgeImagePickerOpen] = useState(false);
   const [knowledgeTablePickerOpen, setKnowledgeTablePickerOpen] = useState(false);
   const [filledTemplateFile, setFilledTemplateFile] = useState(null);
   const [fillFieldPageMap, setFillFieldPageMap] = useState({});
@@ -1930,6 +1934,10 @@ export default function App() {
     return requestOnlyOfficeInsertKnowledgeTable(table);
   }
 
+  async function insertKnowledgeImage(image) {
+    return requestOnlyOfficeInsertKnowledgeImage(image);
+  }
+
   return (
     <div className="app-shell" ref={appRef}>
       <aside className="sidebar" aria-label="主导航">
@@ -2028,10 +2036,16 @@ export default function App() {
             {activeModule === "workspace" ? (
               <div className="workspace-head-controls">
                 {activeWorkspace === "fill" ? (
-                  <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeTablePickerOpen(true)}>
-                    <Table2 size={16} />
-                    插入资料表格
-                  </button>
+                  <>
+                    <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeTablePickerOpen(true)}>
+                      <Table2 size={16} />
+                      插入资料表格
+                    </button>
+                    <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeImagePickerOpen(true)}>
+                      <ImageIcon size={16} />
+                      插入资料图片
+                    </button>
+                  </>
                 ) : null}
                 <div className="workspace-tabs" role="tablist" aria-label="工作台切换">
                   <button
@@ -2194,6 +2208,14 @@ export default function App() {
         selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
         onInsert={insertKnowledgeTable}
         onClose={() => setKnowledgeTablePickerOpen(false)}
+      />
+      <KnowledgeImagePicker
+        open={knowledgeImagePickerOpen && activeModule === "workspace" && activeWorkspace === "fill"}
+        knowledgeBases={knowledgeBases}
+        selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
+        selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
+        onInsert={insertKnowledgeImage}
+        onClose={() => setKnowledgeImagePickerOpen(false)}
       />
     </div>
   );

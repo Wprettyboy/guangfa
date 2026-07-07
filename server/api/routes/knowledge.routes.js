@@ -13,6 +13,12 @@ import {
   readKnowledgeTableDocx,
   searchKnowledgeTables,
 } from "../../knowledge/tables.js";
+import {
+  listKnowledgeDocumentImages,
+  readKnowledgeImageDocx,
+  readKnowledgeImageFile,
+  searchKnowledgeImages,
+} from "../../knowledge/images.js";
 import { defineRoute } from "../registry.js";
 
 function registerKnowledgeRoutes() {
@@ -145,6 +151,16 @@ function registerKnowledgeRoutes() {
   });
 
   defineRoute({
+    id: "knowledge.documents.images",
+    method: "GET",
+    path: "/api/knowledge-documents/:documentId/images",
+    tags: ["knowledge"],
+    summary: "读取知识库资料原文图片",
+    responses: { 200: "array" },
+    handler: ({ params }) => listKnowledgeDocumentImages(params.documentId),
+  });
+
+  defineRoute({
     id: "knowledge.tables.search",
     method: "POST",
     path: "/api/knowledge-tables/search",
@@ -170,6 +186,73 @@ function registerKnowledgeRoutes() {
       const file = await readKnowledgeTableDocx(params.documentId, params.tableIndex);
       if (!file) {
         const error = new Error("知识库表格原文不存在");
+        error.statusCode = 404;
+        throw error;
+      }
+      return {
+        kind: "buffer",
+        buffer: file.buffer,
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers: {
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(file.fileName)}"`,
+          "Cache-Control": "no-store",
+        },
+      };
+    },
+  });
+
+  defineRoute({
+    id: "knowledge.images.search",
+    method: "POST",
+    path: "/api/knowledge-images/search",
+    tags: ["knowledge"],
+    summary: "检索知识库原文图片",
+    body: {
+      query: "string?",
+      kbIds: "array?",
+      globalKbIds: "array?",
+    },
+    responses: { 200: "array" },
+    handler: ({ body }) => searchKnowledgeImages(body),
+  });
+
+  defineRoute({
+    id: "knowledge.images.file",
+    method: "GET",
+    path: "/api/knowledge-images/:documentId/:imageIndex/file",
+    tags: ["knowledge"],
+    summary: "读取知识库图片预览文件",
+    responses: { 200: "binary" },
+    handler: async ({ params }) => {
+      const file = await readKnowledgeImageFile(params.documentId, params.imageIndex);
+      if (!file) {
+        const error = new Error("知识库图片原文不存在");
+        error.statusCode = 404;
+        throw error;
+      }
+      return {
+        kind: "buffer",
+        buffer: file.buffer,
+        contentType: file.contentType,
+        headers: {
+          "Content-Disposition": `inline; filename="${encodeURIComponent(file.fileName)}"`,
+          "Cache-Control": "no-store",
+        },
+      };
+    },
+  });
+
+  defineRoute({
+    id: "knowledge.images.docx",
+    method: "GET",
+    path: "/api/knowledge-images/:documentId/:imageIndex/docx",
+    tags: ["knowledge"],
+    summary: "读取知识库图片临时 DOCX",
+    responses: { 200: "binary" },
+    handler: async ({ params }) => {
+      const file = await readKnowledgeImageDocx(params.documentId, params.imageIndex);
+      if (!file) {
+        const error = new Error("知识库图片原文不存在");
         error.statusCode = 404;
         throw error;
       }
