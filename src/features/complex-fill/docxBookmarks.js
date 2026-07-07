@@ -40,7 +40,33 @@ async function validateComplexFillAnchorsInDocx(buffer, anchors = []) {
   };
 }
 
+async function validatePlaceholderAnchorsInDocx(buffer, anchors = []) {
+  const bookmarkNames = await readDocxBookmarkNames(buffer);
+  const missingAnchors = [];
+  const validAnchors = [];
+
+  anchors.forEach((anchor) => {
+    const bookmarkName = String(anchor?.bookmarkName || "");
+    if (bookmarkName && bookmarkNames.has(bookmarkName)) {
+      validAnchors.push(anchor);
+    } else {
+      missingAnchors.push({
+        ...anchor,
+        missingBookmarkName: bookmarkName,
+      });
+    }
+  });
+
+  return {
+    ok: missingAnchors.length === 0,
+    validAnchors,
+    missingAnchors,
+    bookmarkNames,
+  };
+}
+
 export {
   readDocxBookmarkNames,
   validateComplexFillAnchorsInDocx,
+  validatePlaceholderAnchorsInDocx,
 };

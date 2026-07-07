@@ -110,7 +110,7 @@ import {
   markComplexFillFailure,
   requestComplexFillAiFill,
 } from "./features/complex-fill/fill.js";
-import { validateComplexFillAnchorsInDocx } from "./features/complex-fill/docxBookmarks.js";
+import { validateComplexFillAnchorsInDocx, validatePlaceholderAnchorsInDocx } from "./features/complex-fill/docxBookmarks.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -1151,11 +1151,13 @@ export default function App() {
   async function saveTemplate(category) {
     if (!templateFile) {
       setSaveState("no-file");
+      window.alert("模板暂不能保存：请先上传 DOCX 模板。");
       return;
     }
 
     if (!templateFile.buffer) {
       setSaveState("no-file");
+      window.alert("模板暂不能保存：当前模板文件内容为空，请重新上传 DOCX。");
       return;
     }
 
@@ -1195,13 +1197,15 @@ export default function App() {
         });
         if (!officeBuffer) {
           setSaveState("storage-error");
+          window.alert("模板暂不能保存：无法从左侧 Word 编辑器取回当前文档，请等待文档加载完成后再试。");
           return;
         }
         fileBuffer = officeBuffer;
         annotatedTemplateBufferRef.current = officeBuffer.slice(0);
         setTemplateFile((file) => (file?.buffer ? { ...file, buffer: officeBuffer.slice(0), size: formatFileSize(officeBuffer.byteLength) } : file));
-      } catch {
+      } catch (error) {
         setSaveState("storage-error");
+        window.alert(`模板暂不能保存：从左侧 Word 编辑器取回当前文档失败。\n${error?.message || "请稍后重试。"}`);
         return;
       }
     }
@@ -1209,10 +1213,35 @@ export default function App() {
     const normalizedTemplateFields = templateFields.map(normalizeTemplateFieldForRuntime);
     const normalizedComplexFillFields = normalizeComplexFillFields(complexFillFields);
     const normalizedComplexFillAnchors = normalizeComplexFillAnchors(complexFillAnchors);
+    if (latestPlaceholderAnchors.length > 0) {
+      try {
+        const validation = await validatePlaceholderAnchorsInDocx(fileBuffer, latestPlaceholderAnchors);
+        if (!validation.ok) {
+          setSaveState("incomplete");
+          const examples = validation.missingAnchors
+            .slice(0, 6)
+            .map((anchor) => `- ${anchor.variableName || anchor.token || anchor.variableId || "未命名字段"}：${anchor.missingBookmarkName || "书签名为空"}`)
+            .join("\n");
+          window.alert(
+            `模板暂不能保存：右侧记录了 ${latestPlaceholderAnchors.length} 个字段插入点，但当前 Word 文档缺少 ${validation.missingAnchors.length} 个对应书签。\n请重新插入这些字段，或删除无效插入记录后再保存。\n${examples}`,
+          );
+          return;
+        }
+      } catch (error) {
+        setSaveState("storage-error");
+        window.alert(`模板暂不能保存：字段插入点校验失败。\n${error?.message || "请重新打开文档后再试。"}`);
+        return;
+      }
+    }
     if (normalizedComplexFillAnchors.length > 0) {
       const validation = await validateComplexFillAnchorsInDocx(fileBuffer, normalizedComplexFillAnchors);
       if (!validation.ok) {
         setSaveState("incomplete");
+        const examples = validation.missingAnchors
+          .slice(0, 6)
+          .map((anchor) => `- ${anchor.fieldSummary || anchor.id || "复杂类字段"}：${anchor.missingBookmarkName || anchor.missingSelectionBookmarkName || "缺少书签"}`)
+          .join("\n");
+        window.alert(`模板暂不能保存：有 ${validation.missingAnchors.length} 个复杂类填充位置在当前 Word 文档中找不到书签。\n请重新建立这些位置后再保存。\n${examples}`);
         return;
       }
     }
@@ -1247,8 +1276,9 @@ export default function App() {
       ];
       await storeTemplates(nextTemplates);
       setTemplateLibrary(nextTemplates);
-    } catch {
+    } catch (error) {
       setSaveState("storage-error");
+      window.alert(`模板库写入失败：${error?.message || "请稍后重试。"}`);
       return;
     }
 
