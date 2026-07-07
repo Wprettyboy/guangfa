@@ -56,7 +56,7 @@ function FillWorkspace({
   const [exportState, setExportState] = useState("idle");
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [trackRevisionsEnabled, setTrackRevisionsEnabled] = useState(true);
+  const [trackRevisionsEnabled, setTrackRevisionsEnabled] = useState(false);
   const [uploadState, setUploadState] = useState("idle");
   const [activeFillType, setActiveFillType] = useState("auto");
   const baseTemplateFile = sourceTemplateFile || templateFile;

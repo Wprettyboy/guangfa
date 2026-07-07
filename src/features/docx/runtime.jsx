@@ -102,7 +102,7 @@ function DocumentFrame({
   onOpenComplexFillPanel,
   onOfficeDocumentReady,
   aiKnowledgeContext,
-  trackRevisionsEnabled = true,
+  trackRevisionsEnabled = false,
 }) {
   const title = templateFile?.name ?? "未加载模板";
   const bodyRef = useRef(null);

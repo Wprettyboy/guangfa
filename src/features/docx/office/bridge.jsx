@@ -23,7 +23,7 @@ let onlyOfficeKnowledgeImageRequestSeq = 0;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
-function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = true, mode, serverUrl, onReady, onError }) {
+function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = false, mode, serverUrl, onReady, onError }) {
   const containerRef = useRef(null);
   const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
   const annotationFieldPayloadRef = useRef([]);
