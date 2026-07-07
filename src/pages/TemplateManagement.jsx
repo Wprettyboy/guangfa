@@ -184,7 +184,7 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
         <div className="template-empty">
           <Archive size={28} />
           <strong>暂无模板</strong>
-          <span>在模板标注工作台上传 DOCX、标注字段并设置输入点后，点击保存模板即可入库。</span>
+          <span>在模板标注工作台上传 DOCX 后可直接保存入库；需要自动填充时再标注字段并设置输入点。</span>
           <button className="tool-button primary" onClick={onCreateTemplate}>
             <Upload size={17} />
             去标注模板

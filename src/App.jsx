@@ -1167,14 +1167,19 @@ export default function App() {
       .filter((item) => item.issue);
     const incompleteComplexFillFields = complexFillFields.filter((field) => !isComplexFillFieldComplete(field));
     const hasPendingFields = templateFields.some((field) => field.status !== "已标注");
-    const hasTemplateMarkers = templateFields.length > 0 || latestPlaceholderAnchors.length > 0 || complexFillAnchors.length > 0;
-    const isComplete = hasTemplateMarkers && invalidFields.length === 0 && setupIssues.length === 0 && incompleteComplexFillFields.length === 0 && !hasPendingFields;
+    const isComplete = invalidFields.length === 0 && setupIssues.length === 0 && incompleteComplexFillFields.length === 0 && !hasPendingFields;
 
     if (!isComplete) {
       setSaveState("incomplete");
-      if (setupIssues.length > 0) {
-        window.alert(`有 ${setupIssues.length} 个字段缺少稳定写入位置：\n${setupIssues.slice(0, 6).map(({ field, issue }) => `- ${getTemplateFieldSourceText(field) || field.name || field.id}：${issue}`).join("\n")}`);
-      }
+      const reasons = [
+        invalidFields.length > 0 ? `${invalidFields.length} 个字段缺少选区原文或字段类型。` : "",
+        setupIssues.length > 0
+          ? `有 ${setupIssues.length} 个字段缺少稳定写入位置：\n${setupIssues.slice(0, 6).map(({ field, issue }) => `- ${getTemplateFieldSourceText(field) || field.name || field.id}：${issue}`).join("\n")}`
+          : "",
+        incompleteComplexFillFields.length > 0 ? `${incompleteComplexFillFields.length} 个复杂类填充字段缺少摘要、格式要求或内容要求。` : "",
+        hasPendingFields ? "仍有字段处于待确认状态。" : "",
+      ].filter(Boolean);
+      if (reasons.length > 0) window.alert(`模板暂不能保存：\n${reasons.join("\n")}`);
       return;
     }
 

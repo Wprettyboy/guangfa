@@ -6,6 +6,8 @@ import {
   replaceTemplateLibrary,
 } from "./template-db.js";
 
+const templateLibraryBodyLimitBytes = 220 * 1024 * 1024;
+
 export function templateLibraryMiddleware() {
   return async function handleTemplateLibrary(request, response, next) {
     const url = new URL(request.url || "/", "http://localhost");
@@ -66,8 +68,8 @@ function readJsonBody(request) {
     let body = "";
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 80 * 1024 * 1024) {
-        const error = new Error("模板库请求内容过大");
+      if (body.length > templateLibraryBodyLimitBytes) {
+        const error = new Error("模板库请求内容过大，请压缩模板中的图片后再保存");
         error.statusCode = 413;
         reject(error);
         request.destroy();
