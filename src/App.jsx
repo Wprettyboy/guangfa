@@ -80,6 +80,7 @@ import {
   buildPlaceholderFillCards,
   createPlaceholderVariable,
   getNextPlaceholderAnchorIndex,
+  mergeDuplicatePlaceholderVariables,
   normalizePlaceholderName,
   normalizePlaceholderVariables,
   updatePlaceholderAnchorPage,
@@ -927,6 +928,14 @@ export default function App() {
   }
 
   function updatePlaceholderVariable(variableId, patch) {
+    if (Object.prototype.hasOwnProperty.call(patch, "name")) {
+      const nextName = normalizePlaceholderName(patch.name);
+      const duplicate = placeholderVariables.some((variable) => variable.id !== variableId && normalizePlaceholderName(variable.name) === nextName);
+      if (duplicate) {
+        window.alert(`字段名称“${nextName}”已存在，请换一个名称。`);
+        return;
+      }
+    }
     const nextVariables = placeholderVariables.map((variable) =>
       variable.id === variableId
         ? {
@@ -1161,8 +1170,15 @@ export default function App() {
       return;
     }
 
-    const latestPlaceholderVariables = normalizePlaceholderVariables(placeholderVariablesRef.current);
-    const latestPlaceholderAnchors = alignPlaceholderAnchorsToVariables(placeholderAnchorsRef.current, latestPlaceholderVariables);
+    const mergedPlaceholders = mergeDuplicatePlaceholderVariables(placeholderVariablesRef.current, placeholderAnchorsRef.current);
+    const latestPlaceholderVariables = mergedPlaceholders.variables;
+    const latestPlaceholderAnchors = alignPlaceholderAnchorsToVariables(mergedPlaceholders.anchors, latestPlaceholderVariables);
+    if (mergedPlaceholders.duplicateNames.length > 0) {
+      setPlaceholderVariables(latestPlaceholderVariables);
+      setPlaceholderAnchors(latestPlaceholderAnchors);
+      placeholderVariablesRef.current = latestPlaceholderVariables;
+      placeholderAnchorsRef.current = latestPlaceholderAnchors;
+    }
     const invalidFields = templateFields.filter((field) => !getTemplateFieldSourceText(field) || !(field.category || field.type || "").trim());
     const setupIssues = templateFields
       .map((field) => ({ field, issue: getFieldSetupIssue(field) }))

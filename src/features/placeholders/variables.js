@@ -98,6 +98,50 @@ function alignPlaceholderAnchorsToVariables(anchors = [], variables = []) {
   });
 }
 
+function mergeDuplicatePlaceholderVariables(variables = [], anchors = []) {
+  const normalizedVariables = normalizePlaceholderVariables(variables);
+  const keptByName = new Map();
+  const idMap = new Map();
+  const duplicateNames = new Set();
+
+  normalizedVariables.forEach((variable) => {
+    const name = normalizePlaceholderName(variable.name);
+    const kept = keptByName.get(name);
+    if (!kept) {
+      keptByName.set(name, variable);
+      idMap.set(variable.id, variable.id);
+      return;
+    }
+    duplicateNames.add(name);
+    idMap.set(variable.id, kept.id);
+    if (!kept.prompt && variable.prompt) kept.prompt = variable.prompt;
+  });
+
+  const mergedVariables = [...keptByName.values()];
+  const variableById = new Map(mergedVariables.map((variable) => [variable.id, variable]));
+  const remappedAnchors = applyPlaceholderAnchors(
+    [],
+    anchors.map((anchor) => {
+      const variableId = idMap.get(anchor?.variableId) || anchor?.variableId;
+      const variable = variableById.get(variableId);
+      return variable
+        ? {
+            ...anchor,
+            variableId,
+            variableName: variable.name,
+            token: variable.token,
+          }
+        : anchor;
+    }),
+  );
+
+  return {
+    variables: mergedVariables,
+    anchors: remappedAnchors,
+    duplicateNames: [...duplicateNames],
+  };
+}
+
 function updatePlaceholderAnchorPage(anchors = [], bookmarkName, page) {
   const nextPage = Math.max(1, Number(page) || 1);
   if (!bookmarkName || !Number.isFinite(nextPage)) return anchors;
@@ -177,6 +221,7 @@ export {
   getNextPlaceholderAnchorIndex,
   getPlaceholderAnchorPage,
   labelPlaceholderAnchorPages,
+  mergeDuplicatePlaceholderVariables,
   normalizePlaceholderName,
   normalizePlaceholderVariable,
   normalizePlaceholderVariables,

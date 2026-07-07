@@ -436,6 +436,7 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
   const fields = Array.isArray(template.fields) ? template.fields : [];
   const placeholderVariables = Array.isArray(template.placeholderVariables) ? template.placeholderVariables : [];
   const placeholderAnchors = Array.isArray(template.placeholderAnchors) ? template.placeholderAnchors.filter((anchor) => anchor?.bookmarkName) : [];
+  const mergedPlaceholders = mergeDuplicatePlaceholderVariablesForStorage(placeholderVariables, placeholderAnchors);
   const legacyComplexFillItems = Array.isArray(template.complexFillItems) ? template.complexFillItems : [];
   const complexFillFields = Array.isArray(template.complexFillFields) ? template.complexFillFields : legacyComplexFillItems;
   const complexFillAnchors = Array.isArray(template.complexFillAnchors) ? template.complexFillAnchors.filter((anchor) => anchor?.bookmarkName) : legacyComplexFillItems.filter((item) => item?.bookmarkName);
@@ -455,8 +456,8 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
     uploadedAt: template.uploadedAt || "",
     supported: template.supported !== false,
     fields,
-    placeholderVariables,
-    placeholderAnchors,
+    placeholderVariables: mergedPlaceholders.variables,
+    placeholderAnchors: mergedPlaceholders.anchors,
     complexFillFields,
     complexFillAnchors,
     confirmedCount: Number(template.confirmedCount ?? fields.filter((field) => field.status === "已标注").length),
@@ -464,6 +465,53 @@ function normalizeTemplateForStorage(template = {}, index = 0, now = Date.now())
     createdAt: Number(template.createdAt || template.savedAtMs || now),
     extra: stripTemplateStorageColumns(template),
   };
+}
+
+function mergeDuplicatePlaceholderVariablesForStorage(variables = [], anchors = []) {
+  const keptByName = new Map();
+  const idMap = new Map();
+
+  variables.forEach((variable, index) => {
+    const name = normalizePlaceholderNameForStorage(variable?.name || variable?.label || variable?.key || `字段${index + 1}`);
+    if (!name) return;
+    const normalized = {
+      ...variable,
+      id: String(variable?.id || `PV-${String(index + 1).padStart(3, "0")}`),
+      name,
+      token: `{{${name}}}`,
+      prompt: String(variable?.prompt || variable?.aiPrompt || variable?.instruction || "").trim(),
+      createdAt: Number(variable?.createdAt || 0),
+    };
+    const kept = keptByName.get(name);
+    if (!kept) {
+      keptByName.set(name, normalized);
+      idMap.set(normalized.id, normalized.id);
+      return;
+    }
+    idMap.set(normalized.id, kept.id);
+    if (!kept.prompt && normalized.prompt) kept.prompt = normalized.prompt;
+  });
+
+  const mergedVariables = [...keptByName.values()];
+  const variableById = new Map(mergedVariables.map((variable) => [variable.id, variable]));
+  const mergedAnchors = anchors.map((anchor) => {
+    const variableId = idMap.get(anchor?.variableId) || String(anchor?.variableId || "");
+    const variable = variableById.get(variableId);
+    return variable
+      ? {
+          ...anchor,
+          variableId,
+          variableName: variable.name,
+          token: variable.token,
+        }
+      : anchor;
+  });
+
+  return { variables: mergedVariables, anchors: mergedAnchors };
+}
+
+function normalizePlaceholderNameForStorage(name) {
+  return String(name || "").replace(/\s+/g, "").trim().slice(0, 40);
 }
 
 function stripTemplateStorageColumns(template) {
