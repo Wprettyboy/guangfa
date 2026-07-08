@@ -327,6 +327,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
 - `ApiParagraph.GetParaPr()` / `ApiParagraph.GetTextPr()`：取得段落属性和文本属性对象，格式调整优先改属性对象，不要只猜测段落对象上是否有同名 setter。
 - `ApiDocument.GetStyle(name)` / `ApiParagraph.SetStyle(style)`：取得并套用 Word 段落样式，适合让插入内容匹配文档内已有 `正文`、`Heading 2`、`标题2` 等样式；可与 `Api.CreateParagraph()`、`ApiDocument.InsertContent()` 一起使用。
+- 通过 `ApiDocument.InsertContent()` 向当前光标插入结构化段落时，先插入一个 `Api.CreateParagraph()` 空段落建立当前位置插入锚点，再插入真实内容；否则可能出现命令返回成功但内容未落到当前可见正文的情况。
 - `ApiTextPr.SetFontFamily(font)` / `SetFontSize(halfPoints)` / `SetBold(enabled)`：设置文本字体、字号、加粗；字号单位是半磅值，例如 16pt 传 `32`。
 - `ApiParaPr.SetJc(value)` / `SetIndFirstLine(twips)` / `SetSpacingLine(twips, "exact")` / `SetSpacingBefore(twips)` / `SetSpacingAfter(twips)`：设置段落对齐、首行缩进和段前段后/行距；行距接口参数顺序不要写反。
 - `api.SetMarkerFormat(true, true, r, g, b)`：OnlyOffice 工具栏高亮按钮同源接口，给当前选区套用指定高亮色。

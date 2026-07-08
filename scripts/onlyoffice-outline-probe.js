@@ -1042,6 +1042,16 @@
           callAny([paragraph, textPr], ["SetBold"], [Boolean(format.bold)]);
         }
 
+        function prepareCurrentInsertPosition(doc) {
+          try {
+            var anchorParagraph = Api.CreateParagraph();
+            doc.InsertContent([anchorParagraph]);
+            return true;
+          } catch (error) {
+            return false;
+          }
+        }
+
         try {
           var source = Asc.scope.gfSolutionWritingParagraphs || [];
           var doc = Api.GetDocument();
@@ -1050,15 +1060,28 @@
             return;
           }
           var content = [];
+          var textCount = 0;
           for (var index = 0; index < source.length; index += 1) {
             var item = source[index] || {};
             var paragraph = Api.CreateParagraph();
-            if (item.text && typeof paragraph.AddText === "function") paragraph.AddText(String(item.text));
+            if (item.text && typeof paragraph.AddText === "function") {
+              paragraph.AddText(String(item.text));
+              textCount += 1;
+            }
             if (!applyWordStyle(doc, paragraph, item)) applyParagraphFormat(paragraph, item);
             content.push(paragraph);
           }
-          doc.InsertContent(content);
-          Asc.scope.gfSolutionWritingResult = { ok: true, source: "api-insert-content-paragraphs", count: content.length };
+          if (textCount === 0) {
+            Asc.scope.gfSolutionWritingResult = { ok: false, error: "方案规划没有可插入文本段落。" };
+            return;
+          }
+          prepareCurrentInsertPosition(doc);
+          var inserted = doc.InsertContent(content);
+          if (inserted === false) {
+            Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 未确认方案规划段落插入。" };
+            return;
+          }
+          Asc.scope.gfSolutionWritingResult = { ok: true, source: "api-insert-content-paragraphs", count: content.length, textCount: textCount };
         } catch (error) {
           Asc.scope.gfSolutionWritingResult = { ok: false, error: error?.message || "方案规划段落插入失败" };
         }
