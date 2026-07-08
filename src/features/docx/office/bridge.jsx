@@ -532,6 +532,7 @@ function requestOnlyOfficeInsertSolutionText(text, options = {}) {
     action: "insert-solution-writing-text",
     requestId,
     text,
+    paragraphs: Array.isArray(options.paragraphs) ? options.paragraphs : [],
   };
   return new Promise((resolve) => {
     let done = false;

@@ -944,6 +944,110 @@
     return { ok: false, error: "文本输入接口不可用" };
   }
 
+  function normalizeSolutionWritingParagraphs(payload) {
+    const rows = Array.isArray(payload?.paragraphs) ? payload.paragraphs : [];
+    return rows
+      .map(function (row) {
+        return {
+          type: String(row?.type || "body"),
+          level: Number.isFinite(Number(row?.level)) ? Number(row.level) : null,
+          text: String(row?.text || ""),
+        };
+      })
+      .filter(function (row) { return row.text || row.type === "blank"; });
+  }
+
+  async function insertStructuredSolutionWritingText(paragraphs, fallbackText) {
+    if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
+    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
+      return enterTextAtSelection(fallbackText, "solution-writing");
+    }
+    try {
+      window.Asc.scope = window.Asc.scope || {};
+      window.Asc.scope.gfSolutionWritingParagraphs = paragraphs;
+      window.Asc.scope.gfSolutionWritingResult = null;
+      await window.Asc.Editor.callCommand(function () {
+        function callAny(targets, names, args) {
+          for (var targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+            var target = targets[targetIndex];
+            if (!target) continue;
+            for (var nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
+              var name = names[nameIndex];
+              try {
+                if (typeof target[name] === "function") {
+                  target[name].apply(target, args);
+                  return true;
+                }
+              } catch (error) {}
+            }
+          }
+          return false;
+        }
+
+        function getFormat(item) {
+          if (item.type === "module-heading") {
+            return { font: "黑体", size: 16, bold: true, firstLine: 0, line: 28, before: 6, after: 4, outline: item.level };
+          }
+          if (item.type === "section-heading") {
+            return { font: "楷体", size: 16, bold: true, firstLine: 0, line: 28, before: 4, after: 2, outline: item.level };
+          }
+          if (item.type === "blank") {
+            return { font: "仿宋", size: 16, bold: false, firstLine: 0, line: 12, before: 0, after: 0 };
+          }
+          return { font: "仿宋", size: 16, bold: false, firstLine: 2, line: 28, before: 0, after: 0 };
+        }
+
+        function applyParagraphFormat(paragraph, item) {
+          var format = getFormat(item);
+          var paragraphPr = typeof paragraph.GetParaPr === "function" ? paragraph.GetParaPr() : null;
+          var textPr = typeof paragraph.GetTextPr === "function" ? paragraph.GetTextPr() : null;
+          callAny([paragraphPr, paragraph], ["SetJc", "SetAlign"], ["left"]);
+          callAny([paragraphPr, paragraph], ["SetIndFirstLine", "SetFirstLineIndent"], [Math.round((format.firstLine || 0) * (format.size || 16) * 20)]);
+          callAny([paragraphPr, paragraph], ["SetSpacingLine"], [Math.round((format.line || 28) * 20), "exact"]);
+          callAny([paragraphPr, paragraph], ["SetSpacingBefore"], [Math.round((format.before || 0) * 20)]);
+          callAny([paragraphPr, paragraph], ["SetSpacingAfter"], [Math.round((format.after || 0) * 20)]);
+          if (Number.isFinite(Number(format.outline))) {
+            callAny([paragraphPr, paragraph], ["SetOutlineLvl", "SetOutlineLevel"], [Math.max(0, Math.min(8, Number(format.outline)))]);
+          }
+          callAny([paragraph, textPr], ["SetFontFamily", "SetFont"], [format.font]);
+          callAny([paragraph, textPr], ["SetFontSize"], [Math.round((format.size || 16) * 2)]);
+          callAny([paragraph, textPr], ["SetBold"], [Boolean(format.bold)]);
+        }
+
+        try {
+          var source = Asc.scope.gfSolutionWritingParagraphs || [];
+          var doc = Api.GetDocument();
+          if (!doc || typeof doc.InsertContent !== "function" || typeof Api.CreateParagraph !== "function") {
+            Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 段落插入接口不可用" };
+            return;
+          }
+          var content = [];
+          for (var index = 0; index < source.length; index += 1) {
+            var item = source[index] || {};
+            var paragraph = Api.CreateParagraph();
+            if (item.text && typeof paragraph.AddText === "function") paragraph.AddText(String(item.text));
+            applyParagraphFormat(paragraph, item);
+            content.push(paragraph);
+          }
+          doc.InsertContent(content);
+          Asc.scope.gfSolutionWritingResult = { ok: true, source: "api-insert-content-paragraphs", count: content.length };
+        } catch (error) {
+          Asc.scope.gfSolutionWritingResult = { ok: false, error: error?.message || "方案规划段落插入失败" };
+        }
+      });
+      const result = window.Asc.scope.gfSolutionWritingResult || { ok: false, error: "OnlyOffice 段落插入命令未返回结果。" };
+      if (result.ok) {
+        safeCall(getLogicDocument(), "Recalculate", null);
+        safeCall(getLogicDocument(), "UpdateInterface", null);
+        safeCall(getLogicDocument(), "UpdateSelection", null);
+        saveOnlyOfficeDocument("solution-writing");
+      }
+      return result;
+    } catch (error) {
+      return { ok: false, error: error?.message || "方案规划段落插入失败" };
+    }
+  }
+
   function removeSelectedTextForReplacement() {
     const logicDocument = getLogicDocument();
     if (!logicDocument) return { ok: false, error: "文档对象不可用，无法删除原选区" };
@@ -1519,11 +1623,12 @@
     return payload;
   }
 
-  function insertSolutionWritingText(payload) {
+  async function insertSolutionWritingText(payload) {
     const requestId = payload?.requestId || "";
     const text = String(payload?.text || "").trim();
+    const paragraphs = normalizeSolutionWritingParagraphs(payload);
     const result = text
-      ? enterTextAtSelection(text, "solution-writing")
+      ? await insertStructuredSolutionWritingText(paragraphs, text)
       : { ok: false, error: "方案正文为空" };
     const message = { source: "guangfa-onlyoffice-custom", action: "solution-writing-inserted", result: { ...result, requestId } };
     try { window.parent?.postMessage(message, "*"); } catch {}

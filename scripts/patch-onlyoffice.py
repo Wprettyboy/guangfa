@@ -39,7 +39,7 @@ html = re.sub(r'\s*<script src="guangfa-outline-probe\.js\?gf=\d+"></script>', "
 html = re.sub(r'\s*<script src="guangfa-placeholder-fields\.js\?gf=\d+"></script>', "", html)
 html = re.sub(r'\s*<script src="guangfa-layout-format\.js\?gf=\d+"></script>', "", html)
 if "</body>" in html:
-    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=92"></script>\n<script src="guangfa-placeholder-fields.js?gf=31"></script>\n<script src="guangfa-layout-format.js?gf=4"></script>\n</body>')
+    html = html.replace("</body>", '<script src="guangfa-outline-probe.js?gf=93"></script>\n<script src="guangfa-placeholder-fields.js?gf=31"></script>\n<script src="guangfa-layout-format.js?gf=4"></script>\n</body>')
 html = re.sub(r'urlArgs: "gf=\d+"', 'urlArgs: "gf=24"', html)
 if 'urlArgs: "gf=24"' not in html:
     html = html.replace(

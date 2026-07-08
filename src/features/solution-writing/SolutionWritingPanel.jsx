@@ -121,11 +121,12 @@ function SolutionWritingPanel({
     }
   }
 
-  async function insertGeneratedText(text, successMessage = "已插入当前光标位置") {
-    if (!text) return;
+  async function insertGeneratedText(content, successMessage = "已插入当前光标位置") {
+    const payload = normalizeInsertPayload(content);
+    if (!payload.text) return;
     setStatus("inserting");
     setMessage("");
-    const result = await onInsertText?.(text);
+    const result = await onInsertText?.(payload.text, { paragraphs: payload.paragraphs });
     if (result?.ok) {
       setStatus("idle");
       setMessage(successMessage);
@@ -340,7 +341,20 @@ function SolutionWritingPanel({
         <section className="solution-block">
           <div className="solution-block-title">
             <strong>规划结果</strong>
-            <span>{generatedBlocks.length ? `${generatedBlocks.length} 个模块` : "待生成"}</span>
+            <div className="solution-block-title-actions">
+              <span>{generatedBlocks.length ? `${generatedBlocks.length} 个模块` : "待生成"}</span>
+              {generatedBlocks.length ? (
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => insertGeneratedText(buildAllGeneratedModulesInsert(selectedGroup, generatedBlocks), "已插入全部写作规划")}
+                  disabled={busy}
+                >
+                  {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+                  全部插入规划
+                </button>
+              ) : null}
+            </div>
           </div>
           {generatedBlocks.length === 0 ? (
             <div className="empty-state compact">生成后的模块写作规划会出现在这里</div>
@@ -356,7 +370,7 @@ function SolutionWritingPanel({
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => insertGeneratedText(buildGeneratedModuleText(selectedGroup, block, moduleIndex), `已插入 ${block.moduleName} 写作规划`)}
+                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, moduleIndex), `已插入 ${block.moduleName} 写作规划`)}
                         disabled={busy}
                       >
                         {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
@@ -374,7 +388,7 @@ function SolutionWritingPanel({
                               <button
                                 className="text-button"
                                 type="button"
-                                onClick={() => insertGeneratedText(buildGeneratedSectionText(sectionTitle, section.content), `已插入 ${sectionTitle} 写作规划`)}
+                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1), `已插入 ${sectionTitle} 写作规划`)}
                                 disabled={busy}
                               >
                                 <Send size={13} />
@@ -504,19 +518,68 @@ function getRecommendedTemplateGroup(groups) {
     || groups[0];
 }
 
-function buildGeneratedModuleText(group, block, moduleIndex) {
+function buildAllGeneratedModulesInsert(group, blocks) {
+  const items = (Array.isArray(blocks) ? blocks : []).map((block, index) => buildGeneratedModuleInsert(group, block, index));
+  return {
+    text: items.map((item) => item.text).filter(Boolean).join("\n\n"),
+    paragraphs: items.flatMap((item, index) => (
+      index === 0 ? item.paragraphs : [{ type: "blank", text: "" }, ...item.paragraphs]
+    )),
+  };
+}
+
+function buildGeneratedModuleInsert(group, block, moduleIndex) {
   const moduleNumber = nextSiblingNumber(group?.number, moduleIndex);
-  const lines = [formatHeadingLine(moduleNumber, block.moduleName)];
+  const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
+  const paragraphs = [{
+    type: "module-heading",
+    level: Number.isFinite(Number(group?.level)) ? Number(group.level) : 1,
+    text: moduleTitle,
+  }];
   block.sections.forEach((section, sectionIndex) => {
     const headingNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
     const title = formatHeadingLine(headingNumber, stripHeadingNumber(section.templateTitle));
-    lines.push("", buildGeneratedSectionText(title, section.content));
+    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1).paragraphs);
   });
-  return lines.join("\n").trim();
+  return paragraphsToInsertPayload(paragraphs);
 }
 
-function buildGeneratedSectionText(title, content) {
-  return [title, content || "需结合项目资料补充该标题的写作要点。"].join("\n").trim();
+function buildGeneratedSectionInsert(title, content, level = 2) {
+  const bodyLines = splitBodyParagraphs(content || "需结合项目资料补充该标题的写作要点。");
+  return paragraphsToInsertPayload([
+    { type: "section-heading", level: Number.isFinite(Number(level)) ? Number(level) : 2, text: title },
+    ...bodyLines.map((text) => ({ type: "body", text })),
+  ]);
+}
+
+function paragraphsToInsertPayload(paragraphs) {
+  const normalized = (Array.isArray(paragraphs) ? paragraphs : [])
+    .map((paragraph) => ({
+      type: paragraph.type || "body",
+      level: Number.isFinite(Number(paragraph.level)) ? Number(paragraph.level) : null,
+      text: String(paragraph.text || ""),
+    }))
+    .filter((paragraph) => paragraph.text || paragraph.type === "blank");
+  return {
+    text: normalized.map((paragraph) => paragraph.text).join("\n").trim(),
+    paragraphs: normalized,
+  };
+}
+
+function normalizeInsertPayload(content) {
+  if (content && typeof content === "object") return paragraphsToInsertPayload(content.paragraphs || []);
+  const text = String(content || "").trim();
+  return {
+    text,
+    paragraphs: text.split(/\n+/).map((line) => ({ type: "body", text: line.trim() })).filter((line) => line.text),
+  };
+}
+
+function splitBodyParagraphs(content) {
+  return String(content || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function formatHeadingLine(number, title) {
