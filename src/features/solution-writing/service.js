@@ -10,6 +10,14 @@ async function generateSolutionTaskPlan(payload) {
   return postSolutionWriting("/api/ai/solution-plan-tasks", payload, "任务规划生成失败");
 }
 
+async function testSolutionTaskKnowledge(payload) {
+  return postSolutionWriting("/api/ai/solution-task-knowledge-test", payload, "任务规划知识库测试失败");
+}
+
+async function generateSolutionDraftContent(payload) {
+  return postSolutionWriting("/api/ai/solution-draft-content", payload, "方案编制生成失败");
+}
+
 async function postSolutionWriting(url, payload, fallbackMessage) {
   const response = await fetch(url, {
     method: "POST",
@@ -22,7 +30,9 @@ async function postSolutionWriting(url, payload, fallbackMessage) {
 }
 
 export {
+  generateSolutionDraftContent,
   generateSolutionModuleSections,
   generateSolutionTaskPlan,
   identifySolutionModules,
+  testSolutionTaskKnowledge,
 };

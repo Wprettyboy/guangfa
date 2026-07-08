@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
+import SolutionDraftingPanel from "./SolutionDraftingPanel.jsx";
 import TaskPlanningPanel from "./TaskPlanningPanel.jsx";
 
 const SOLUTION_STYLE_OPTIONS = [
@@ -36,6 +37,7 @@ function SolutionWritingPanel({
   const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
   const [activePlanPanel, setActivePlanPanel] = useState("outline-plan");
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
+  const [generatedTaskPlan, setGeneratedTaskPlan] = useState(null);
   const [styleSelections, setStyleSelections] = useState({});
   const [styleProbeText, setStyleProbeText] = useState("样式测试文本");
   const [styleProbeValue, setStyleProbeValue] = useState("");
@@ -267,6 +269,19 @@ function SolutionWritingPanel({
             <span>
               <strong>任务规划</strong>
               <em>待规划</em>
+            </span>
+            <ChevronRight size={15} />
+          </button>
+          <button
+            className={activePlanPanel === "draft-plan" ? "solution-plan-tab active" : "solution-plan-tab"}
+            type="button"
+            onClick={() => setActivePlanPanel("draft-plan")}
+            role="tab"
+            aria-selected={activePlanPanel === "draft-plan"}
+          >
+            <span>
+              <strong>方案编制</strong>
+              <em>{generatedTaskPlan?.stats?.taskCount ? `承接 ${generatedTaskPlan.stats.taskCount} 个任务` : "待承接任务"}</em>
             </span>
             <ChevronRight size={15} />
           </button>
@@ -552,13 +567,20 @@ function SolutionWritingPanel({
           )}
         </section>
           </div>
-        ) : (
+        ) : activePlanPanel === "task-plan" ? (
           <TaskPlanningPanel
             outlineItems={outlineItems}
             rawOutlineCount={rawOutlineCount}
             busy={busy}
             status={status}
+            knowledgeOptions={knowledgeOptions}
             onRefreshOutline={refreshOutline}
+            onTaskPlanGenerated={setGeneratedTaskPlan}
+          />
+        ) : (
+          <SolutionDraftingPanel
+            taskPlan={generatedTaskPlan}
+            knowledgeOptions={knowledgeOptions}
           />
         )}
       </div>

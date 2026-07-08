@@ -155,6 +155,7 @@ async function generateSolutionTaskPlan(payload = {}) {
   const outlineText = cleanMultilineText(payload.outlineText).slice(0, 20000);
   const categories = normalizeTaskPlanCategories(payload.categories);
   const userInstruction = cleanText(payload.userInstruction).slice(0, 2000);
+  const knowledgeOptions = normalizeKnowledgeOptions(payload.knowledgeOptions);
   if (!categories.length) {
     const error = new Error("请先读取方案大纲并生成任务规划输入。");
     error.statusCode = 400;
@@ -168,6 +169,7 @@ async function generateSolutionTaskPlan(payload = {}) {
       outlineText,
       category,
       userInstruction,
+      knowledgeOptions,
     });
     plannedCategories.push(planned);
     warnings.push(...planned.warnings);
@@ -183,7 +185,41 @@ async function generateSolutionTaskPlan(payload = {}) {
   };
 }
 
-async function generateTaskCategoryPlan(runtime, { outlineText, category, userInstruction }) {
+async function testSolutionTaskKnowledge(payload = {}) {
+  const runtime = getAiRuntimeConfig();
+  const knowledgeOptions = normalizeKnowledgeOptions(payload.knowledgeOptions);
+  const categories = normalizeTaskPlanCategories(payload.categories);
+  const query = buildTaskKnowledgeQuery({
+    outlineText: cleanMultilineText(payload.outlineText),
+    categories,
+    userInstruction: cleanText(payload.userInstruction),
+  });
+  const knowledgeSearch = await searchKnowledgeForAi(runtime, {
+    rawQuery: query,
+    message: query,
+    knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 6) },
+    debugFileName: "solution-writing-task-knowledge-test.json",
+  });
+  const snippets = knowledgeSearch.snippets.slice(0, 8);
+  return {
+    ok: true,
+    query: knowledgeSearch.query,
+    selectedBases: knowledgeOptions.bases || [],
+    snippetCount: snippets.length,
+    snippets: summarizeSolutionSnippets(snippets, knowledgeOptions.bases),
+  };
+}
+
+async function generateTaskCategoryPlan(runtime, { outlineText, category, userInstruction, knowledgeOptions }) {
+  const query = buildTaskKnowledgeQuery({ outlineText, categories: [category], userInstruction });
+  const knowledgeSearch = await searchKnowledgeForAi(runtime, {
+    rawQuery: query,
+    message: query,
+    knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 8) },
+    debugFileName: `solution-writing-task-plan-knowledge-${safeDebugName(category.title)}.json`,
+  });
+  const snippets = knowledgeSearch.snippets.slice(0, 8);
+  const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, Math.min(maxKnowledgeChars, 12000));
   const systemPrompt = [
     "你是政企方案落地执行的高级方案工程师和项目任务规划专家。",
     "任务：根据完整方案大纲、当前一级任务类别、每个标题及标题下原文，生成可执行任务规划。",
@@ -203,6 +239,8 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
     `类别边界：${category.boundary?.include || ""}；${category.boundary?.exclude || ""}`,
     `类别上下文规则：${category.contextRule || "类别内传递，跨类别重置。"}`,
     `用户补充要求：${userInstruction || "无"}`,
+    "",
+    knowledgeText ? `【知识库补充资料】\n${knowledgeText}` : "【知识库补充资料】\n未召回到补充资料，任务规划只基于标题与原文。",
     "",
     "【按顺序规划以下标题】",
     category.tasks.map((task, index) => [
@@ -230,9 +268,101 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
       sourceHeading: category.sourceHeading,
       taskCount: category.tasks.length,
       hasOutlineText: Boolean(outlineText),
+      knowledgeOptions,
+      knowledgeSnippets: summarizeSnippetsForDebug(snippets),
     },
   });
   return normalizeTaskPlanCategoryResult(parsed, category);
+}
+
+async function generateSolutionDraftContent(payload = {}) {
+  const runtime = getAiRuntimeConfig();
+  const taskPlan = normalizeDraftTaskPlan(payload.taskPlan);
+  const globalPrompt = cleanMultilineText(payload.globalPrompt).slice(0, 4000);
+  const knowledgeOptions = normalizeKnowledgeOptions(payload.knowledgeOptions);
+  if (!taskPlan.categories.length) {
+    const error = new Error("请先在任务规划模块生成任务，再进行方案编制。");
+    error.statusCode = 400;
+    throw error;
+  }
+  const categories = [];
+  const warnings = [];
+  for (const category of taskPlan.categories) {
+    const drafted = await generateDraftCategory(runtime, {
+      category,
+      globalPrompt,
+      knowledgeOptions,
+    });
+    categories.push(drafted);
+    warnings.push(...drafted.warnings);
+  }
+  return {
+    categories,
+    stats: {
+      categoryCount: categories.length,
+      sectionCount: categories.reduce((sum, category) => sum + category.sections.length, 0),
+    },
+    warnings: normalizeStringList(warnings).slice(0, 12),
+  };
+}
+
+async function generateDraftCategory(runtime, { category, globalPrompt, knowledgeOptions }) {
+  const query = [
+    category.title,
+    category.tasks.map((task) => [task.sourceHeading, task.planningSummary, task.objective, normalizeStringList(task.deliverables).join(" ")].join(" ")).join(" "),
+    globalPrompt,
+  ].filter(Boolean).join(" ");
+  const knowledgeSearch = await searchKnowledgeForAi(runtime, {
+    rawQuery: query,
+    message: query,
+    knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 8) },
+    debugFileName: `solution-writing-draft-knowledge-${safeDebugName(category.title)}.json`,
+  });
+  const snippets = knowledgeSearch.snippets.slice(0, 8);
+  const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, Math.min(maxKnowledgeChars, 12000));
+  const systemPrompt = [
+    "你是成熟的政企方案编制专家。",
+    "任务：承接任务规划结果，把任务转写成可放入方案文档的正文草稿。",
+    "必须遵守用户给定的全局提示词中的 AI 角色、文档类型和背景设定。",
+    "不要输出 Markdown，不要输出内部分析，不要编造任务规划与知识库之外的内容。",
+    "输出必须是严格 JSON。",
+  ].join("\n");
+  const userPrompt = [
+    "输出 JSON：",
+    '{"title":"类别标题","sections":[{"sourceHeading":"来源标题","title":"正文小标题","content":"方案正文草稿"}],"warnings":["可为空"]}',
+    "",
+    `【全局提示词】\n${globalPrompt || "按正式政企技术方案语气生成，表达专业、清晰、可落地。"}`,
+    "",
+    `【当前任务类别】${category.sourceHeading || category.title}`,
+    "",
+    "【任务规划】",
+    category.tasks.map((task, index) => [
+      `${index + 1}. 来源标题：${task.sourceHeading}`,
+      `AI规划摘要：${task.planningSummary || ""}`,
+      `任务目标：${task.objective || ""}`,
+      `AI要干什么：${normalizeStringList(task.executionPoints).join("；")}`,
+      `约束：${normalizeStringList(task.exclusiveBoundary?.include).join("；")}；${normalizeStringList(task.exclusiveBoundary?.exclude).join("；")}`,
+      `交付物：${normalizeStringList(task.deliverables).join("；")}`,
+    ].join("\n")).join("\n\n"),
+    "",
+    knowledgeText ? `【知识库补充资料】\n${knowledgeText}` : "【知识库补充资料】\n未召回到补充资料。",
+    "",
+    "生成规则：",
+    "1. 每个任务至少生成一个 sections 项。",
+    "2. sourceHeading 必须对应任务来源标题。",
+    "3. content 写成方案正文，不要再写任务清单。",
+    "4. 如资料不足，正文中使用审慎表达，不要编造具体参数。",
+  ].join("\n");
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 8192, {
+    debugFileName: `solution-writing-draft-${safeDebugName(category.title)}.json`,
+    debugContext: {
+      categoryTitle: category.title,
+      taskCount: category.tasks.length,
+      hasGlobalPrompt: Boolean(globalPrompt),
+      knowledgeSnippets: summarizeSnippetsForDebug(snippets),
+    },
+  });
+  return normalizeDraftCategoryResult(parsed, category);
 }
 
 function buildSolutionModuleText(moduleName, sections) {
@@ -258,6 +388,22 @@ function normalizeTaskPlanCategories(categories) {
     }))
     .filter((category) => category.tasks.length)
     .slice(0, 20);
+}
+
+function buildTaskKnowledgeQuery({ outlineText, categories, userInstruction }) {
+  const categoryText = (Array.isArray(categories) ? categories : [])
+    .map((category) => [
+      category.title,
+      category.sourceHeading,
+      category.tasks?.slice(0, 12).map((task) => [task.sourceHeading, task.sourceText].filter(Boolean).join(" ")).join(" "),
+    ].filter(Boolean).join(" "))
+    .join(" ");
+  return [
+    cleanText(userInstruction),
+    cleanText(categoryText),
+    cleanText(outlineText).slice(0, 3000),
+    "方案编制 任务规划 执行任务 技术方案 项目实施",
+  ].filter(Boolean).join(" ");
 }
 
 function normalizeTaskPlanInputTasks(tasks) {
@@ -315,6 +461,56 @@ function normalizeTaskPlanCategoryResult(parsed, fallbackCategory) {
     boundary: fallbackCategory.boundary,
     contextRule: fallbackCategory.contextRule,
     tasks,
+    warnings: normalizeStringList(parsed?.warnings).slice(0, 5),
+  };
+}
+
+function normalizeDraftTaskPlan(taskPlan = {}) {
+  return {
+    categories: normalizeTaskPlanCategories(taskPlan.categories).map((category) => {
+      const sourceCategory = (Array.isArray(taskPlan.categories) ? taskPlan.categories : [])
+        .find((item) => cleanText(item?.sourceHeading || item?.title) === cleanText(category.sourceHeading || category.title));
+      return {
+        ...category,
+        tasks: (Array.isArray(sourceCategory?.tasks) ? sourceCategory.tasks : category.tasks)
+          .map((task, index) => ({
+            id: cleanText(task?.id) || `task-${index + 1}`,
+            title: cleanTitle(task?.title || task?.taskTitle || task?.sourceHeading || `任务${index + 1}`),
+            sourceHeading: cleanText(task?.sourceHeading || task?.title),
+            planningSummary: cleanMultilineText(task?.planningSummary).slice(0, 1200),
+            objective: cleanMultilineText(task?.objective).slice(0, 1200),
+            executionPoints: normalizeStringList(task?.executionPoints).slice(0, 10),
+            deliverables: normalizeStringList(task?.deliverables).slice(0, 10),
+            exclusiveBoundary: {
+              include: normalizeStringList(task?.exclusiveBoundary?.include).slice(0, 8),
+              exclude: normalizeStringList(task?.exclusiveBoundary?.exclude).slice(0, 8),
+            },
+          }))
+          .filter((task) => task.sourceHeading)
+          .slice(0, 60),
+      };
+    }).filter((category) => category.tasks.length).slice(0, 12),
+  };
+}
+
+function normalizeDraftCategoryResult(parsed, fallbackCategory) {
+  const sourceHeadings = fallbackCategory.tasks.map((task) => task.sourceHeading);
+  const rows = Array.isArray(parsed?.sections) ? parsed.sections : [];
+  const sections = sourceHeadings.map((sourceHeading, index) => {
+    const matched = rows.find((row) => cleanText(row?.sourceHeading) === sourceHeading) || rows[index] || {};
+    const task = fallbackCategory.tasks[index] || {};
+    return {
+      id: task.id || `draft-${index + 1}`,
+      sourceHeading,
+      title: cleanTitle(matched.title || task.title || sourceHeading),
+      content: cleanMultilineText(matched.content || `需结合“${sourceHeading}”继续补充方案正文。`),
+    };
+  });
+  return {
+    id: fallbackCategory.id,
+    title: cleanTitle(parsed?.title || fallbackCategory.title),
+    sourceHeading: cleanText(fallbackCategory.sourceHeading || fallbackCategory.title),
+    sections,
     warnings: normalizeStringList(parsed?.warnings).slice(0, 5),
   };
 }
@@ -426,7 +622,9 @@ function cleanMultilineText(value) {
 
 export {
   buildSolutionModuleText,
+  generateSolutionDraftContent,
   generateSolutionModuleSections,
   generateSolutionTaskPlan,
   identifySolutionModules,
+  testSolutionTaskKnowledge,
 };

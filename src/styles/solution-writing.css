@@ -64,7 +64,7 @@
 
 .solution-plan-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -671,6 +671,9 @@
 }
 
 .solution-task-panel,
+.solution-draft-panel,
+.solution-draft-list,
+.solution-draft-section-list,
 .solution-task-category-list,
 .solution-task-category-body,
 .solution-task-list,
@@ -751,6 +754,34 @@
   color: #475569;
   font-size: 12px;
   padding: 4px 8px;
+}
+
+.solution-task-knowledge-test {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 8px;
+}
+
+.solution-task-knowledge-test div {
+  display: grid;
+  gap: 2px;
+}
+
+.solution-task-knowledge-test strong {
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.solution-task-knowledge-test span {
+  overflow: hidden;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .solution-task-architecture {

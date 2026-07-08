@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, Loader2, RefreshCw, Send, Wand2 } from "lucide-react";
-import { generateSolutionTaskPlan } from "./service.js";
+import { generateSolutionTaskPlan, testSolutionTaskKnowledge } from "./service.js";
 import { buildTaskPlanningPreview } from "./taskPlanning.js";
 
 function TaskPlanningPanel({
@@ -8,7 +8,9 @@ function TaskPlanningPanel({
   rawOutlineCount = 0,
   busy = false,
   status = "idle",
+  knowledgeOptions = null,
   onRefreshOutline,
+  onTaskPlanGenerated,
 }) {
   const [instruction, setInstruction] = useState("");
   const [preview, setPreview] = useState(() => ({ categories: [], stats: buildTaskPlanningPreview([]).stats }));
@@ -18,6 +20,7 @@ function TaskPlanningPanel({
   const [architectureOpen, setArchitectureOpen] = useState(false);
   const [taskStatus, setTaskStatus] = useState("idle");
   const [taskMessage, setTaskMessage] = useState("");
+  const [knowledgeTest, setKnowledgeTest] = useState(null);
   const outlinePreview = useMemo(() => buildTaskPlanningPreview(outlineItems), [outlineItems]);
   const outlineStats = outlinePreview.stats;
 
@@ -26,6 +29,7 @@ function TaskPlanningPanel({
     setPreview(nextPreview);
     setGeneratedPlan(null);
     setTaskMessage("");
+    setKnowledgeTest(null);
     setCollapsedCategoryIds([]);
     setExpandedTaskIds([]);
   }
@@ -40,6 +44,7 @@ function TaskPlanningPanel({
         outlineText: inputPreview.outlineText || outlinePreview.outlineText,
         categories: inputPreview.categories,
         userInstruction: instruction,
+        knowledgeOptions,
       });
       setGeneratedPlan(result);
       setPreview({ categories: result.categories || [], stats: inputPreview.stats, outlineText: inputPreview.outlineText });
@@ -47,9 +52,30 @@ function TaskPlanningPanel({
       setExpandedTaskIds([]);
       setTaskStatus("idle");
       setTaskMessage(`已生成 ${result.stats?.taskCount || 0} 个任务规划`);
+      onTaskPlanGenerated?.(result);
     } catch (error) {
       setTaskStatus("error");
       setTaskMessage(error?.message || "任务规划生成失败");
+    }
+  }
+
+  async function testKnowledge() {
+    const inputPreview = preview.categories.length ? preview : buildTaskPlanningPreview(outlineItems);
+    setTaskStatus("testing-knowledge");
+    setTaskMessage("");
+    try {
+      const result = await testSolutionTaskKnowledge({
+        outlineText: inputPreview.outlineText || outlinePreview.outlineText,
+        categories: inputPreview.categories,
+        userInstruction: instruction,
+        knowledgeOptions,
+      });
+      setKnowledgeTest(result);
+      setTaskStatus("idle");
+      setTaskMessage(`知识库测试完成：已选 ${result.selectedBases?.length || 0} 个库，召回 ${result.snippetCount || 0} 条资料`);
+    } catch (error) {
+      setTaskStatus("error");
+      setTaskMessage(error?.message || "知识库测试失败");
     }
   }
 
@@ -68,7 +94,9 @@ function TaskPlanningPanel({
   const hasOutline = outlineItems.length > 0;
   const generatingDisabled = busy || !hasOutline;
   const aiGenerating = taskStatus === "generating";
+  const testingKnowledge = taskStatus === "testing-knowledge";
   const hasPreview = preview.categories.length > 0;
+  const selectedKbCount = knowledgeOptions?.bases?.length || 0;
 
   return (
     <div className="solution-task-panel">
@@ -87,6 +115,10 @@ function TaskPlanningPanel({
               <Wand2 size={15} />
               生成输入预览
             </button>
+            <button className="text-button" type="button" onClick={testKnowledge} disabled={busy || testingKnowledge || (!hasPreview && !hasOutline)}>
+              {testingKnowledge ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+              测试知识库
+            </button>
             <button className="tool-button primary" type="button" onClick={generateAiPlan} disabled={busy || aiGenerating || (!hasPreview && !hasOutline)}>
               {aiGenerating ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
               AI生成规划
@@ -100,6 +132,7 @@ function TaskPlanningPanel({
           <span>任务类别 {outlineStats.categoryCount} 个</span>
           <span>预计任务 {outlineStats.taskCount} 个</span>
           <span>最大层级 {outlineStats.maxDepth || 0}</span>
+          <span>知识库 {selectedKbCount} 个</span>
         </div>
 
         <div className={architectureOpen ? "solution-task-architecture open" : "solution-task-architecture"}>
@@ -125,6 +158,16 @@ function TaskPlanningPanel({
         {generatedPlan?.warnings?.length ? (
           <div className="solution-task-warnings">
             {generatedPlan.warnings.map((warning) => <span key={warning}>{warning}</span>)}
+          </div>
+        ) : null}
+        {knowledgeTest?.snippets?.length ? (
+          <div className="solution-task-knowledge-test">
+            {knowledgeTest.snippets.slice(0, 3).map((snippet, index) => (
+              <div key={`${snippet.kbName}-${snippet.title}-${index}`}>
+                <strong>{snippet.kbName || "知识库资料"}</strong>
+                <span>{snippet.title || snippet.text || "已召回资料"}</span>
+              </div>
+            ))}
           </div>
         ) : null}
       </section>

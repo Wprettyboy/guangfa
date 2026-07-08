@@ -2,7 +2,7 @@ import { createKnowledgeChat } from "../../ai/chat.js";
 import { fillField } from "../../ai/fill.js";
 import { createFormatOutlinePlan } from "../../ai/format-outline.js";
 import { createAiKnowledgeSearch } from "../../ai/knowledge-query.js";
-import { generateSolutionModuleSections, generateSolutionTaskPlan, identifySolutionModules } from "../../solution-writing/generator.js";
+import { generateSolutionDraftContent, generateSolutionModuleSections, generateSolutionTaskPlan, identifySolutionModules, testSolutionTaskKnowledge } from "../../solution-writing/generator.js";
 import { defineRoute } from "../registry.js";
 
 const aiBodyLimitBytes = 2 * 1024 * 1024;
@@ -87,9 +87,33 @@ function registerAiRoutes() {
     tags: ["ai", "solution-writing"],
     summary: "方案编写生成执行任务规划",
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { outlineText: "string?", categories: "array?", userInstruction: "string?" },
+    body: { outlineText: "string?", categories: "array?", userInstruction: "string?", knowledgeOptions: "object?" },
     responses: { 200: "object" },
     handler: ({ body }) => generateSolutionTaskPlan(body),
+  });
+
+  defineRoute({
+    id: "ai.solution.taskKnowledgeTest",
+    method: "POST",
+    path: "/api/ai/solution-task-knowledge-test",
+    tags: ["ai", "solution-writing", "knowledge"],
+    summary: "方案任务规划知识库召回测试",
+    bodyLimitBytes: aiBodyLimitBytes,
+    body: { outlineText: "string?", categories: "array?", userInstruction: "string?", knowledgeOptions: "object?" },
+    responses: { 200: "object" },
+    handler: ({ body }) => testSolutionTaskKnowledge(body),
+  });
+
+  defineRoute({
+    id: "ai.solution.draftContent",
+    method: "POST",
+    path: "/api/ai/solution-draft-content",
+    tags: ["ai", "solution-writing"],
+    summary: "方案编制根据任务规划生成正文草稿",
+    bodyLimitBytes: aiBodyLimitBytes,
+    body: { taskPlan: "object?", globalPrompt: "string?", knowledgeOptions: "object?" },
+    responses: { 200: "object" },
+    handler: ({ body }) => generateSolutionDraftContent(body),
   });
 }
 
