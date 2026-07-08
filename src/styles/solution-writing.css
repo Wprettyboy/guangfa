@@ -365,14 +365,77 @@
   gap: 10px;
 }
 
-.solution-draft-text {
-  min-height: 260px;
-  white-space: pre-wrap;
-}
-
 .solution-block .full-width {
   width: 100%;
   justify-content: center;
+}
+
+.solution-generated-list {
+  display: grid;
+  gap: 12px;
+  max-height: 360px;
+  overflow: hidden auto;
+  padding-right: 2px;
+}
+
+.solution-generated-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.solution-generated-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d4e3;
+}
+
+.solution-generated-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.solution-generated-head,
+.solution-generated-section > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.solution-generated-head strong {
+  min-width: 0;
+  color: #172033;
+  font-size: 14px;
+}
+
+.solution-generated-sections {
+  display: grid;
+  gap: 8px;
+}
+
+.solution-generated-section {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(207, 216, 230, 0.9);
+  border-radius: 7px;
+  background: #ffffff;
+  padding: 9px;
+}
+
+.solution-generated-section strong {
+  min-width: 0;
+  color: #25324a;
+  font-size: 13px;
+}
+
+.solution-generated-section p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .solution-message {

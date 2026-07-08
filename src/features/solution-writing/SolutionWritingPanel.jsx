@@ -24,7 +24,6 @@ function SolutionWritingPanel({
   const [collapsedModuleIds, setCollapsedModuleIds] = useState([]);
   const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
-  const [draftText, setDraftText] = useState("");
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
   const effectiveOutline = localOutline || outline;
@@ -83,7 +82,6 @@ function SolutionWritingPanel({
       setModules(nextModules);
       setCollapsedModuleIds(nextModules.map((module) => module.id));
       setGeneratedBlocks([]);
-      setDraftText("");
       setStatus("idle");
       setMessage(result.modules?.length ? `已识别 ${result.modules.length} 个功能模块` : "未识别到功能模块，请调整知识库范围或补充要求。");
     } catch (error) {
@@ -114,26 +112,23 @@ function SolutionWritingPanel({
           warnings: result.warnings || [],
         });
       }
-      const text = composeSolutionText(selectedGroup, nextBlocks);
       setGeneratedBlocks(nextBlocks);
-      setDraftText(text);
       setStatus("idle");
-      setMessage(nextBlocks.length ? `已生成 ${nextBlocks.length} 个模块章节，可编辑后写入当前光标。` : "没有可生成的模块。");
+      setMessage(nextBlocks.length ? `已生成 ${nextBlocks.length} 个模块章节，可按模块或子标题插入。` : "没有可生成的模块。");
     } catch (error) {
       setStatus("error");
       setMessage(error?.message || "方案章节生成失败");
     }
   }
 
-  async function insertDraftText() {
-    const text = draftText.trim();
+  async function insertGeneratedText(text, successMessage = "已插入当前光标位置") {
     if (!text) return;
     setStatus("inserting");
     setMessage("");
     const result = await onInsertText?.(text);
     if (result?.ok) {
       setStatus("idle");
-      setMessage("已写入当前光标位置");
+      setMessage(successMessage);
       return;
     }
     setStatus("error");
@@ -347,16 +342,55 @@ function SolutionWritingPanel({
             <strong>生成结果</strong>
             <span>{generatedBlocks.length ? `${generatedBlocks.length} 个模块` : "待生成"}</span>
           </div>
-          <textarea
-            className="solution-draft-text"
-            value={draftText}
-            placeholder="生成后的方案正文会出现在这里，可人工编辑后写入当前光标。"
-            onChange={(event) => setDraftText(event.target.value)}
-          />
-          <button className="tool-button primary full-width" type="button" onClick={insertDraftText} disabled={!draftText.trim() || busy}>
-            {status === "inserting" ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
-            写入当前光标
-          </button>
+          {generatedBlocks.length === 0 ? (
+            <div className="empty-state compact">生成后的模块标题和子标题描述会出现在这里</div>
+          ) : (
+            <div className="solution-generated-list">
+              {generatedBlocks.map((block, moduleIndex) => {
+                const moduleNumber = nextSiblingNumber(selectedGroup?.number, moduleIndex);
+                const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
+                return (
+                  <article className="solution-generated-card" key={block.moduleId || `${block.moduleName}-${moduleIndex}`}>
+                    <div className="solution-generated-head">
+                      <strong>{moduleTitle}</strong>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => insertGeneratedText(buildGeneratedModuleText(selectedGroup, block, moduleIndex), `已插入 ${block.moduleName}`)}
+                        disabled={busy}
+                      >
+                        {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+                        插入模块
+                      </button>
+                    </div>
+                    <div className="solution-generated-sections">
+                      {block.sections.map((section, sectionIndex) => {
+                        const sectionNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
+                        const sectionTitle = formatHeadingLine(sectionNumber, stripHeadingNumber(section.templateTitle));
+                        return (
+                          <section className="solution-generated-section" key={`${block.moduleId}-${section.templateTitle}-${sectionIndex}`}>
+                            <div>
+                              <strong>{sectionTitle}</strong>
+                              <button
+                                className="text-button"
+                                type="button"
+                                onClick={() => insertGeneratedText(buildGeneratedSectionText(sectionTitle, section.content), `已插入 ${sectionTitle}`)}
+                                disabled={busy}
+                              >
+                                <Send size={13} />
+                                插入
+                              </button>
+                            </div>
+                            <p>{section.content || "需结合项目资料补充。"}</p>
+                          </section>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       </div>
 
@@ -470,18 +504,23 @@ function getRecommendedTemplateGroup(groups) {
     || groups[0];
 }
 
-function composeSolutionText(group, blocks) {
-  return blocks
-    .map((block, moduleIndex) => {
-      const moduleNumber = nextSiblingNumber(group.number, moduleIndex);
-      const lines = [`${moduleNumber ? `${moduleNumber} ` : ""}${block.moduleName}`.trim()];
-      block.sections.forEach((section, sectionIndex) => {
-        const headingNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
-        lines.push("", `${headingNumber ? `${headingNumber} ` : ""}${stripHeadingNumber(section.heading || section.templateTitle)}`.trim(), section.content || "需结合项目资料补充。");
-      });
-      return lines.join("\n");
-    })
-    .join("\n\n");
+function buildGeneratedModuleText(group, block, moduleIndex) {
+  const moduleNumber = nextSiblingNumber(group?.number, moduleIndex);
+  const lines = [formatHeadingLine(moduleNumber, block.moduleName)];
+  block.sections.forEach((section, sectionIndex) => {
+    const headingNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
+    const title = formatHeadingLine(headingNumber, stripHeadingNumber(section.templateTitle));
+    lines.push("", buildGeneratedSectionText(title, section.content));
+  });
+  return lines.join("\n").trim();
+}
+
+function buildGeneratedSectionText(title, content) {
+  return [title, content || "需结合项目资料补充。"].join("\n").trim();
+}
+
+function formatHeadingLine(number, title) {
+  return `${number ? `${number} ` : ""}${String(title || "").trim()}`.trim();
 }
 
 function parseHeadingNumber(title) {
