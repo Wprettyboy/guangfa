@@ -30,6 +30,7 @@ async function identifySolutionModules(payload = {}) {
     "你是政企软件方案文档的高级产品经理。",
     "任务：只根据背景资料识别需要写入详细功能设计章节的功能模块。",
     "不要生成章节正文，不要改模板结构，不要编造资料中没有依据的模块。",
+    "标题样式由 Word 自动编号控制，模块名称不要输出 3.1、3.1.1、（一）这类章节编号。",
     "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
   ].join("\n");
   const userPrompt = [
@@ -47,6 +48,7 @@ async function identifySolutionModules(payload = {}) {
     "2. 同义模块要合并，不要重复。",
     "3. sourceRefs 只能填写背景资料中的“知识库N”编号。",
     "4. 资料不足时 modules 返回空数组。",
+    "5. 模块名称只写纯标题文本，例如“值班管理模块”，不要写“3.1 值班管理模块”。",
   ].join("\n");
   const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 2048, {
     debugFileName: "solution-writing-identify-last.json",
@@ -97,6 +99,7 @@ async function generateSolutionModuleSections(payload = {}) {
     "任务：按给定章节模板，为单个功能模块规划每个子标题应该如何展开写作。",
     "你输出的是写作规划、拓展方向、内容组织建议和专业化表达建议，不是可直接粘贴进方案的最终正文。",
     "保持模板子章节不增不减；依据不足时说明应补充哪些资料，不要编造成熟正文。",
+    "标题样式由 Word 自动编号控制，moduleName、templateTitle、heading 都不要输出 3.1、3.1.1、（一）这类章节编号。",
     "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
   ].join("\n");
   const userPrompt = [
@@ -109,7 +112,7 @@ async function generateSolutionModuleSections(payload = {}) {
     `用户补充要求：${userInstruction || "无"}`,
     "",
     "必须按以下模板标题逐项输出 sections：",
-    childTemplates.map((item, index) => `${index + 1}. ${item.title}`).join("\n"),
+    childTemplates.map((item) => `- ${item.title}`).join("\n"),
     "",
     knowledgeText ? `【背景资料】\n${knowledgeText}` : "【背景资料】\n未检索到资料。",
     "",
@@ -119,7 +122,8 @@ async function generateSolutionModuleSections(payload = {}) {
     "3. 对“具体功能列表”，规划应说明功能点如何分组、每类功能应写哪些能力、是否需要补充约束或边界。",
     "4. 对“业务流程与业务场景描述”，规划应说明应覆盖哪些角色、触发场景、流程节点、异常场景和闭环关系。",
     "5. 对“功能概述”，规划应说明模块定位、建设目标、核心能力、管理价值和与其他模块的关系。",
-    "6. 不输出提示词、内部分析、资料片段编号堆砌；不要改动模板标题语义。",
+    "6. 不输出章节编号；标题只写纯标题文本，例如“功能概述”，不要写“3.1.1 功能概述”。",
+    "7. 不输出提示词、内部分析、资料片段编号堆砌；不要改动模板标题语义。",
   ].join("\n");
   const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 4096, {
     debugFileName: "solution-writing-generate-last.json",
@@ -137,9 +141,9 @@ async function generateSolutionModuleSections(payload = {}) {
   });
   const sections = normalizeGeneratedSections(parsed.sections, childTemplates);
   return {
-    moduleName: cleanText(parsed.moduleName || module.name),
+    moduleName: cleanTitle(parsed.moduleName || module.name),
     sections,
-    text: buildSolutionModuleText(cleanText(parsed.moduleName || module.name), sections),
+    text: buildSolutionModuleText(cleanTitle(parsed.moduleName || module.name), sections),
     warnings: normalizeStringList(parsed.warnings).slice(0, 5),
     query: knowledgeSearch.query,
     snippets: summarizeSolutionSnippets(snippets, knowledgeOptions.bases),
@@ -160,7 +164,7 @@ function normalizeGeneratedSections(sections, childTemplates) {
     const matched = rows.find((row) => normalizeTitle(row?.templateTitle || row?.heading) === normalizeTitle(template.title));
     return {
       templateTitle: template.title,
-      heading: cleanText(matched?.heading || template.title),
+      heading: cleanTitle(matched?.heading || template.title),
       content: cleanMultilineText(matched?.content || "需结合项目资料补充该标题的写作要点。"),
     };
   });
@@ -180,7 +184,7 @@ function normalizeModules(modules, sourceLabels) {
 }
 
 function normalizeModule(item = {}, index = 0, sourceLabels = []) {
-  const name = cleanText(item.name).slice(0, 80);
+  const name = cleanTitle(item.name).slice(0, 80);
   return {
     id: cleanText(item.id) || `SOL-M${String(index + 1).padStart(3, "0")}`,
     name,
@@ -228,7 +232,10 @@ function normalizeStringList(value) {
 }
 
 function cleanTitle(value) {
-  return cleanText(value).replace(/^\d+(?:\.\d+)*\s*/, "").trim();
+  return cleanText(value)
+    .replace(/^(?:\d+\.\d+(?:\.\d+)*\s*|\d+[、.．\s]+|[一二三四五六七八九十]+[、.．\s]+)/, "")
+    .replace(/^[（(](?:\d+|[一二三四五六七八九十]+)[）)]\s*/, "")
+    .trim();
 }
 
 function normalizeTitle(value) {

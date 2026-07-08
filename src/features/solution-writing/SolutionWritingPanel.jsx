@@ -461,8 +461,7 @@ function SolutionWritingPanel({
           ) : (
             <div className="solution-generated-list">
               {generatedBlocks.map((block, moduleIndex) => {
-                const moduleNumber = nextSiblingNumber(selectedGroup?.number, moduleIndex);
-                const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
+                const moduleTitle = stripHeadingNumber(block.moduleName);
                 const moduleStyleLabel = getStyleLabel(resolveParagraphStyle("module-heading", selectedGroup?.level, styleSelections), styleOptions);
                 return (
                   <article className="solution-generated-card" key={block.moduleId || `${block.moduleName}-${moduleIndex}`}>
@@ -474,7 +473,7 @@ function SolutionWritingPanel({
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, moduleIndex, styleSelections), `已插入 ${block.moduleName} 写作规划`)}
+                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, styleSelections), `已插入 ${block.moduleName} 写作规划`)}
                         disabled={busy}
                       >
                         {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
@@ -483,9 +482,8 @@ function SolutionWritingPanel({
                     </div>
                     <div className="solution-generated-sections">
                       {block.sections.map((section, sectionIndex) => {
-                        const sectionNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
                         const sectionLevel = Number(selectedGroup?.level || 0) + 1;
-                        const sectionTitle = formatHeadingLine(sectionNumber, stripHeadingNumber(section.templateTitle));
+                        const sectionTitle = stripHeadingNumber(section.templateTitle || section.heading);
                         const sectionTemplate = getSectionTemplate(selectedGroup, section, sectionIndex);
                         const sectionStyleLabel = getStyleLabel(resolveParagraphStyle("section-heading", sectionLevel, styleSelections), styleOptions);
                         const bodyStyleLabel = getStyleLabel(resolveParagraphStyle("body", null, styleSelections), styleOptions);
@@ -632,7 +630,6 @@ function buildTemplateGroups(items) {
             index: child.index,
             title: stripHeadingNumber(child.title),
             level: child.level,
-            number: parseHeadingNumber(child.title),
             styleName: child.styleName,
             styleSource: child.styleSource,
             styleRef: child.styleRef,
@@ -646,7 +643,6 @@ function buildTemplateGroups(items) {
       return {
         key: String(item.index),
         title: item.title,
-        number: parseHeadingNumber(item.title),
         level: item.level,
         styleName: item.styleName,
         styleSource: item.styleSource,
@@ -846,7 +842,7 @@ function getStyleName(value) {
 }
 
 function buildAllGeneratedModulesInsert(group, blocks, styleSelections = {}) {
-  const items = (Array.isArray(blocks) ? blocks : []).map((block, index) => buildGeneratedModuleInsert(group, block, index, styleSelections));
+  const items = (Array.isArray(blocks) ? blocks : []).map((block) => buildGeneratedModuleInsert(group, block, styleSelections));
   return {
     text: items.map((item) => item.text).filter(Boolean).join("\n\n"),
     paragraphs: items.flatMap((item, index) => (
@@ -855,9 +851,8 @@ function buildAllGeneratedModulesInsert(group, blocks, styleSelections = {}) {
   };
 }
 
-function buildGeneratedModuleInsert(group, block, moduleIndex, styleSelections = {}) {
-  const moduleNumber = nextSiblingNumber(group?.number, moduleIndex);
-  const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
+function buildGeneratedModuleInsert(group, block, styleSelections = {}) {
+  const moduleTitle = stripHeadingNumber(block.moduleName);
   const moduleLevel = Number.isFinite(Number(group?.level)) ? Number(group.level) : 1;
   const moduleStyle = resolveParagraphStyle("module-heading", moduleLevel, styleSelections);
   const moduleStyleRef = getSelectedStyleRef(group?.styleRef, moduleStyle, group?.styleName);
@@ -871,8 +866,7 @@ function buildGeneratedModuleInsert(group, block, moduleIndex, styleSelections =
     text: moduleTitle,
   }];
   block.sections.forEach((section, sectionIndex) => {
-    const headingNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
-    const title = formatHeadingLine(headingNumber, stripHeadingNumber(section.templateTitle));
+    const title = stripHeadingNumber(section.templateTitle || section.heading);
     const template = getSectionTemplate(group, section, sectionIndex);
     paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections, template).paragraphs);
   });
@@ -973,25 +967,11 @@ function splitBodyParagraphs(content) {
     .filter(Boolean);
 }
 
-function formatHeadingLine(number, title) {
-  return `${number ? `${number} ` : ""}${String(title || "").trim()}`.trim();
-}
-
-function parseHeadingNumber(title) {
-  return String(title || "").trim().match(/^(\d+(?:\.\d+)*)/)?.[1] || "";
-}
-
 function stripHeadingNumber(title) {
-  return String(title || "").replace(/^\d+(?:\.\d+)*\s*/, "").trim();
-}
-
-function nextSiblingNumber(baseNumber, offset) {
-  if (!baseNumber) return "";
-  const parts = baseNumber.split(".");
-  const last = Number(parts[parts.length - 1]);
-  if (!Number.isFinite(last)) return "";
-  parts[parts.length - 1] = String(last + offset);
-  return parts.join(".");
+  return String(title || "")
+    .replace(/^(?:\d+\.\d+(?:\.\d+)*\s*|\d+[、.．\s]+|[一二三四五六七八九十]+[、.．\s]+)/, "")
+    .replace(/^[（(](?:\d+|[一二三四五六七八九十]+)[）)]\s*/, "")
+    .trim();
 }
 
 export default SolutionWritingPanel;
