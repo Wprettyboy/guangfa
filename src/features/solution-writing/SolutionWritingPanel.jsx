@@ -642,6 +642,8 @@ function normalizeOutlineItems(items) {
       bodyStyleName: String(item.bodyStyleName || "").trim(),
       bodyStyleSource: String(item.bodyStyleSource || "").trim(),
       bodyStyleRef: normalizeStyleRef(item.bodyStyleRef),
+      bodyText: String(item.bodyText || "").trim(),
+      bodyParagraphCount: Number.isFinite(Number(item.bodyParagraphCount)) ? Number(item.bodyParagraphCount) : 0,
     }))
     .filter((item) => item.title && !item.isEmptyItem);
 }

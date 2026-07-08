@@ -353,9 +353,16 @@
                 && row.paragraphIndex < nextParagraphIndex
                 && !isSolutionHeadingStyleName(row.styleName);
             });
+            var bodyRows = paragraphRows.filter(function (row) {
+              return row.paragraphIndex > current.paragraphIndex
+                && row.paragraphIndex < nextParagraphIndex
+                && !isSolutionHeadingStyleName(row.styleName);
+            });
             current.bodyStyleName = body?.styleName || "";
             current.bodyParagraphIndex = body ? body.paragraphIndex : null;
             current.bodyStyleSource = body ? "next-paragraph-before-next-outline" : "not-found";
+            current.bodyText = bodyRows.map(function (row) { return row.text; }).filter(Boolean).join("\n").slice(0, 6000);
+            current.bodyParagraphCount = bodyRows.length;
             current.bodyStyleRef = body ? {
               paragraphIndex: body.paragraphIndex,
               outlineIndex: current.index,
@@ -484,9 +491,16 @@
         && row.paragraphIndex < nextParagraphIndex
         && !isSolutionHeadingStyleName(row.styleName)
       ));
+      const bodyRows = paragraphRows.filter((row) => (
+        row.paragraphIndex > current.paragraphIndex
+        && row.paragraphIndex < nextParagraphIndex
+        && !isSolutionHeadingStyleName(row.styleName)
+      ));
       current.bodyStyleName = body?.styleName || "";
       current.bodyParagraphIndex = body ? body.paragraphIndex : null;
       current.bodyStyleSource = body ? `${source}-next-paragraph-before-next-outline` : "not-found";
+      current.bodyText = bodyRows.map((row) => row.text).filter(Boolean).join("\n").slice(0, 6000);
+      current.bodyParagraphCount = bodyRows.length;
       current.bodyStyleRef = body ? {
         paragraphIndex: body.paragraphIndex,
         outlineIndex: current.index,
