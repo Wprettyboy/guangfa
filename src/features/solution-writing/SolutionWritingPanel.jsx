@@ -22,6 +22,7 @@ function SolutionWritingPanel({
   const [userInstruction, setUserInstruction] = useState("");
   const [modules, setModules] = useState([]);
   const [collapsedModuleIds, setCollapsedModuleIds] = useState([]);
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
   const [draftText, setDraftText] = useState("");
   const [status, setStatus] = useState("idle");
@@ -162,6 +163,12 @@ function SolutionWritingPanel({
     ));
   }
 
+  function toggleSection(sectionId) {
+    setCollapsedSectionIds((current) => (
+      current.includes(sectionId) ? current.filter((id) => id !== sectionId) : [...current, sectionId]
+    ));
+  }
+
   function moveModule(moduleId, direction) {
     setModules((current) => {
       const index = current.findIndex((module) => module.id === moduleId);
@@ -192,12 +199,13 @@ function SolutionWritingPanel({
       </div>
 
       <div className="solution-writing-scroll">
-        <section className="solution-block">
-          <div className="solution-block-title">
-            <FileText size={15} />
-            <strong>章节模板</strong>
-            <span>{templateGroups.length ? `模板组 ${templateGroups.length} 个` : "未读取大纲"}</span>
-          </div>
+        <SolutionSection
+          title="章节模板"
+          summary={templateGroups.length ? `模板组 ${templateGroups.length} 个` : "未读取大纲"}
+          collapsed={collapsedSectionIds.includes("template")}
+          onToggle={() => toggleSection("template")}
+          icon={<FileText size={15} />}
+        >
           <select value={selectedGroup?.key || ""} onChange={(event) => setSelectedGroupKey(event.target.value)} disabled={templateGroups.length === 0}>
             {templateGroups.length === 0 ? (
               <option value="">请先读取左侧文档大纲</option>
@@ -216,13 +224,14 @@ function SolutionWritingPanel({
               </div>
             </>
           ) : null}
-        </section>
+        </SolutionSection>
 
-        <section className="solution-block">
-          <div className="solution-block-title">
-            <strong>知识库范围</strong>
-            <span>{selectedKnowledgeBases.length ? `已选 ${selectedKnowledgeBases.length} 个` : "未选择"}</span>
-          </div>
+        <SolutionSection
+          title="知识库范围"
+          summary={selectedKnowledgeBases.length ? `已选 ${selectedKnowledgeBases.length} 个` : "未选择"}
+          collapsed={collapsedSectionIds.includes("knowledge")}
+          onToggle={() => toggleSection("knowledge")}
+        >
           <KnowledgeScopeList
             title="项目库"
             bases={projectBases}
@@ -245,9 +254,14 @@ function SolutionWritingPanel({
               onChange={(event) => onKnowledgeTopKChange?.(Number(event.target.value) || 8)}
             />
           </label>
-        </section>
+        </SolutionSection>
 
-        <section className="solution-block">
+        <SolutionSection
+          title="识别功能模块"
+          summary={userInstruction.trim() ? "已填写补充要求" : "待填写补充要求"}
+          collapsed={collapsedSectionIds.includes("identify")}
+          onToggle={() => toggleSection("identify")}
+        >
           <label className="solution-instruction">
             <span>补充要求</span>
             <textarea
@@ -260,13 +274,15 @@ function SolutionWritingPanel({
             {status === "identifying" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
             识别功能模块
           </button>
-        </section>
+        </SolutionSection>
 
-        <section className="solution-block grow">
-          <div className="solution-block-title">
-            <strong>模块清单</strong>
-            <span>{modules.length} 个</span>
-          </div>
+        <SolutionSection
+          title="模块清单"
+          summary={`${modules.length} 个`}
+          collapsed={collapsedSectionIds.includes("modules")}
+          onToggle={() => toggleSection("modules")}
+          className="grow"
+        >
           <div className="solution-module-list">
             {modules.length === 0 ? (
               <div className="empty-state compact">先识别或手动新增功能模块</div>
@@ -324,7 +340,7 @@ function SolutionWritingPanel({
               生成章节
             </button>
           </div>
-        </section>
+        </SolutionSection>
 
         <section className="solution-block">
           <div className="solution-block-title">
@@ -346,6 +362,24 @@ function SolutionWritingPanel({
 
       {message ? <div className={status === "error" ? "solution-message error" : "solution-message"}>{message}</div> : null}
     </div>
+  );
+}
+
+function SolutionSection({ title, summary, icon, collapsed, onToggle, className = "", children }) {
+  return (
+    <section className={["solution-block", className, collapsed ? "collapsed" : ""].filter(Boolean).join(" ")}>
+      <button className="solution-section-toggle" type="button" onClick={onToggle} aria-expanded={!collapsed}>
+        <span className="solution-section-title">
+          {icon}
+          <strong>{title}</strong>
+        </span>
+        <span className="solution-section-summary">
+          <em>{summary}</em>
+          {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+        </span>
+      </button>
+      {collapsed ? null : children}
+    </section>
   );
 }
 
