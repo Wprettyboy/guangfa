@@ -32,7 +32,8 @@ function SolutionWritingPanel({
   const [userInstruction, setUserInstruction] = useState("");
   const [modules, setModules] = useState([]);
   const [collapsedModuleIds, setCollapsedModuleIds] = useState([]);
-  const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules", "task-plan"]);
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
+  const [activePlanPanel, setActivePlanPanel] = useState("outline-plan");
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
   const [styleSelections, setStyleSelections] = useState({});
   const [styleProbeText, setStyleProbeText] = useState("样式测试文本");
@@ -241,13 +242,36 @@ function SolutionWritingPanel({
       </div>
 
       <div className="solution-writing-scroll">
-        <div className="solution-workspace-grid">
-        <SolutionSection
-          title="方案大纲规划"
-          summary={generatedBlocks.length ? `已生成 ${generatedBlocks.length} 个模块` : "大纲、模块与规划"}
-          collapsed={collapsedSectionIds.includes("outline-plan")}
-          onToggle={() => toggleSection("outline-plan")}
-        >
+        <div className="solution-plan-tabs" role="tablist" aria-label="方案编写模块">
+          <button
+            className={activePlanPanel === "outline-plan" ? "solution-plan-tab active" : "solution-plan-tab"}
+            type="button"
+            onClick={() => setActivePlanPanel("outline-plan")}
+            role="tab"
+            aria-selected={activePlanPanel === "outline-plan"}
+          >
+            <span>
+              <strong>方案大纲规划</strong>
+              <em>{generatedBlocks.length ? `已生成 ${generatedBlocks.length} 个模块` : "大纲、模块与规划"}</em>
+            </span>
+            <ChevronRight size={15} />
+          </button>
+          <button
+            className={activePlanPanel === "task-plan" ? "solution-plan-tab active" : "solution-plan-tab"}
+            type="button"
+            onClick={() => setActivePlanPanel("task-plan")}
+            role="tab"
+            aria-selected={activePlanPanel === "task-plan"}
+          >
+            <span>
+              <strong>任务规划</strong>
+              <em>待规划</em>
+            </span>
+            <ChevronRight size={15} />
+          </button>
+        </div>
+
+        {activePlanPanel === "outline-plan" ? (
           <div className="solution-plan-content">
         <SolutionSection
           title="章节模板"
@@ -527,17 +551,11 @@ function SolutionWritingPanel({
           )}
         </section>
           </div>
-        </SolutionSection>
-
-        <SolutionSection
-          title="任务规划"
-          summary="待规划"
-          collapsed={collapsedSectionIds.includes("task-plan")}
-          onToggle={() => toggleSection("task-plan")}
-        >
-          <div className="empty-state compact">任务规划功能将在这里配置。</div>
-        </SolutionSection>
-        </div>
+        ) : (
+          <section className="solution-block">
+            <div className="empty-state compact">任务规划功能将在这里配置。</div>
+          </section>
+        )}
       </div>
 
       {message ? <div className={status === "error" ? "solution-message error" : "solution-message"}>{message}</div> : null}
