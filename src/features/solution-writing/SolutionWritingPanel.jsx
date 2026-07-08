@@ -32,7 +32,7 @@ function SolutionWritingPanel({
   const [userInstruction, setUserInstruction] = useState("");
   const [modules, setModules] = useState([]);
   const [collapsedModuleIds, setCollapsedModuleIds] = useState([]);
-  const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules", "task-plan"]);
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
   const [styleSelections, setStyleSelections] = useState({});
   const [styleProbeText, setStyleProbeText] = useState("样式测试文本");
@@ -241,6 +241,13 @@ function SolutionWritingPanel({
       </div>
 
       <div className="solution-writing-scroll">
+        <SolutionSection
+          title="方案大纲规划"
+          summary={generatedBlocks.length ? `已生成 ${generatedBlocks.length} 个模块` : "大纲、模块与规划"}
+          collapsed={collapsedSectionIds.includes("outline-plan")}
+          onToggle={() => toggleSection("outline-plan")}
+        >
+          <div className="solution-plan-content">
         <SolutionSection
           title="章节模板"
           summary={templateGroups.length ? `模板组 ${templateGroups.length} 个` : "未读取大纲"}
@@ -518,6 +525,17 @@ function SolutionWritingPanel({
             </div>
           )}
         </section>
+          </div>
+        </SolutionSection>
+
+        <SolutionSection
+          title="任务规划"
+          summary="待规划"
+          collapsed={collapsedSectionIds.includes("task-plan")}
+          onToggle={() => toggleSection("task-plan")}
+        >
+          <div className="empty-state compact">任务规划功能将在这里配置。</div>
+        </SolutionSection>
       </div>
 
       {message ? <div className={status === "error" ? "solution-message error" : "solution-message"}>{message}</div> : null}

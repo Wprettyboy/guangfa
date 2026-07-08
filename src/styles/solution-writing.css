@@ -57,6 +57,11 @@
   max-height: none;
 }
 
+.solution-plan-content {
+  display: grid;
+  gap: 12px;
+}
+
 .solution-block-title,
 .solution-actions-row,
 .solution-module-head,
