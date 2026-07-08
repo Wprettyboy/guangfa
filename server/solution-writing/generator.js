@@ -150,12 +150,182 @@ async function generateSolutionModuleSections(payload = {}) {
   };
 }
 
+async function generateSolutionTaskPlan(payload = {}) {
+  const runtime = getAiRuntimeConfig();
+  const outlineText = cleanMultilineText(payload.outlineText).slice(0, 20000);
+  const categories = normalizeTaskPlanCategories(payload.categories);
+  const userInstruction = cleanText(payload.userInstruction).slice(0, 2000);
+  if (!categories.length) {
+    const error = new Error("请先读取方案大纲并生成任务规划输入。");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const plannedCategories = [];
+  const warnings = [];
+  for (const category of categories) {
+    const planned = await generateTaskCategoryPlan(runtime, {
+      outlineText,
+      category,
+      userInstruction,
+    });
+    plannedCategories.push(planned);
+    warnings.push(...planned.warnings);
+  }
+
+  return {
+    categories: plannedCategories,
+    stats: {
+      categoryCount: plannedCategories.length,
+      taskCount: plannedCategories.reduce((sum, category) => sum + category.tasks.length, 0),
+    },
+    warnings: normalizeStringList(warnings).slice(0, 12),
+  };
+}
+
+async function generateTaskCategoryPlan(runtime, { outlineText, category, userInstruction }) {
+  const systemPrompt = [
+    "你是政企方案落地执行的高级方案工程师和项目任务规划专家。",
+    "任务：根据完整方案大纲、当前一级任务类别、每个标题及标题下原文，生成可执行任务规划。",
+    "完整大纲只作为全局架构约束，不能改大纲，不能跨章节抢写其他标题内容。",
+    "同一个一级类别内，任务必须按输入标题顺序规划，并承接前序规划产出以避免重复；进入新一级类别后前序上下文视为已重置。",
+    "每个输入标题至少输出 1 个任务；原文不足时输出待确认/待补充任务，不要编造未体现的业务内容。",
+    "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
+  ].join("\n");
+  const userPrompt = [
+    "输出 JSON：",
+    '{"title":"一级类别名","sourceHeading":"来源一级标题","tasks":[{"sourceHeading":"来源标题","taskTitle":"任务名称","planningSummary":"这块要想清楚什么、怎么写、为什么这样规划","objective":"任务目标","exclusiveBoundary":{"include":["写什么"],"exclude":["不写什么"],"handoffToChildren":["下沉给子标题的内容"]},"executionPoints":["执行要点"],"deliverables":["交付物"],"dependsOn":["依赖任务"],"producesForNext":["产出给后续"]}],"warnings":["可为空"]}',
+    "",
+    "【完整方案大纲】",
+    outlineText || "未读取到完整大纲。",
+    "",
+    `【当前一级任务类别】${category.sourceHeading || category.title}`,
+    `类别边界：${category.boundary?.include || ""}；${category.boundary?.exclude || ""}`,
+    `类别上下文规则：${category.contextRule || "类别内传递，跨类别重置。"}`,
+    `用户补充要求：${userInstruction || "无"}`,
+    "",
+    "【按顺序规划以下标题】",
+    category.tasks.map((task, index) => [
+      `${index + 1}. 来源标题：${task.sourceHeading}`,
+      `标题路径：${Array.isArray(task.headingPath) ? task.headingPath.join(" / ") : ""}`,
+      `标题下原文：${task.sourceText || "未读取到原文；请基于标题生成待确认任务。"}`,
+      `前序规划输入：${task.previousPlanSummary || "本类别第一个规划单元。"}`,
+      `规划焦点：${normalizeStringList(task.planningFocus).join("；")}`,
+      `排他边界：写什么=${normalizeStringList(task.exclusiveBoundary?.include).join("；")}；不写什么=${normalizeStringList(task.exclusiveBoundary?.exclude).join("；")}`,
+    ].join("\n")).join("\n\n"),
+    "",
+    "生成规则：",
+    "1. tasks 必须覆盖上面每个来源标题，不能少于输入标题数量。",
+    "2. sourceHeading 必须使用输入中的来源标题原文。",
+    "3. taskTitle 不要输出章节编号。",
+    "4. planningSummary 要说明当前标题在整体方案架构中的作用、这块要写清楚什么、怎么写，以及如何避免和前序任务重复。",
+    "5. exclusiveBoundary 必须明确写什么、不写什么；有下级标题时要说明哪些内容下沉给子标题。",
+    "6. dependsOn 只能引用本类别前序任务；本类别第一个任务可为空数组。",
+    "7. producesForNext 要写清楚给后续标题规划传递什么上下文。",
+  ].join("\n");
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 8192, {
+    debugFileName: `solution-writing-task-plan-${safeDebugName(category.title)}.json`,
+    debugContext: {
+      categoryTitle: category.title,
+      sourceHeading: category.sourceHeading,
+      taskCount: category.tasks.length,
+      hasOutlineText: Boolean(outlineText),
+    },
+  });
+  return normalizeTaskPlanCategoryResult(parsed, category);
+}
+
 function buildSolutionModuleText(moduleName, sections) {
   const lines = [moduleName];
   sections.forEach((section) => {
     lines.push("", section.heading || section.templateTitle, section.content || "需结合项目资料补充。");
   });
   return lines.join("\n").trim();
+}
+
+function normalizeTaskPlanCategories(categories) {
+  return (Array.isArray(categories) ? categories : [])
+    .map((category, index) => ({
+      id: cleanText(category?.id) || `task-category-${index + 1}`,
+      title: cleanTitle(category?.title || category?.sourceHeading || `任务类别${index + 1}`),
+      sourceHeading: cleanText(category?.sourceHeading || category?.title),
+      boundary: {
+        include: cleanText(category?.boundary?.include),
+        exclude: cleanText(category?.boundary?.exclude),
+      },
+      contextRule: cleanText(category?.contextRule),
+      tasks: normalizeTaskPlanInputTasks(category?.tasks),
+    }))
+    .filter((category) => category.tasks.length)
+    .slice(0, 20);
+}
+
+function normalizeTaskPlanInputTasks(tasks) {
+  return (Array.isArray(tasks) ? tasks : [])
+    .map((task, index) => ({
+      id: cleanText(task?.id) || `task-${index + 1}`,
+      sourceHeading: cleanText(task?.sourceHeading || task?.title),
+      sourceText: cleanMultilineText(task?.sourceText).slice(0, 4000),
+      headingPath: normalizeStringList(task?.headingPath).slice(0, 12),
+      planningFocus: normalizeStringList(task?.planningFocus).slice(0, 8),
+      previousPlanSummary: cleanText(task?.previousPlanSummary).slice(0, 1000),
+      exclusiveBoundary: {
+        include: normalizeStringList(task?.exclusiveBoundary?.include).slice(0, 8),
+        exclude: normalizeStringList(task?.exclusiveBoundary?.exclude).slice(0, 8),
+        handoffToChildren: normalizeStringList(task?.exclusiveBoundary?.handoffToChildren).slice(0, 8),
+      },
+    }))
+    .filter((task) => task.sourceHeading)
+    .slice(0, 80);
+}
+
+function normalizeTaskPlanCategoryResult(parsed, fallbackCategory) {
+  const inputHeadings = fallbackCategory.tasks.map((task) => task.sourceHeading);
+  const rows = Array.isArray(parsed?.tasks) ? parsed.tasks : [];
+  const tasks = inputHeadings.map((sourceHeading, index) => {
+    const matched = rows.find((row) => cleanText(row?.sourceHeading) === sourceHeading) || rows[index] || {};
+    const inputTask = fallbackCategory.tasks[index] || {};
+    const taskTitle = cleanTitle(matched.taskTitle || inputTask.title || sourceHeading);
+    return {
+      id: inputTask.id || `task-${index + 1}`,
+      title: taskTitle ? `规划${taskTitle}对应执行任务` : `规划${cleanTitle(sourceHeading)}对应执行任务`,
+      sourceHeading,
+      sourceText: inputTask.sourceText || "未读取到标题下原文。",
+      bodyState: inputTask.sourceText ? "已有标题原文" : "原文待读取",
+      headingPath: inputTask.headingPath || [],
+      planningFocus: inputTask.planningFocus || [],
+      previousPlanSummary: inputTask.previousPlanSummary || "",
+      planningSummary: cleanMultilineText(matched.planningSummary || matched.objective || "AI 未返回规划摘要。"),
+      objective: cleanMultilineText(matched.objective || `形成“${cleanTitle(sourceHeading)}”对应的执行任务规划。`),
+      exclusiveBoundary: {
+        include: withFallbackList(matched.exclusiveBoundary?.include, inputTask.exclusiveBoundary?.include).slice(0, 8),
+        exclude: withFallbackList(matched.exclusiveBoundary?.exclude, inputTask.exclusiveBoundary?.exclude).slice(0, 8),
+        handoffToChildren: withFallbackList(matched.exclusiveBoundary?.handoffToChildren, inputTask.exclusiveBoundary?.handoffToChildren).slice(0, 8),
+      },
+      executionPoints: withFallbackList(matched.executionPoints, ["确认标题原文要求", "拆解执行步骤", "明确验收关注点"]).slice(0, 10),
+      deliverables: withFallbackList(matched.deliverables, ["任务边界说明", "执行要点清单", "验收关注点清单"]).slice(0, 10),
+      dependsOn: normalizeStringList(matched.dependsOn).slice(0, 8),
+      producesForNext: normalizeStringList(matched.producesForNext).slice(0, 8),
+    };
+  });
+  return {
+    id: fallbackCategory.id,
+    title: cleanTitle(parsed?.title || fallbackCategory.title),
+    sourceHeading: cleanText(parsed?.sourceHeading || fallbackCategory.sourceHeading),
+    boundary: fallbackCategory.boundary,
+    contextRule: fallbackCategory.contextRule,
+    tasks,
+    warnings: normalizeStringList(parsed?.warnings).slice(0, 5),
+  };
+}
+
+function withFallbackList(value, fallback) {
+  const rows = normalizeStringList(value);
+  return rows.length ? rows : normalizeStringList(fallback);
+}
+
+function safeDebugName(value) {
+  return cleanTitle(value).replace(/[^\w\u4e00-\u9fa5-]+/g, "-").slice(0, 40) || "category";
 }
 
 function normalizeGeneratedSections(sections, childTemplates) {
@@ -257,5 +427,6 @@ function cleanMultilineText(value) {
 export {
   buildSolutionModuleText,
   generateSolutionModuleSections,
+  generateSolutionTaskPlan,
   identifySolutionModules,
 };

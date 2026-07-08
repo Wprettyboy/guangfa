@@ -2,7 +2,7 @@ import { createKnowledgeChat } from "../../ai/chat.js";
 import { fillField } from "../../ai/fill.js";
 import { createFormatOutlinePlan } from "../../ai/format-outline.js";
 import { createAiKnowledgeSearch } from "../../ai/knowledge-query.js";
-import { generateSolutionModuleSections, identifySolutionModules } from "../../solution-writing/generator.js";
+import { generateSolutionModuleSections, generateSolutionTaskPlan, identifySolutionModules } from "../../solution-writing/generator.js";
 import { defineRoute } from "../registry.js";
 
 const aiBodyLimitBytes = 2 * 1024 * 1024;
@@ -78,6 +78,18 @@ function registerAiRoutes() {
     body: { sectionTitle: "string?", childTemplates: "array?", module: "object?", userInstruction: "string?", knowledgeOptions: "object?" },
     responses: { 200: "object" },
     handler: ({ body }) => generateSolutionModuleSections(body),
+  });
+
+  defineRoute({
+    id: "ai.solution.planTasks",
+    method: "POST",
+    path: "/api/ai/solution-plan-tasks",
+    tags: ["ai", "solution-writing"],
+    summary: "方案编写生成执行任务规划",
+    bodyLimitBytes: aiBodyLimitBytes,
+    body: { outlineText: "string?", categories: "array?", userInstruction: "string?" },
+    responses: { 200: "object" },
+    handler: ({ body }) => generateSolutionTaskPlan(body),
   });
 }
 

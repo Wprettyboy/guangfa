@@ -6,6 +6,10 @@ async function generateSolutionModuleSections(payload) {
   return postSolutionWriting("/api/ai/solution-generate-sections", payload, "方案章节生成失败");
 }
 
+async function generateSolutionTaskPlan(payload) {
+  return postSolutionWriting("/api/ai/solution-plan-tasks", payload, "任务规划生成失败");
+}
+
 async function postSolutionWriting(url, payload, fallbackMessage) {
   const response = await fetch(url, {
     method: "POST",
@@ -19,5 +23,6 @@ async function postSolutionWriting(url, payload, fallbackMessage) {
 
 export {
   generateSolutionModuleSections,
+  generateSolutionTaskPlan,
   identifySolutionModules,
 };

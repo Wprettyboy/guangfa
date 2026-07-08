@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Loader2, RefreshCw, Wand2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Loader2, RefreshCw, Send, Wand2 } from "lucide-react";
+import { generateSolutionTaskPlan } from "./service.js";
 import { buildTaskPlanningPreview } from "./taskPlanning.js";
 
 function TaskPlanningPanel({
@@ -11,16 +12,45 @@ function TaskPlanningPanel({
 }) {
   const [instruction, setInstruction] = useState("");
   const [preview, setPreview] = useState(() => ({ categories: [], stats: buildTaskPlanningPreview([]).stats }));
+  const [generatedPlan, setGeneratedPlan] = useState(null);
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
   const [expandedTaskIds, setExpandedTaskIds] = useState([]);
+  const [architectureOpen, setArchitectureOpen] = useState(false);
+  const [taskStatus, setTaskStatus] = useState("idle");
+  const [taskMessage, setTaskMessage] = useState("");
   const outlinePreview = useMemo(() => buildTaskPlanningPreview(outlineItems), [outlineItems]);
   const outlineStats = outlinePreview.stats;
 
   function generatePreview() {
     const nextPreview = buildTaskPlanningPreview(outlineItems);
     setPreview(nextPreview);
+    setGeneratedPlan(null);
+    setTaskMessage("");
     setCollapsedCategoryIds([]);
     setExpandedTaskIds([]);
+  }
+
+  async function generateAiPlan() {
+    const inputPreview = preview.categories.length ? preview : buildTaskPlanningPreview(outlineItems);
+    if (!inputPreview.categories.length) return;
+    setTaskStatus("generating");
+    setTaskMessage("");
+    try {
+      const result = await generateSolutionTaskPlan({
+        outlineText: inputPreview.outlineText || outlinePreview.outlineText,
+        categories: inputPreview.categories,
+        userInstruction: instruction,
+      });
+      setGeneratedPlan(result);
+      setPreview({ categories: result.categories || [], stats: inputPreview.stats, outlineText: inputPreview.outlineText });
+      setCollapsedCategoryIds([]);
+      setExpandedTaskIds([]);
+      setTaskStatus("idle");
+      setTaskMessage(`已生成 ${result.stats?.taskCount || 0} 个任务规划`);
+    } catch (error) {
+      setTaskStatus("error");
+      setTaskMessage(error?.message || "任务规划生成失败");
+    }
   }
 
   function toggleCategory(categoryId) {
@@ -37,6 +67,8 @@ function TaskPlanningPanel({
 
   const hasOutline = outlineItems.length > 0;
   const generatingDisabled = busy || !hasOutline;
+  const aiGenerating = taskStatus === "generating";
+  const hasPreview = preview.categories.length > 0;
 
   return (
     <div className="solution-task-panel">
@@ -55,6 +87,10 @@ function TaskPlanningPanel({
               <Wand2 size={15} />
               生成输入预览
             </button>
+            <button className="tool-button primary" type="button" onClick={generateAiPlan} disabled={busy || aiGenerating || (!hasPreview && !hasOutline)}>
+              {aiGenerating ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
+              AI生成规划
+            </button>
           </div>
         </div>
 
@@ -66,12 +102,15 @@ function TaskPlanningPanel({
           <span>最大层级 {outlineStats.maxDepth || 0}</span>
         </div>
 
-        <div className="solution-task-architecture">
-          <div>
-            <strong>全局大纲架构</strong>
-            <span>后续生成每个标题任务时，完整大纲都会作为结构约束传给 AI。</span>
-          </div>
-          <pre>{outlinePreview.outlineText || "请先读取左侧文档大纲。"}</pre>
+        <div className={architectureOpen ? "solution-task-architecture open" : "solution-task-architecture"}>
+          <button type="button" onClick={() => setArchitectureOpen((current) => !current)} aria-expanded={architectureOpen}>
+            <span>
+              <strong>全局大纲架构</strong>
+              <em>后续生成每个标题任务时，完整大纲都会作为结构约束传给 AI。</em>
+            </span>
+            {architectureOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          </button>
+          {architectureOpen ? <pre>{outlinePreview.outlineText || "请先读取左侧文档大纲。"}</pre> : null}
         </div>
 
         <label className="solution-instruction">
@@ -82,6 +121,12 @@ function TaskPlanningPanel({
             onChange={(event) => setInstruction(event.target.value)}
           />
         </label>
+        {taskMessage ? <div className={taskStatus === "error" ? "solution-message error" : "solution-message"}>{taskMessage}</div> : null}
+        {generatedPlan?.warnings?.length ? (
+          <div className="solution-task-warnings">
+            {generatedPlan.warnings.map((warning) => <span key={warning}>{warning}</span>)}
+          </div>
+        ) : null}
       </section>
 
       {preview.categories.length === 0 ? (
@@ -163,6 +208,7 @@ function TaskCard({ task, expanded, onToggle }) {
           <ListRow label="规划焦点" values={task.planningFocus} />
           <InfoRow label="任务目标" value={task.objective} />
           <InfoRow label="前序规划输入" value={task.previousPlanSummary} />
+          {task.planningSummary ? <InfoRow label="AI规划摘要" value={task.planningSummary} /> : null}
           <ListRow label="写什么" values={task.exclusiveBoundary.include} />
           <ListRow label="不写什么" values={task.exclusiveBoundary.exclude} />
           <ListRow label="下沉给子标题" values={task.exclusiveBoundary.handoffToChildren} emptyText="无下级标题承接" />

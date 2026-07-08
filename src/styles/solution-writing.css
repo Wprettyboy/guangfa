@@ -742,15 +742,33 @@
 
 .solution-task-architecture {
   display: grid;
-  gap: 8px;
   border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: 8px;
   background: #f8fafc;
-  padding: 10px;
+  overflow: hidden;
 }
 
-.solution-task-architecture > div {
+.solution-task-architecture.open {
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.solution-task-architecture button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.solution-task-architecture button span {
   display: grid;
+  min-width: 0;
   gap: 3px;
 }
 
@@ -759,15 +777,16 @@
   font-size: 13px;
 }
 
-.solution-task-architecture span {
+.solution-task-architecture em {
   color: #64748b;
   font-size: 12px;
+  font-style: normal;
 }
 
 .solution-task-architecture pre {
   max-height: 168px;
   overflow: auto;
-  margin: 0;
+  margin: 0 10px;
   border-radius: 7px;
   background: #ffffff;
   color: #334155;
