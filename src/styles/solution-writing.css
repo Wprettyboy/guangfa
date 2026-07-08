@@ -224,6 +224,69 @@
   flex: 0 0 auto;
 }
 
+.solution-style-probe {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid rgba(226, 232, 240, 0.95);
+  padding-top: 8px;
+}
+
+.solution-style-probe-head,
+.solution-style-captured-list div,
+.solution-style-probe-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.solution-style-probe-head {
+  justify-content: space-between;
+}
+
+.solution-style-probe-head strong,
+.solution-style-captured-list span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.solution-style-probe-head span,
+.solution-style-captured-list em {
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.solution-style-captured-list {
+  display: grid;
+  gap: 4px;
+}
+
+.solution-style-captured-list div {
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.solution-style-captured-list em {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solution-style-probe-controls select {
+  width: 112px;
+}
+
+.solution-style-probe-controls input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.solution-style-probe-controls .text-button {
+  flex: 0 0 auto;
+}
+
 .solution-knowledge-group {
   display: grid;
   gap: 6px;

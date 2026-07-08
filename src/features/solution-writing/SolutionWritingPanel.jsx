@@ -35,6 +35,8 @@ function SolutionWritingPanel({
   const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
   const [styleSelections, setStyleSelections] = useState({});
+  const [styleProbeText, setStyleProbeText] = useState("样式测试文本");
+  const [styleProbeValue, setStyleProbeValue] = useState("");
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
   const effectiveOutline = localOutline || outline;
@@ -45,6 +47,10 @@ function SolutionWritingPanel({
   const selectedGroup = templateGroups.find((group) => group.key === selectedGroupKey) || templateGroups[0] || null;
   const styleOptions = useMemo(() => buildStyleOptions(documentStyles), [documentStyles]);
   const styleMappingRows = useMemo(() => buildStyleMappingRows(selectedGroup, documentStyles), [selectedGroup, documentStyles]);
+  const styleProbeRows = useMemo(
+    () => buildStyleProbeRows(selectedGroup, styleMappingRows, styleSelections),
+    [selectedGroup, styleMappingRows, styleSelections],
+  );
   const projectBases = knowledgeBases.filter((base) => base.scope !== "global");
   const globalBases = knowledgeBases.filter((base) => base.scope === "global");
   const selectedKnowledgeBases = knowledgeBases.filter(
@@ -69,6 +75,11 @@ function SolutionWritingPanel({
     if (!selectedGroup) return;
     setStyleSelections(buildDefaultStyleSelections(selectedGroup, documentStyles));
   }, [documentStyles, selectedGroup?.key]);
+
+  useEffect(() => {
+    if (styleProbeRows.some((row) => row.value === styleProbeValue)) return;
+    setStyleProbeValue(styleProbeRows[0]?.value || "");
+  }, [styleProbeRows, styleProbeValue]);
 
   async function refreshOutline() {
     setStatus("loading-outline");
@@ -153,6 +164,21 @@ function SolutionWritingPanel({
     }
     setStatus("error");
     setMessage(result?.error || "写入失败，请确认左侧文档已加载并把光标放在目标位置。");
+  }
+
+  async function insertStyleProbeText() {
+    const text = styleProbeText.trim();
+    const row = styleProbeRows.find((item) => item.value === styleProbeValue) || styleProbeRows[0];
+    if (!text || !row) return;
+    const paragraph = {
+      type: row.type,
+      level: row.level,
+      style: row.value,
+      styleName: getStyleName(row.value),
+      styleFallback: getStyleFallback(row.value, row.type, row.level),
+      text,
+    };
+    await insertGeneratedText({ text, paragraphs: [paragraph] }, `已插入样式测试：${row.label}`);
   }
 
   function addModule() {
@@ -258,6 +284,35 @@ function SolutionWritingPanel({
                     </select>
                   </label>
                 ))}
+                <div className="solution-style-probe">
+                  <div className="solution-style-probe-head">
+                    <strong>样式测试</strong>
+                    <span>用于核对抓取样式和写入效果</span>
+                  </div>
+                  <div className="solution-style-captured-list">
+                    {styleProbeRows.map((row) => (
+                      <div key={row.key}>
+                        <span>{row.label}</span>
+                        <em>{row.capturedStyleName || "未抓到"} · {row.capturedSource || "无来源"} · 写入 {getStyleName(row.value) || row.value}</em>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="solution-style-probe-controls">
+                    <select value={styleProbeValue} onChange={(event) => setStyleProbeValue(event.target.value)}>
+                      {styleProbeRows.map((row) => (
+                        <option key={row.key} value={row.value}>{row.label}：{getStyleName(row.value) || row.value}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={styleProbeText}
+                      onChange={(event) => setStyleProbeText(event.target.value)}
+                      placeholder="输入测试文字"
+                    />
+                    <button type="button" className="text-button" onClick={insertStyleProbeText} disabled={!styleProbeText.trim() || !styleProbeRows.length || status === "inserting"}>
+                      测试写入
+                    </button>
+                  </div>
+                </div>
               </div>
             </>
           ) : null}
@@ -628,6 +683,45 @@ function buildStyleMappingRows(group, documentStyles = []) {
       defaultStyle: getDefaultBodyStyleValue(documentStyles, group.bodyStyleName),
     },
   ];
+}
+
+function buildStyleProbeRows(group, styleRows = [], styleSelections = {}) {
+  if (!group) return [];
+  return styleRows.map((row) => {
+    const value = styleSelections[row.key] || row.defaultStyle;
+    if (row.key === "module-heading") {
+      return {
+        ...row,
+        type: "module-heading",
+        level: group.level,
+        value,
+        capturedStyleName: group.styleName || "",
+        capturedSource: group.styleSource || "",
+      };
+    }
+    if (row.key === "body") {
+      return {
+        ...row,
+        type: "body",
+        level: null,
+        value,
+        capturedStyleName: group.bodyStyleName || "",
+        capturedSource: group.bodyStyleSource || "",
+      };
+    }
+    const levelMatch = /^section-heading-(.+)$/.exec(row.key);
+    const level = levelMatch ? Number(levelMatch[1]) : null;
+    const template = group.childTemplates.find((item) => Number(item.level) === Number(level) && item.styleName)
+      || group.childTemplates.find((item) => Number(item.level) === Number(level));
+    return {
+      ...row,
+      type: "section-heading",
+      level,
+      value,
+      capturedStyleName: template?.styleName || "",
+      capturedSource: template?.styleSource || "",
+    };
+  });
 }
 
 function buildDefaultStyleSelections(group, documentStyles = []) {
