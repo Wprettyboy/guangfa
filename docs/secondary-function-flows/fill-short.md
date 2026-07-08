@@ -55,7 +55,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 短文本 AI 填充接口，由前端 `fillFieldWithAI()` 调用。 |
-| 主入口 | `server/ai.js` / `fillField()` | 归一化 `fillMode`，构造检索 query，组合知识库片段和上传资料，调用模型。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 归一化 `fillMode`，构造检索 query，组合知识库片段和上传资料，调用模型。 |
 | 检索 query | `buildFieldRetrievalQuery()` | 根据字段名、选区原文、字段说明生成检索关键词。 |
 | 知识库检索 | `searchKnowledgeForField()` → `server/knowledge-base.js` / `searchKnowledgeBase()` | 从项目知识库和全局知识库召回相关原始切片；召回阶段不做 AI 改写、不替用户判断最终复制范围。 |
 | 知识库文件 | `data/knowledge/library.json`、`data/knowledge/zvec/chunks` | 存储知识库元数据、文本切片和向量索引。 |
@@ -85,7 +85,7 @@
 | Office 下载 | `server/office.js` / `/api/office/download-url` | 代理下载 OnlyOffice `downloadAs` 产生的 DOCX。 |
 | Office 回调 | `server/office.js` / `/api/office/callback/:id` | OnlyOffice 保存时把最新 DOCX 写回服务端临时目录。 |
 | 草稿保存 | `server/draft.js` / `/api/draft` | 保存当前模板、字段、资料、知识库选择和填充结果到 `data/drafts/current.json`。 |
-| 模板库 | `server/templates.js` / `/api/templates` | 保存模板字段定义到 `data/templates/library.json`。 |
+| 模板库 | `server/api/routes/templates.routes.js` / `/api/templates` | 保存模板字段定义到 `data/templates/library.json`。 |
 | 模型原始日志 | `logs/ai-fill-last.json` | 保存 prompt、召回片段、模型原始 JSON 和解析结果。 |
 | 最终结果日志 | `logs/ai-fill-last-final.json` | 保存业务守卫后的结果、`status`、系统 `source/sourceSnippetText`、`finalReason`；`modelParsed.evidence` 只用于排查模型判断。 |
 
@@ -94,7 +94,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 前端构建 | `npm run build` | 验证主前端和打包链路。 |
-| AI 服务语法 | `node --check server/ai.js` | 验证 AI 路由、提示词和守卫代码语法。 |
+| AI 服务语法 | `node --check server/api/routes/ai.routes.js` | 验证 AI 路由、提示词和守卫代码语法。 |
 | OnlyOffice 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 验证选区、书签、输入、回写脚本语法。 |
 | 日志复核 | 查看 `logs/ai-fill-last.json` | 确认模型输入、召回片段和原始输出。 |
 | 最终复核 | 查看 `logs/ai-fill-last-final.json` | 确认 `value/status/source/sourceSnippetText/finalReason`，并确认有 `modelParsed`，证明填充值经过 AI 判断而不是前置规则直出。 |

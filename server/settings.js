@@ -21,42 +21,6 @@ const envKeys = [
   "EMBEDDING_TIMEOUT_MS",
 ];
 
-export function settingsMiddleware() {
-  return async function handleSettings(request, response, next) {
-    if (!request.url?.startsWith("/api/settings/model")) {
-      next();
-      return;
-    }
-
-    try {
-      if (request.method === "GET" && request.url === "/api/settings/model") {
-        sendJson(response, 200, await getModelConfig());
-        return;
-      }
-
-      if (request.method === "POST" && request.url === "/api/settings/model") {
-        const payload = await readJsonBody(request);
-        const config = normalizeConfig(payload || {});
-        await saveModelConfig(config);
-        sendJson(response, 200, { ok: true, config });
-        return;
-      }
-
-      if (request.method === "POST" && request.url === "/api/settings/model/test") {
-        const payload = await readJsonBody(request);
-        sendJson(response, 200, await testModelConfig(payload || {}));
-        return;
-      }
-
-      sendJson(response, 404, { error: "系统设置接口不存在" });
-    } catch (error) {
-      sendJson(response, error.statusCode || 500, {
-        error: error.message || "系统设置读写失败",
-      });
-    }
-  };
-}
-
 export async function getModelConfig() {
   const saved = await readSavedConfig();
   return normalizeConfig({
@@ -254,33 +218,4 @@ function escapeEnvValue(value) {
   return /[\s#"'`]/.test(text) ? JSON.stringify(text) : text;
 }
 
-function readJsonBody(request) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    request.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 2 * 1024 * 1024) {
-        const error = new Error("系统设置请求内容过大");
-        error.statusCode = 413;
-        reject(error);
-        request.destroy();
-      }
-    });
-    request.on("end", () => {
-      try {
-        resolve(body ? JSON.parse(body) : null);
-      } catch {
-        const error = new Error("请求 JSON 格式错误");
-        error.statusCode = 400;
-        reject(error);
-      }
-    });
-    request.on("error", reject);
-  });
-}
-
-function sendJson(response, statusCode, body) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.end(JSON.stringify(body));
-}
+export { normalizeConfig, saveModelConfig, testModelConfig };

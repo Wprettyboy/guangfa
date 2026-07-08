@@ -52,7 +52,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 金额+选择字段接口。 |
-| 主入口 | `server/ai.js` / `fillField()` | 构造复合提示词，把模板金额单位写入规则。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 构造复合提示词，把模板金额单位写入规则。 |
 | 知识库 | `server/knowledge-base.js` / `searchKnowledgeBase()` | 检索金额和含税状态依据。 |
 | 复合规则 | `getFillModePromptRule("amount-choice")` | 要求同时判断金额和候选项。 |
 | 金额换算 | `normalizeTemplateAmountValue()` | 按模板单位换算金额纯数字。 |
@@ -77,7 +77,7 @@
 | 下载 | `/api/office/download-url` | 下载现场 DOCX。 |
 | 回调 | `/api/office/callback/:id` | 保存 OnlyOffice 修改结果。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存金额和选择结果。 |
-| 模板 | `server/templates.js` / `data/templates/library.json` | 保存复合字段定义。 |
+| 模板 | `server/api/routes/templates.routes.js` -> `server/template-db.js` / `data/templates/library.json` | 保存复合字段定义。 |
 | 原始日志 | `logs/ai-fill-last.json` | 查看模型返回的金额和含税状态。 |
 | 最终日志 | `logs/ai-fill-last-final.json` | 查看 `amountValue`、`choiceValue`、`finalReason`。 |
 
@@ -86,7 +86,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 构建 | `npm run build` | 前端构建。 |
-| AI 语法 | `node --check server/ai.js` | 金额+选择提示词和守卫语法。 |
+| AI 语法 | `node --check server/api/routes/ai.routes.js` | 金额+选择提示词和守卫语法。 |
 | 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 勾选和金额空白写入脚本语法。 |
 | 内置自测 | `window.guangfaChoiceMarkerSelfTest()` | 验证不含税匹配，以及 `元（`、`万元（`、`十万（` 金额空白识别。 |
 | 现场消息 | `field-fill.amountResult` | 确认不是“勾选对了但金额未写入”。 |

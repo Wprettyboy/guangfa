@@ -51,7 +51,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 长文本字段统一走该接口。 |
-| 主入口 | `server/ai.js` / `fillField()` | 组装字段上下文、知识库片段、上传资料并调用模型。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 组装字段上下文、知识库片段、上传资料并调用模型。 |
 | 召回加量 | `fillField()` 中 `paragraph topK>=10` | 长文本把知识库 `topK` 提升到至少 `10`，提高完整段落命中概率。 |
 | 查询构造 | `buildFieldRetrievalQuery()` | 结合字段名、选区、说明生成检索 query。 |
 | 知识库检索 | `searchKnowledgeBase()` | 从 `data/knowledge/library.json` 和 `data/knowledge/zvec/chunks` 检索长段落依据。 |
@@ -75,7 +75,7 @@
 | DOCX 下载 | `/api/office/download-url` | 下载 OnlyOffice 现场导出的 DOCX。 |
 | 保存回调 | `/api/office/callback/:id` | 接收 OnlyOffice 保存后的文件。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段、资料、知识库选择和填充状态。 |
-| 模板字段 | `server/templates.js` / `data/templates/library.json` | 持久化模板字段定义。 |
+| 模板字段 | `server/api/routes/templates.routes.js` -> `server/template-db.js` / `data/templates/library.json` | 持久化模板字段定义。 |
 | 原始日志 | `logs/ai-fill-last.json` | 用于核对长文本是否来自召回原文。 |
 | 最终日志 | `logs/ai-fill-last-final.json` | 用于查看最终 `value/status/source/evidence/finalReason`。 |
 
@@ -84,7 +84,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 构建 | `npm run build` | 验证前端构建。 |
-| AI 语法 | `node --check server/ai.js` | 验证长文本提示词和接口语法。 |
+| AI 语法 | `node --check server/api/routes/ai.routes.js` | 验证长文本提示词和接口语法。 |
 | 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 验证替换选区脚本语法。 |
 | 原文一致性 | 比对 `logs/ai-fill-last.json` 的召回片段与 `value` | 确认长文本未被总结或改写。 |
 | 现场结果 | OnlyOffice 文档 | 确认模板原占位段落被完整替换。 |

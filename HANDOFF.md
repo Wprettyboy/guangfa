@@ -49,7 +49,7 @@ npm run embedding:skip-install
 
 ```powershell
 npm run build
-node --check server\ai.js
+node --check server\api\routes\ai.routes.js
 node --check server\office.js
 Invoke-WebRequest http://127.0.0.1:8080/healthcheck -UseBasicParsing
 Invoke-RestMethod http://127.0.0.1:8129/v1/models
@@ -118,7 +118,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### AI / 知识库高频区
 
-- `server/ai.js`：AI 路由分发入口；保持薄，不要放业务规则。
+- `server/api/routes/ai.routes.js`：AI 接口注册入口；handler 只调用 `server/ai/` 与 `server/solution-writing/` 业务模块，不写业务规则。
 - `server/ai/fill.js`：`/api/ai/fill-field` 主链路，包含召回、提示词拼装、后置校验、最终返回。
 - `server/ai/fill-rules.js`：填充模式、字段契约、金额/日期/选择型规则、证据约束辅助。
 - `server/ai/knowledge-query.js`：AI 填充前的核心检索词提取与知识库召回查询。
@@ -155,7 +155,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - `src/main.jsx`：已压缩成入口。
 - `src/styles.css`：已删除，样式入口是 `src/styles/index.css`。
-- `server/ai.js`：已拆为 `server/ai/` 子模块。
+- `server/ai.js` 已删除；AI 路由统一登记在 `server/api/routes/ai.routes.js`，业务逻辑保留在 `server/ai/` 子模块。
 
 ## 当前技术路线
 
@@ -175,7 +175,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/docx/fill/previewAndExport.js` 已拆出 DOCX XML 导出兜底到 `src/features/docx/fill/docxXmlFill.js`，原文件聚焦浏览器预览写入。
 - 已删除旧空壳 `src/styles.css`，主入口直接使用 `src/styles/index.css`。
 - 已删除未使用的服务端 `server/docx-preview.js` 和 Vite 中间件；客户端 `docx-preview` fallback 仍在 `runtime.jsx` 中保留。
-- 已验证：`npm run build`、`node --check server\ai.js`、`node --check server\office.js` 通过；浏览器打开 `http://127.0.0.1:5173` 后刷新无新增前端 error，模板标注/填充确认/格式审核三个工作台切换正常。
+- 已验证：`npm run build`、`node --check server\api\routes\ai.routes.js`、`node --check server\office.js` 通过；浏览器打开 `http://127.0.0.1:5173` 后刷新无新增前端 error，模板标注/填充确认/格式审核三个工作台切换正常。
 
 ### 填充工作台修订模式开关
 
@@ -188,8 +188,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - 已新增 `server/api/` 轻量注册表，用代码维护接口清单，避免把接口长期散写在交接文档或 Vite middleware 分支里。
 - Vite dev server 当前挂载 `apiMiddleware()`；注册表内置 `GET /api/_meta/routes` 查看已登记接口，`GET /api/_meta/openapi.json` 生成 OpenAPI 3.0.3 文档。
-- 当前只迁移知识库接口：`/api/knowledge-bases`、`/api/knowledge-bases/search`、知识库资料上传/删除/重建索引、`/api/knowledge-documents/:documentId/file`。
-- 迁移后的知识库路由只做协议层定义，仍调用 `server/knowledge/documents.js` 中的原有业务函数；`server/knowledge-base.js` 保留兼容导出。
+- 当前已迁移知识库、AI、草稿、模板库/模板类型、系统设置等 JSON API；Office 文档上传/下载/callback 与 OnlyOffice 大纲探针仍保持独立 middleware。
+- 迁移后的路由只做协议层定义，仍调用知识库、AI、模板、设置、草稿等原有业务函数；`server/knowledge-base.js` 保留兼容导出。
 - 后续新增或迁移本地 API 时，优先新增对应 `server/api/routes/<module>.routes.js`，在 `server/api/index.js` 注册；不要把 handler 写成大路由分发文件。
 
 ### Gemini 3.1 Flash Lite 文本模型
@@ -402,7 +402,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ## 当前建议接手方式
 
-1. 先运行 `npm run build`、`node --check server\ai.js`、`node --check server\office.js`。
+1. 先运行 `npm run build`、`node --check server\api\routes\ai.routes.js`、`node --check server\office.js`。
 2. 浏览器控制默认关闭；只有用户明确允许浏览器 QA 时，才打开 `http://127.0.0.1:5173` 做页面验证。
 3. 如果 OnlyOffice 没起来，运行 `npm run office`。
 4. 如果 AI 不响应，先测：

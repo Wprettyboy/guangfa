@@ -50,7 +50,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 金额填充接口。 |
-| 主入口 | `server/ai.js` / `fillField()` | 构造金额提示词，把模板单位写入规则。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 构造金额提示词，把模板单位写入规则。 |
 | 知识库 | `server/knowledge-base.js` / `searchKnowledgeBase()` | 检索金额依据。 |
 | 金额规则 | `getFillModePromptRule("amount")` | 只输出资料明确支持的金额。 |
 | 标签清理 | `normalizeAmountFillValue()` | 去除“金额/限价/报价/费用/预算”等字段标签。 |
@@ -76,7 +76,7 @@
 | 下载 | `/api/office/download-url` | 下载写入后的 DOCX。 |
 | 回调 | `/api/office/callback/:id` | 保存 OnlyOffice 修改结果。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段和金额填充结果。 |
-| 模板 | `server/templates.js` / `data/templates/library.json` | 保存字段定义。 |
+| 模板 | `server/api/routes/templates.routes.js` -> `server/template-db.js` / `data/templates/library.json` | 保存字段定义。 |
 | 原始日志 | `logs/ai-fill-last.json` | 查看模型原始金额输出。 |
 | 最终日志 | `logs/ai-fill-last-final.json` | 查看换算后的 `value` 和证据。 |
 
@@ -85,7 +85,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 构建 | `npm run build` | 前端构建。 |
-| AI 语法 | `node --check server/ai.js` | 金额换算相关语法。 |
+| AI 语法 | `node --check server/api/routes/ai.routes.js` | 金额换算相关语法。 |
 | 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 回写脚本语法。 |
 | 单位换算 | `logs/ai-fill-last-final.json` | 资料万元、模板元；资料万元、模板十万等场景必须换算正确。 |
 | 现场结果 | OnlyOffice 或导出 DOCX | 金额写入空白，模板单位保留。 |

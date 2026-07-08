@@ -50,7 +50,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 日期字段填充接口。 |
-| 主入口 | `server/ai.js` / `fillField()` | 构造日期字段提示词并调用模型。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 构造日期字段提示词并调用模型。 |
 | 检索 | `buildFieldRetrievalQuery()` | 根据字段和选区构造日期检索 query。 |
 | 知识库 | `searchKnowledgeBase()` | 检索日期依据。 |
 | 日期规则 | `getFillModePromptRule("date")` | 要求只输出资料支持的日期。 |
@@ -74,7 +74,7 @@
 | 下载 | `/api/office/download-url` | 下载现场 DOCX。 |
 | 保存回调 | `/api/office/callback/:id` | 保存 OnlyOffice 修改后的 DOCX。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段和填充状态。 |
-| 模板 | `server/templates.js` / `data/templates/library.json` | 保存模板字段定义。 |
+| 模板 | `server/api/routes/templates.routes.js` -> `server/template-db.js` / `data/templates/library.json` | 保存模板字段定义。 |
 | 原始日志 | `logs/ai-fill-last.json` | 查看模型输入和日期原始输出。 |
 | 最终日志 | `logs/ai-fill-last-final.json` | 查看最终日期、状态和证据。 |
 
@@ -83,7 +83,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 构建 | `npm run build` | 前端构建。 |
-| AI 语法 | `node --check server/ai.js` | 日期提示词和接口语法。 |
+| AI 语法 | `node --check server/api/routes/ai.routes.js` | 日期提示词和接口语法。 |
 | 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | OnlyOffice 回写脚本语法。 |
 | 日志 | `logs/ai-fill-last-final.json` | 日期值不能带 `日期：` 标签。 |
 | 现场 | OnlyOffice 或导出 DOCX | `日期：` 不重复标签；`年 月 日` 能正确填入。 |

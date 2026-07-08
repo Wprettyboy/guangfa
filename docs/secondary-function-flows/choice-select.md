@@ -51,7 +51,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 选择字段填充接口。 |
-| 主入口 | `server/ai.js` / `fillField()` | 构造候选项上下文和资料依据。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 构造候选项上下文和资料依据。 |
 | 知识库 | `server/knowledge-base.js` / `searchKnowledgeBase()` | 检索选择依据。 |
 | 选择规则 | `getFillModePromptRule("choice")` | 只输出被选择的选项文本，不输出整段原文，不改写候选项。 |
 | 选择守卫 | `sanitizeChoiceFillResult()` | 拦截空值、需补充资料、模板占位和证明材料说明。 |
@@ -74,7 +74,7 @@
 | 下载 | `/api/office/download-url` | 下载现场 DOCX。 |
 | 回调 | `/api/office/callback/:id` | 保存 OnlyOffice 修改结果。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段和选择结果。 |
-| 模板 | `server/templates.js` / `data/templates/library.json` | 保存候选项字段定义。 |
+| 模板 | `server/api/routes/templates.routes.js` -> `server/template-db.js` / `data/templates/library.json` | 保存候选项字段定义。 |
 | 原始日志 | `logs/ai-fill-last.json` | 查看模型选择依据。 |
 | 最终日志 | `logs/ai-fill-last-final.json` | 查看守卫后的选择结果。 |
 
@@ -83,7 +83,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 构建 | `npm run build` | 前端构建。 |
-| AI 语法 | `node --check server/ai.js` | 选择守卫语法。 |
+| AI 语法 | `node --check server/api/routes/ai.routes.js` | 选择守卫语法。 |
 | 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 选择解析和勾选脚本语法。 |
 | 内置自测 | `window.guangfaChoiceMarkerSelfTest()` | 验证选择项解析、综合评估法匹配、含税/不含税匹配。 |
 | 现场消息 | 浏览器控制台 `field-fill` | 查看 `changed`、`alreadyChecked`、错误信息。 |

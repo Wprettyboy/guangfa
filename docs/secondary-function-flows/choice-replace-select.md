@@ -51,7 +51,7 @@
 | 节点 | 文件/函数 | 中文职责说明 |
 | --- | --- | --- |
 | AI 接口 | `POST /api/ai/fill-field` | 替换+选择字段接口。 |
-| 主入口 | `server/ai.js` / `fillField()` | 构造替换+选择提示词，召回资料。 |
+| 主入口 | `server/api/routes/ai.routes.js` -> `server/ai/fill.js` / `fillField()` | 构造替换+选择提示词，召回资料。 |
 | 知识库 | `server/knowledge-base.js` / `searchKnowledgeBase()` | 检索要求类资料。 |
 | 分支规则 | `getFillModePromptRule("choice-replace")` | 有资料时逐字复制连续原文；无资料时输出模板“无xx要求”选项文本。 |
 | 无资料结果 | `createNoRequirementChoiceResult()` | 从模板选区提取“无xx要求”并返回。 |
@@ -77,7 +77,7 @@
 | 下载 | `/api/office/download-url` | 下载现场 DOCX。 |
 | 回调 | `/api/office/callback/:id` | 保存 OnlyOffice 修改结果。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段和填充结果。 |
-| 模板 | `server/templates.js` / `data/templates/library.json` | 保存替换+选择字段定义。 |
+| 模板 | `server/api/routes/templates.routes.js` -> `server/template-db.js` / `data/templates/library.json` | 保存替换+选择字段定义。 |
 | 原始日志 | `logs/ai-fill-last.json` | 查看召回片段和模型原始返回。 |
 | 最终日志 | `logs/ai-fill-last-final.json` | 查看 `finalReason`：`ok`、`choice-replace-default-none`、`choice-replace-not-copied`。 |
 
@@ -86,7 +86,7 @@
 | 验证项 | 命令或检查点 | 验证内容 |
 | --- | --- | --- |
 | 构建 | `npm run build` | 前端构建。 |
-| AI 语法 | `node --check server/ai.js` | 替换+选择提示词和守卫语法。 |
+| AI 语法 | `node --check server/api/routes/ai.routes.js` | 替换+选择提示词和守卫语法。 |
 | 桥接语法 | `node --check scripts/onlyoffice-outline-probe.js` | 替换选区和勾选脚本语法。 |
 | 逐字复制 | `logs/ai-fill-last.json` + `logs/ai-fill-last-final.json` | 有资料分支必须从召回片段逐字复制。 |
 | 现场结果 | OnlyOffice 文档 | 有资料分支不能残留“无业绩要求/无人员要求”等模板选项；无资料分支只勾无要求。 |
