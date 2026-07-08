@@ -113,9 +113,10 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
       var rows = Array.isArray(payload.paragraphs) ? payload.paragraphs : [];
       for (var index = 0; index < rows.length; index += 1) {
         var item = rows[index] || {};
+        if (!item.text && item.type !== "blank") continue;
         var paragraph = Api.CreateParagraph();
-        applyWordStyle(doc, paragraph, item);
         if (item.text) paragraph.AddText(String(item.text));
+        applyWordStyle(doc, paragraph, item);
         content.push(paragraph);
       }
       if (!content.length) return { ok: false, source: "connector", requestId: payload.requestId, error: "方案正文为空" };

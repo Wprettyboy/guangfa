@@ -1478,11 +1478,11 @@
       let textCount = 0;
       const styleResults = [];
       paragraphs.forEach((item, index) => {
-        const styled = applyLogicParagraphStyle(logicDocument, item);
         if (item.text) {
           logicDocument.EnterText(String(item.text));
           textCount += 1;
         }
+        const styled = applyLogicParagraphStyle(logicDocument, item);
         styleResults.push({
           requested: item.styleName || item.style || "",
           reference: item.styleRef?.styleName || "",
@@ -1690,6 +1690,7 @@
           var styleResults = [];
           for (var index = 0; index < source.length; index += 1) {
             var item = source[index] || {};
+            if (!item.text && item.type !== "blank") continue;
             var paragraph = Api.CreateParagraph();
             var styleRequest = item.styleName || item.style || "";
             var styleItem = {};
@@ -1697,13 +1698,16 @@
               if (Object.prototype.hasOwnProperty.call(item, key)) styleItem[key] = item[key];
             }
             styleItem.style = styleRequest;
-            var styled = applyWordStyle(doc, paragraph, styleItem);
-            if (!styled) applyParagraphFormat(paragraph, item);
             var runFormatApplied = false;
+            var run = null;
             if (item.text && typeof paragraph.AddText === "function") {
-              var run = paragraph.AddText(String(item.text));
-              if (!styled) runFormatApplied = applyRunFormat(run, item);
+              run = paragraph.AddText(String(item.text));
               textCount += 1;
+            }
+            var styled = applyWordStyle(doc, paragraph, styleItem);
+            if (!styled) {
+              applyParagraphFormat(paragraph, item);
+              runFormatApplied = applyRunFormat(run, item);
             }
             if (!styled) applyParagraphFormat(paragraph, item);
             styleResults.push({
