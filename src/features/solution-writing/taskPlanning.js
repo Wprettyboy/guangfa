@@ -51,6 +51,9 @@ function normalizeOutlineRows(items = []) {
       level: Number.isFinite(Number(item.level)) ? Number(item.level) : 0,
       index: Number.isFinite(Number(item.index)) ? Number(item.index) : position,
       bodyText: String(item.bodyText || "").trim(),
+      styleRef: normalizeStyleRef(item.styleRef),
+      bodyStyleRef: normalizeStyleRef(item.bodyStyleRef),
+      bodyParagraphCount: Number.isFinite(Number(item.bodyParagraphCount)) ? Number(item.bodyParagraphCount) : 0,
     }))
     .filter((item) => item.title)
     .sort((a, b) => a.index - b.index);
@@ -97,6 +100,13 @@ function createTask(item, { headingPath, childTitles, previousTask, outlineText 
     id: `task-${item.id}`,
     title: `规划${title}对应执行任务`,
     sourceHeading: item.title,
+    replaceTarget: {
+      title: item.title,
+      headingPath,
+      styleRef: item.styleRef || null,
+      bodyStyleRef: item.bodyStyleRef || null,
+      bodyParagraphCount: item.bodyParagraphCount || 0,
+    },
     sourceText,
     headingPath,
     bodyState: item.bodyText ? "已有标题原文" : "原文待读取",
@@ -131,6 +141,20 @@ function createTask(item, { headingPath, childTitles, previousTask, outlineText 
     produces: [`${title}任务边界`, `${title}执行依据`],
     producesForNext: [`${title}规划边界`, `${title}执行任务清单`, `${title}交付物要求`],
     dependsOn: previousTask ? [previousTask.title] : [],
+  };
+}
+
+function normalizeStyleRef(ref) {
+  if (!ref || typeof ref !== "object") return null;
+  const paragraphIndex = Number(ref.paragraphIndex);
+  if (!Number.isFinite(paragraphIndex)) return null;
+  return {
+    paragraphIndex,
+    outlineIndex: Number.isFinite(Number(ref.outlineIndex)) ? Number(ref.outlineIndex) : null,
+    title: String(ref.title || "").trim(),
+    text: String(ref.text || "").trim(),
+    level: Number.isFinite(Number(ref.level)) ? Number(ref.level) : null,
+    styleName: String(ref.styleName || "").trim(),
   };
 }
 

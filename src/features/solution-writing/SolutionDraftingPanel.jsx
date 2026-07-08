@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { Loader2, Wand2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Loader2, Send, Wand2 } from "lucide-react";
 import { generateSolutionDraftContent } from "./service.js";
+import { buildDraftSectionInsert, buildDraftSectionsInsert, groupDraftSectionsByTarget } from "./draftInsert.js";
 
-function SolutionDraftingPanel({ taskPlan, knowledgeOptions }) {
+function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText }) {
   const [globalPrompt, setGlobalPrompt] = useState("你是一名资深政企技术方案编制专家，文档类型为正式技术方案，表达需要专业、稳健、可落地。");
   const [draft, setDraft] = useState(null);
+  const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
+  const [expandedSectionIds, setExpandedSectionIds] = useState([]);
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
 
@@ -19,6 +22,8 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions }) {
         knowledgeOptions,
       });
       setDraft(result);
+      setCollapsedCategoryIds([]);
+      setExpandedSectionIds([]);
       setStatus("idle");
       setMessage(`已生成 ${result.stats?.sectionCount || 0} 段方案内容`);
     } catch (error) {
@@ -30,7 +35,63 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions }) {
   const taskCount = taskPlan?.stats?.taskCount
     || taskPlan?.categories?.reduce((sum, category) => sum + (category.tasks?.length || 0), 0)
     || 0;
-  const busy = status === "generating";
+  const busy = status === "generating" || status === "inserting";
+  const inserting = status === "inserting";
+
+  function toggleCategory(categoryId) {
+    setCollapsedCategoryIds((current) => (
+      current.includes(categoryId) ? current.filter((id) => id !== categoryId) : [...current, categoryId]
+    ));
+  }
+
+  function toggleSection(sectionId) {
+    setExpandedSectionIds((current) => (
+      current.includes(sectionId) ? current.filter((id) => id !== sectionId) : [...current, sectionId]
+    ));
+  }
+
+  async function insertSection(section, successMessage) {
+    const payload = buildDraftSectionInsert(section);
+    return insertPayload(payload, successMessage || `已写入 ${section.title || section.sourceHeading}`);
+  }
+
+  async function insertCategory(category) {
+    for (const group of groupDraftSectionsByTarget(category.sections || [])) {
+      const payload = buildDraftSectionsInsert(group);
+      const ok = await insertPayload(payload, `已写入 ${category.title}`);
+      if (!ok) return;
+    }
+  }
+
+  async function insertAllDraft() {
+    for (const category of draft?.categories || []) {
+      for (const group of groupDraftSectionsByTarget(category.sections || [])) {
+        const payload = buildDraftSectionsInsert(group);
+        const ok = await insertPayload(payload, "已写入全部方案内容");
+        if (!ok) return;
+      }
+    }
+  }
+
+  async function insertPayload(payload, successMessage) {
+    if (!payload?.text) return false;
+    setStatus("inserting");
+    setMessage("");
+    const result = await onInsertText?.(payload.text, {
+      paragraphs: payload.paragraphs,
+      replaceTarget: payload.replaceTarget,
+      skipConnector: Boolean(payload.replaceTarget),
+      timeoutMs: 20000,
+    });
+    if (result?.ok) {
+      setStatus("idle");
+      setMessage(successMessage);
+      return true;
+    }
+    setStatus("error");
+    setMessage(result?.error || "写入失败：未匹配到对应标题");
+    return false;
+  }
 
   return (
     <div className="solution-draft-panel">
@@ -45,6 +106,12 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions }) {
               {busy ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
               生成方案内容
             </button>
+            {draft?.categories?.length ? (
+              <button className="text-button" type="button" onClick={insertAllDraft} disabled={busy || inserting}>
+                {inserting ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
+                全部写入
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -72,26 +139,72 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions }) {
       ) : null}
 
       {draft?.categories?.length ? (
-        <div className="solution-draft-list">
-          {draft.categories.map((category) => (
-            <section className="solution-task-category" key={category.id || category.sourceHeading || category.title}>
-              <div className="solution-block-title">
-                <strong>{category.title}</strong>
-                <span>{category.sections?.length || 0} 段内容</span>
-              </div>
-              <div className="solution-draft-section-list">
-                {(category.sections || []).map((section) => (
-                  <article className="solution-generated-section" key={section.id || section.sourceHeading || section.title}>
-                    <div>
-                      <strong>{section.title}</strong>
-                      <span className="solution-style-badge">{section.sourceHeading}</span>
+        <div className="solution-task-category-list">
+          {draft.categories.map((category) => {
+            const categoryId = category.id || category.sourceHeading || category.title;
+            const collapsed = collapsedCategoryIds.includes(categoryId);
+            return (
+              <section className="solution-task-category" key={categoryId}>
+                <button
+                  className="solution-task-category-head"
+                  type="button"
+                  onClick={() => toggleCategory(categoryId)}
+                  aria-expanded={!collapsed}
+                >
+                  <span>
+                    <strong>{category.title}</strong>
+                    <em>{category.sections?.length || 0} 段内容 · 来源 {category.sourceHeading}</em>
+                  </span>
+                  {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                </button>
+                {collapsed ? null : (
+                  <div className="solution-task-category-body">
+                    <div className="solution-task-actions">
+                      <button className="text-button" type="button" onClick={() => insertCategory(category)} disabled={busy || inserting}>
+                        {inserting ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+                        写入本类
+                      </button>
                     </div>
-                    <p>{section.content}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
+                    <div className="solution-task-list">
+                      {(category.sections || []).map((section) => {
+                        const sectionId = section.id || `${categoryId}-${section.sourceHeading}-${section.title}`;
+                        const expanded = expandedSectionIds.includes(sectionId);
+                        return (
+                          <article className={expanded ? "solution-task-card expanded" : "solution-task-card"} key={sectionId}>
+                            <button className="solution-task-card-head" type="button" onClick={() => toggleSection(sectionId)} aria-expanded={expanded}>
+                              <span>
+                                <strong>{section.title}</strong>
+                                <em><FileText size={13} />{section.sourceHeading}</em>
+                              </span>
+                              {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                            </button>
+                            {expanded ? (
+                              <div className="solution-task-detail">
+                                <div className="solution-task-info-row">
+                                  <strong>写入位置</strong>
+                                  <span>{section.replaceTarget?.title || section.sourceHeading || "未匹配到标题引用"}</span>
+                                </div>
+                                <div className="solution-task-info-row">
+                                  <strong>正文内容</strong>
+                                  <span>{section.content}</span>
+                                </div>
+                                <div className="solution-task-actions">
+                                  <button className="text-button" type="button" onClick={() => insertSection(section)} disabled={busy || inserting}>
+                                    {inserting ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
+                                    写入本段
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       ) : null}
     </div>

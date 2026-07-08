@@ -509,6 +509,7 @@ function normalizeTaskPlanInputTasks(tasks) {
       id: cleanText(task?.id) || `task-${index + 1}`,
       sourceHeading: cleanText(task?.sourceHeading || task?.title),
       sourceText: cleanMultilineText(task?.sourceText).slice(0, 4000),
+      replaceTarget: normalizeSolutionReplaceTarget(task?.replaceTarget),
       headingPath: normalizeStringList(task?.headingPath).slice(0, 12),
       planningFocus: normalizeStringList(task?.planningFocus).slice(0, 8),
       previousPlanSummary: cleanText(task?.previousPlanSummary).slice(0, 1000),
@@ -594,6 +595,7 @@ function normalizeTaskPlanRow({ matched, inputTask, sourceHeading, index, splitI
     sourceText: inputTask.sourceText || "未读取到标题下原文。",
     bodyState: inputTask.sourceText ? "已有标题原文" : "原文待读取",
     headingPath: inputTask.headingPath || [],
+    replaceTarget: inputTask.replaceTarget || null,
     planningFocus: inputTask.planningFocus || [],
     previousPlanSummary: inputTask.previousPlanSummary || "",
     planningSummary: cleanMultilineText(matched.planningSummary || matched.objective || "AI 未返回规划摘要。"),
@@ -622,6 +624,7 @@ function normalizeDraftTaskPlan(taskPlan = {}) {
             id: cleanText(task?.id) || `task-${index + 1}`,
             title: cleanTitle(task?.title || task?.taskTitle || task?.sourceHeading || `任务${index + 1}`),
             sourceHeading: cleanText(task?.sourceHeading || task?.title),
+            replaceTarget: normalizeSolutionReplaceTarget(task?.replaceTarget),
             planningSummary: cleanMultilineText(task?.planningSummary).slice(0, 1200),
             objective: cleanMultilineText(task?.objective).slice(0, 1200),
             executionPoints: normalizeStringList(task?.executionPoints).slice(0, 10),
@@ -647,6 +650,7 @@ function normalizeDraftCategoryResult(parsed, fallbackCategory) {
     return {
       id: task.id || `draft-${index + 1}`,
       sourceHeading,
+      replaceTarget: task.replaceTarget || null,
       title: cleanTitle(matched.title || task.title || sourceHeading),
       content: cleanMultilineText(matched.content || `需结合“${sourceHeading}”继续补充方案正文。`),
     };
@@ -663,6 +667,36 @@ function normalizeDraftCategoryResult(parsed, fallbackCategory) {
 function withFallbackList(value, fallback) {
   const rows = normalizeStringList(value);
   return rows.length ? rows : normalizeStringList(fallback);
+}
+
+function normalizeSolutionReplaceTarget(target) {
+  if (!target || typeof target !== "object") return null;
+  const styleRef = normalizeSolutionStyleRef(target.styleRef);
+  const bodyStyleRef = normalizeSolutionStyleRef(target.bodyStyleRef);
+  const title = cleanText(target.title);
+  return title || styleRef
+    ? {
+      title,
+      headingPath: normalizeStringList(target.headingPath).slice(0, 12),
+      styleRef,
+      bodyStyleRef,
+      bodyParagraphCount: Number.isFinite(Number(target.bodyParagraphCount)) ? Math.max(0, Number(target.bodyParagraphCount)) : 0,
+    }
+    : null;
+}
+
+function normalizeSolutionStyleRef(ref) {
+  if (!ref || typeof ref !== "object") return null;
+  const paragraphIndex = Number(ref.paragraphIndex);
+  if (!Number.isFinite(paragraphIndex)) return null;
+  return {
+    paragraphIndex,
+    outlineIndex: Number.isFinite(Number(ref.outlineIndex)) ? Number(ref.outlineIndex) : null,
+    title: cleanText(ref.title),
+    text: cleanText(ref.text),
+    level: Number.isFinite(Number(ref.level)) ? Number(ref.level) : null,
+    styleName: cleanText(ref.styleName),
+  };
 }
 
 function safeDebugName(value) {

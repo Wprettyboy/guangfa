@@ -1429,6 +1429,21 @@
     };
   }
 
+  function normalizeSolutionReplaceTarget(target) {
+    if (!target || typeof target !== "object") return null;
+    const title = String(target.title || "").trim();
+    const styleRef = normalizeSolutionStyleRef(target.styleRef);
+    const bodyStyleRef = normalizeSolutionStyleRef(target.bodyStyleRef);
+    if (!title && !styleRef) return null;
+    return {
+      title,
+      headingPath: Array.isArray(target.headingPath) ? target.headingPath.map(function (item) { return String(item || "").trim(); }).filter(Boolean) : [],
+      styleRef,
+      bodyStyleRef,
+      bodyParagraphCount: Number.isFinite(Number(target.bodyParagraphCount)) ? Math.max(0, Number(target.bodyParagraphCount)) : 0,
+    };
+  }
+
   function getSolutionStyleCandidates(item) {
     const raw = String(item?.styleName || item?.style || item?.styleFallback || "");
     const value = raw.toLowerCase();
@@ -1484,8 +1499,9 @@
     return false;
   }
 
-  function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText) {
+  function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
+    if (replaceTarget) return { ok: false, error: "当前 OnlyOffice 环境不支持按标题替换写入，请刷新文档后重试。" };
     const logicDocument = getLogicDocument();
     if (!logicDocument || typeof logicDocument.EnterText !== "function") return enterTextAtSelection(fallbackText, "solution-writing");
     try {
@@ -1517,14 +1533,15 @@
     }
   }
 
-  async function insertStructuredSolutionWritingText(paragraphs, fallbackText) {
+  async function insertStructuredSolutionWritingText(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
     if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
-      return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText);
+      return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget);
     }
     try {
       window.Asc.scope = window.Asc.scope || {};
       window.Asc.scope.gfSolutionWritingParagraphs = paragraphs;
+      window.Asc.scope.gfSolutionWritingReplaceTarget = replaceTarget || null;
       window.Asc.scope.gfSolutionWritingResult = null;
       await window.Asc.Editor.callCommand(function () {
         function callAny(targets, names, args) {
@@ -1577,6 +1594,85 @@
           } catch (error) {
             return [];
           }
+        }
+
+        function normalizeText(value) {
+          return String(value || "").replace(/\s+/g, " ").trim();
+        }
+
+        function getTargetTitle(target) {
+          if (!target) return "";
+          return normalizeText(target.title || (target.styleRef && (target.styleRef.title || target.styleRef.text)) || "");
+        }
+
+        function getParagraphStyleName(paragraph) {
+          try {
+            var paragraphPr = typeof paragraph.GetParaPr === "function" ? paragraph.GetParaPr() : null;
+            var style = paragraphPr && typeof paragraphPr.GetStyle === "function" ? paragraphPr.GetStyle() : null;
+            return style && typeof style.GetName === "function" ? style.GetName() : "";
+          } catch (error) {
+            return "";
+          }
+        }
+
+        function findTargetHeadingIndex(paragraphs, target) {
+          if (!target || !paragraphs.length) return -1;
+          var title = getTargetTitle(target);
+          var ref = target.styleRef || null;
+          var refIndex = Number(ref && ref.paragraphIndex);
+          if (Number.isFinite(refIndex) && paragraphs[refIndex]) {
+            var expected = normalizeText(ref.title || ref.text || title);
+            var candidate = normalizeText(getParagraphText(paragraphs[refIndex]));
+            if (!expected || candidate === expected || candidate === title) return refIndex;
+          }
+          if (!title) return -1;
+          for (var index = 0; index < paragraphs.length; index += 1) {
+            if (normalizeText(getParagraphText(paragraphs[index])) === title) return index;
+          }
+          return -1;
+        }
+
+        function findNextHeadingIndex(paragraphs, headingIndex) {
+          for (var index = headingIndex + 1; index < paragraphs.length; index += 1) {
+            if (isSolutionHeadingStyleName(getParagraphStyleName(paragraphs[index]))) return index;
+          }
+          return paragraphs.length;
+        }
+
+        function clearTargetBodyParagraphs(paragraphs, headingIndex, nextHeadingIndex) {
+          var cleared = 0;
+          for (var index = nextHeadingIndex - 1; index > headingIndex; index -= 1) {
+            var paragraph = paragraphs[index];
+            if (!paragraph || isSolutionHeadingStyleName(getParagraphStyleName(paragraph))) continue;
+            try {
+              if (typeof paragraph.Delete === "function" && paragraph.Delete() !== false) {
+                cleared += 1;
+                continue;
+              }
+            } catch (error) {}
+            try {
+              if (typeof paragraph.RemoveAllElements === "function" && paragraph.RemoveAllElements() !== false) cleared += 1;
+            } catch (error) {}
+          }
+          return cleared;
+        }
+
+        function getDocumentContentIndex(paragraph, fallbackIndex) {
+          try {
+            var impl = paragraph && typeof paragraph.private_GetImpl === "function" ? paragraph.private_GetImpl() : null;
+            var index = impl && typeof impl.GetIndex === "function" ? impl.GetIndex() : null;
+            if (Number.isFinite(Number(index)) && Number(index) >= 0) return Number(index);
+          } catch (error) {}
+          return fallbackIndex;
+        }
+
+        function insertContentAfterHeading(doc, headingParagraph, fallbackIndex, content) {
+          if (!content.length || typeof doc.AddElement !== "function") return false;
+          var insertIndex = getDocumentContentIndex(headingParagraph, fallbackIndex);
+          for (var index = 0; index < content.length; index += 1) {
+            if (doc.AddElement(insertIndex + 1 + index, content[index]) === false) return false;
+          }
+          return true;
         }
 
         function getReferenceParagraph(doc, item) {
@@ -1734,6 +1830,31 @@
           }
           if (textCount === 0) {
             Asc.scope.gfSolutionWritingResult = { ok: false, error: "方案规划没有可插入文本段落。" };
+            return;
+          }
+          var replaceTarget = Asc.scope.gfSolutionWritingReplaceTarget || null;
+          if (replaceTarget) {
+            var allParagraphs = getAllParagraphs(doc);
+            var headingIndex = findTargetHeadingIndex(allParagraphs, replaceTarget);
+            if (headingIndex < 0) {
+              Asc.scope.gfSolutionWritingResult = { ok: false, error: "未找到对应原模板标题：" + getTargetTitle(replaceTarget) };
+              return;
+            }
+            var nextHeadingIndex = findNextHeadingIndex(allParagraphs, headingIndex);
+            var cleared = clearTargetBodyParagraphs(allParagraphs, headingIndex, nextHeadingIndex);
+            if (!insertContentAfterHeading(doc, allParagraphs[headingIndex], headingIndex, content)) {
+              Asc.scope.gfSolutionWritingResult = { ok: false, error: "未能写入目标标题正文：" + getTargetTitle(replaceTarget) };
+              return;
+            }
+            Asc.scope.gfSolutionWritingResult = {
+              ok: true,
+              source: "api-replace-heading-body",
+              count: content.length,
+              textCount: textCount,
+              cleared,
+              targetTitle: getTargetTitle(replaceTarget),
+              styles: styleResults,
+            };
             return;
           }
           prepareCurrentInsertPosition(doc);
@@ -2352,8 +2473,9 @@
     const requestId = payload?.requestId || "";
     const text = String(payload?.text || "").trim();
     const paragraphs = normalizeSolutionWritingParagraphs(payload);
+    const replaceTarget = normalizeSolutionReplaceTarget(payload?.replaceTarget);
     const result = text
-      ? await insertStructuredSolutionWritingText(paragraphs, text)
+      ? await insertStructuredSolutionWritingText(paragraphs, text, replaceTarget)
       : { ok: false, error: "方案正文为空" };
     const message = { source: "guangfa-onlyoffice-custom", action: "solution-writing-inserted", result: { ...result, requestId } };
     try { window.parent?.postMessage(message, "*"); } catch {}

@@ -581,6 +581,7 @@ function SolutionWritingPanel({
           <SolutionDraftingPanel
             taskPlan={generatedTaskPlan}
             knowledgeOptions={knowledgeOptions}
+            onInsertText={onInsertText}
           />
         )}
       </div>
