@@ -1,8 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { apiMiddleware } from "./server/api/index.js";
-import { officeMiddleware } from "./server/office.js";
-import { outlineProbeMiddleware } from "./server/outline-probe.js";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -30,8 +28,6 @@ export default defineConfig(({ mode }) => {
             next();
           });
           server.middlewares.use(apiMiddleware());
-          server.middlewares.use(outlineProbeMiddleware());
-          server.middlewares.use(officeMiddleware());
         },
       },
     ],

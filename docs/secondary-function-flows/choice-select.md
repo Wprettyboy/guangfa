@@ -70,7 +70,7 @@
 
 | 节点 | 文件/接口 | 中文职责说明 |
 | --- | --- | --- |
-| Office 文档 | `server/office.js` / `/api/office/documents` | 初始化 OnlyOffice 编辑。 |
+| Office 文档 | `server/api/routes/office.routes.js` -> `server/office.js` / `/api/office/documents` | 初始化 OnlyOffice 编辑。 |
 | 下载 | `/api/office/download-url` | 下载现场 DOCX。 |
 | 回调 | `/api/office/callback/:id` | 保存 OnlyOffice 修改结果。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段和选择结果。 |

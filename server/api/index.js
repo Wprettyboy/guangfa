@@ -1,6 +1,7 @@
 import { registerAiRoutes } from "./routes/ai.routes.js";
 import { registerDraftRoutes } from "./routes/draft.routes.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.routes.js";
+import { registerOfficeRoutes } from "./routes/office.routes.js";
 import { registerSettingsRoutes } from "./routes/settings.routes.js";
 import { registerTemplateRoutes } from "./routes/templates.routes.js";
 import { createApiMiddleware } from "./router.js";
@@ -12,6 +13,7 @@ function ensureApiRoutesRegistered() {
   registerAiRoutes();
   registerDraftRoutes();
   registerKnowledgeRoutes();
+  registerOfficeRoutes();
   registerSettingsRoutes();
   registerTemplateRoutes();
   registered = true;
@@ -28,6 +30,7 @@ function apiMiddleware() {
       "/api/knowledge-documents/",
       "/api/knowledge-images/",
       "/api/knowledge-tables/",
+      "/api/office/",
       "/api/settings/",
       "/api/template-libraries",
       "/api/template-types",

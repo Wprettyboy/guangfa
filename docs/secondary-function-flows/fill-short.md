@@ -81,9 +81,9 @@
 
 | 节点 | 文件/接口 | 中文职责说明 |
 | --- | --- | --- |
-| Office 文档接口 | `server/office.js` / `/api/office/documents` | 上传 DOCX 给 OnlyOffice，返回编辑器配置。 |
-| Office 下载 | `server/office.js` / `/api/office/download-url` | 代理下载 OnlyOffice `downloadAs` 产生的 DOCX。 |
-| Office 回调 | `server/office.js` / `/api/office/callback/:id` | OnlyOffice 保存时把最新 DOCX 写回服务端临时目录。 |
+| Office 文档接口 | `server/api/routes/office.routes.js` -> `server/office.js` / `/api/office/documents` | 上传 DOCX 给 OnlyOffice，返回编辑器配置。 |
+| Office 下载 | `server/api/routes/office.routes.js` -> `server/office.js` / `/api/office/download-url` | 代理下载 OnlyOffice `downloadAs` 产生的 DOCX。 |
+| Office 回调 | `server/api/routes/office.routes.js` -> `server/office.js` / `/api/office/callback/:id` | OnlyOffice 保存时把最新 DOCX 写回服务端临时目录。 |
 | 草稿保存 | `server/draft.js` / `/api/draft` | 保存当前模板、字段、资料、知识库选择和填充结果到 `data/drafts/current.json`。 |
 | 模板库 | `server/api/routes/templates.routes.js` / `/api/templates` | 保存模板字段定义到 `data/templates/library.json`。 |
 | 模型原始日志 | `logs/ai-fill-last.json` | 保存 prompt、召回片段、模型原始 JSON 和解析结果。 |

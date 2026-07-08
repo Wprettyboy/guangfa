@@ -71,7 +71,7 @@
 
 | 节点 | 文件/接口 | 中文职责说明 |
 | --- | --- | --- |
-| Office 文档上传 | `server/office.js` / `/api/office/documents` | 把模板 DOCX 交给 OnlyOffice 编辑。 |
+| Office 文档上传 | `server/api/routes/office.routes.js` -> `server/office.js` / `/api/office/documents` | 把模板 DOCX 交给 OnlyOffice 编辑。 |
 | DOCX 下载 | `/api/office/download-url` | 下载 OnlyOffice 现场导出的 DOCX。 |
 | 保存回调 | `/api/office/callback/:id` | 接收 OnlyOffice 保存后的文件。 |
 | 草稿 | `server/draft.js` / `data/drafts/current.json` | 保存字段、资料、知识库选择和填充状态。 |

@@ -11,95 +11,72 @@ const localAiBaseUrl = toOnlyOfficeReachableUrl(process.env.LOCAL_LLM_BASE_URL |
 const localAiModel = process.env.LOCAL_LLM_MODEL || "qwen3.6-35b-a3b";
 const localAiApiKey = process.env.LOCAL_LLM_API_KEY || "sk-local";
 
-export function officeMiddleware() {
-  return async function handleOffice(request, response, next) {
-    const url = new URL(request.url, "http://127.0.0.1");
-    if (!url.pathname.startsWith("/api/office/")) {
-      next();
-      return;
-    }
-
-    try {
-      if (request.method === "GET" && url.pathname === "/api/office/health") {
-        sendJson(response, 200, {
-          serverUrl: onlyOfficeServerUrl,
-          publicBaseUrl,
-          available: await isOnlyOfficeAvailable(),
-        });
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/office/documents") {
-        await mkdir(officeDocsDir, { recursive: true });
-        const id = randomUUID();
-        const title = sanitizeFileName(decodeURIComponent(url.searchParams.get("title") || "document.docx"));
-        const previewId = url.searchParams.get("previewId") || "";
-        const filePath = getOfficeDocPath(id);
-        await writeRequestBody(request, filePath);
-        const [fileStat, fileBuffer] = await Promise.all([stat(filePath), readFile(filePath)]);
-        const sha = createHash("sha256").update(fileBuffer).digest("hex").slice(0, 12);
-        console.log(`[office-doc] post id=${id} previewId=${previewId || "-"} title=${title} bytes=${fileStat.size} sha=${sha}`);
-        sendJson(response, 200, {
-          id,
-          config: buildOnlyOfficeConfig({ id, title, fileStat, previewId, sha }),
-          serverUrl: onlyOfficeServerUrl,
-          available: await isOnlyOfficeAvailable(),
-        });
-        return;
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/office/download-url") {
-        const body = await readJsonBody(request);
-        const downloadUrl = String(body?.url || "");
-        const target = new URL(downloadUrl);
-        if (!["127.0.0.1", "localhost", "host.docker.internal"].includes(target.hostname)) {
-          const error = new Error("不允许下载该地址");
-          error.statusCode = 400;
-          throw error;
-        }
-        const result = await fetch(downloadUrl, { signal: AbortSignal.timeout(20000) });
-        if (!result.ok) {
-          const error = new Error("zl办公 导出文件下载失败");
-          error.statusCode = 502;
-          throw error;
-        }
-        const buffer = Buffer.from(await result.arrayBuffer());
-        response.statusCode = 200;
-        response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        response.setHeader("Cache-Control", "no-store");
-        response.end(buffer);
-        return;
-      }
-
-      const fileMatch = url.pathname.match(/^\/api\/office\/documents\/([a-f0-9-]+)\/file$/i);
-      if (request.method === "GET" && fileMatch) {
-        const file = await readFile(getOfficeDocPath(fileMatch[1]));
-        response.statusCode = 200;
-        response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        response.setHeader("Cache-Control", "no-store");
-        response.end(file);
-        return;
-      }
-
-      const callbackMatch = url.pathname.match(/^\/api\/office\/callback\/([a-f0-9-]+)$/i);
-      if (request.method === "POST" && callbackMatch) {
-        const body = await readJsonBody(request);
-        if ((body.status === 2 || body.status === 6) && body.url) {
-          const updated = await fetch(body.url).then((result) => result.arrayBuffer());
-          const buffer = Buffer.from(updated);
-          await writeFile(getOfficeDocPath(callbackMatch[1]), buffer);
-          const sha = createHash("sha256").update(buffer).digest("hex").slice(0, 12);
-          console.log(`[office-doc] callback id=${callbackMatch[1]} status=${body.status} bytes=${buffer.byteLength} sha=${sha}`);
-        }
-        sendJson(response, 200, { error: 0 });
-        return;
-      }
-
-      sendJson(response, 404, { error: "Office 接口不存在" });
-    } catch (error) {
-      sendJson(response, error.statusCode || 500, { error: error.message || "Office 服务处理失败" });
-    }
+async function getOfficeHealth() {
+  return {
+    serverUrl: onlyOfficeServerUrl,
+    publicBaseUrl,
+    available: await isOnlyOfficeAvailable(),
   };
+}
+
+async function createOfficeDocument(request, query) {
+  await mkdir(officeDocsDir, { recursive: true });
+  const id = randomUUID();
+  const title = sanitizeFileName(query.get("title") || "document.docx");
+  const previewId = query.get("previewId") || "";
+  const filePath = getOfficeDocPath(id);
+  await writeRequestBody(request, filePath);
+  const [fileStat, fileBuffer] = await Promise.all([stat(filePath), readFile(filePath)]);
+  const sha = createHash("sha256").update(fileBuffer).digest("hex").slice(0, 12);
+  console.log(`[office-doc] post id=${id} previewId=${previewId || "-"} title=${title} bytes=${fileStat.size} sha=${sha}`);
+  return {
+    id,
+    config: buildOnlyOfficeConfig({ id, title, fileStat, previewId, sha }),
+    serverUrl: onlyOfficeServerUrl,
+    available: await isOnlyOfficeAvailable(),
+  };
+}
+
+async function downloadOfficeUrl(body) {
+  const downloadUrl = String(body?.url || "");
+  const target = new URL(downloadUrl);
+  if (!["127.0.0.1", "localhost", "host.docker.internal"].includes(target.hostname)) {
+    const error = new Error("不允许下载该地址");
+    error.statusCode = 400;
+    throw error;
+  }
+  const result = await fetch(downloadUrl, { signal: AbortSignal.timeout(20000) });
+  if (!result.ok) {
+    const error = new Error("zl办公 导出文件下载失败");
+    error.statusCode = 502;
+    throw error;
+  }
+  return {
+    kind: "buffer",
+    buffer: Buffer.from(await result.arrayBuffer()),
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    headers: { "Cache-Control": "no-store" },
+  };
+}
+
+async function readOfficeDocumentFile(id) {
+  return {
+    kind: "buffer",
+    buffer: await readFile(getOfficeDocPath(id)),
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    headers: { "Cache-Control": "no-store" },
+  };
+}
+
+async function handleOfficeCallback(id, body) {
+  if ((body.status === 2 || body.status === 6) && body.url) {
+    const updated = await fetch(body.url).then((result) => result.arrayBuffer());
+    const buffer = Buffer.from(updated);
+    await writeFile(getOfficeDocPath(id), buffer);
+    const sha = createHash("sha256").update(buffer).digest("hex").slice(0, 12);
+    console.log(`[office-doc] callback id=${id} status=${body.status} bytes=${buffer.byteLength} sha=${sha}`);
+  }
+  return { error: 0 };
 }
 
 function buildOnlyOfficeConfig({ id, title, fileStat, previewId, sha }) {
@@ -228,33 +205,10 @@ function writeRequestBody(request, filePath) {
   });
 }
 
-function readJsonBody(request) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    request.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 2 * 1024 * 1024) {
-        const error = new Error("请求内容过大");
-        error.statusCode = 413;
-        reject(error);
-        request.destroy();
-      }
-    });
-    request.on("end", () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch {
-        const error = new Error("请求 JSON 格式错误");
-        error.statusCode = 400;
-        reject(error);
-      }
-    });
-    request.on("error", reject);
-  });
-}
-
-function sendJson(response, statusCode, body) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.end(JSON.stringify(body));
-}
+export {
+  createOfficeDocument,
+  downloadOfficeUrl,
+  getOfficeHealth,
+  handleOfficeCallback,
+  readOfficeDocumentFile,
+};

@@ -105,7 +105,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，负责 `GF_PH_` 书签插入、跳转、删除和按书签替换填充值。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
-- `server/office.js`：DOCX 上传给 OnlyOffice、callback 保存、download-url、OnlyOffice 初始化配置。
+- `server/api/routes/office.routes.js`：Office 接口注册入口；handler 调用 `server/office.js` 和 `server/outline-probe.js`，不要在路由里写 Office 业务规则。
+- `server/office.js`：DOCX 上传保存、callback 保存、download-url、OnlyOffice 初始化配置等业务函数。
 
 ### 本地 API 管理
 
@@ -188,8 +189,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - 已新增 `server/api/` 轻量注册表，用代码维护接口清单，避免把接口长期散写在交接文档或 Vite middleware 分支里。
 - Vite dev server 当前挂载 `apiMiddleware()`；注册表内置 `GET /api/_meta/routes` 查看已登记接口，`GET /api/_meta/openapi.json` 生成 OpenAPI 3.0.3 文档。
-- 当前已迁移知识库、AI、草稿、模板库/模板类型、系统设置等 JSON API；Office 文档上传/下载/callback 与 OnlyOffice 大纲探针仍保持独立 middleware。
-- 迁移后的路由只做协议层定义，仍调用知识库、AI、模板、设置、草稿等原有业务函数；`server/knowledge-base.js` 保留兼容导出。
+- 当前已迁移知识库、AI、草稿、模板库/模板类型、系统设置、Office 文档、OnlyOffice 大纲探针等本地 API；接口清单以 `/api/_meta/routes` 与 `/api/_meta/openapi.json` 为准。
+- 迁移后的路由只做协议层定义，仍调用知识库、AI、模板、设置、草稿、Office 等原有业务函数；`server/knowledge-base.js` 保留兼容导出。
 - 后续新增或迁移本地 API 时，优先新增对应 `server/api/routes/<module>.routes.js`，在 `server/api/index.js` 注册；不要把 handler 写成大路由分发文件。
 
 ### Gemini 3.1 Flash Lite 文本模型
@@ -212,12 +213,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 #### 服务端 Office 接口
 
-- `GET /api/office/health`：返回 OnlyOffice 服务地址、当前公开回调地址和可用状态。
-- `POST /api/office/documents?title=...&previewId=...`：接收 DOCX 二进制，写入本地临时目录，返回 `{ id, config, serverUrl, available }`；`config` 直接传给 `DocsAPI.DocEditor`。
-- `GET /api/office/documents/:id/file`：读取当前文档二进制，供预览刷新、同步、导出前取回。
-- `POST /api/office/callback/:id`：OnlyOffice 回调入口；当回调状态为 `2` 或 `6` 且带 `url` 时，下载最新文档覆盖本地临时文件。
-- `POST /api/office/download-url`：代理下载 OnlyOffice `downloadAs` 事件返回的文件地址；只允许 `127.0.0.1`、`localhost`、`host.docker.internal`。
-- `server/office.js` 的 `buildOnlyOfficeConfig()` 负责生成 `document.url`、`document.key`、`editorConfig.callbackUrl` 和编辑权限；不要在前端手写 OnlyOffice 初始化配置。
+- Office 服务端接口统一登记在 `server/api/routes/office.routes.js`；具体路径、方法、参数和响应以 `/api/_meta/routes` 与 `/api/_meta/openapi.json` 为准，不再在交接文档手工维护清单。
+- `server/office.js` 负责生成 OnlyOffice `document.url`、`document.key`、`editorConfig.callbackUrl`、编辑权限和 AI 插件配置；前端不要手写 OnlyOffice 初始化配置。
 
 #### 前端桥接函数
 
