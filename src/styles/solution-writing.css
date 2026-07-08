@@ -64,7 +64,7 @@
 
 .solution-plan-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -671,6 +671,7 @@
 }
 
 .solution-task-panel,
+.solution-illustration-panel,
 .solution-draft-panel,
 .solution-draft-list,
 .solution-draft-section-list,
@@ -754,6 +755,25 @@
   color: #475569;
   font-size: 12px;
   padding: 4px 8px;
+}
+
+.solution-illustration-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.solution-illustration-scope span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .solution-task-density {

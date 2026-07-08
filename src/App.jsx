@@ -2243,6 +2243,7 @@ export default function App() {
                 onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
                 onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
                 onKnowledgeTopKChange={setKnowledgeTopK}
+                onInsertKnowledgeImage={insertKnowledgeImage}
                 onAddComplexFillField={addComplexFillField}
                 onUpdateComplexFillField={updateComplexFillField}
                 onDeleteComplexFillField={deleteComplexFillField}

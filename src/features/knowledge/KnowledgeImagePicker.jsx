@@ -5,6 +5,9 @@ import { searchKnowledgeImages } from "../../services/knowledgeBase.js";
 
 function KnowledgeImagePicker({
   open,
+  title = "插入资料图片",
+  emptyScopeMessage = "请先在填充工作台选择项目库或全局库。",
+  insertButtonLabel = "插入到光标",
   knowledgeBases = [],
   selectedProjectKnowledgeBaseIds = [],
   selectedGlobalKnowledgeBaseIds = [],
@@ -76,7 +79,7 @@ function KnowledgeImagePicker({
     <div className="knowledge-table-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="knowledge-table-modal knowledge-image-modal" role="dialog" aria-modal="true" aria-label="插入知识库图片" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-title">
-          <h2>插入资料图片</h2>
+          <h2>{title}</h2>
           <button className="icon-button quiet" type="button" onClick={onClose} aria-label="关闭">
             <X size={17} />
           </button>
@@ -99,7 +102,7 @@ function KnowledgeImagePicker({
           </button>
         </div>
         <div className="knowledge-table-scope">
-          {selectedIds.length === 0 ? "请先在填充工作台选择项目库或全局库。" : `当前范围：${selectedKnowledgeBaseNames.join("、")}`}
+          {selectedIds.length === 0 ? emptyScopeMessage : `当前范围：${selectedKnowledgeBaseNames.join("、")}`}
         </div>
         <div className="knowledge-table-body">
           <aside className="knowledge-table-documents">
@@ -157,7 +160,7 @@ function KnowledgeImagePicker({
                   </div>
                   <button className="tool-button primary" type="button" onClick={insertSelectedImage} disabled={insertStatus === "inserting"}>
                     {insertStatus === "inserting" ? <Loader2 size={15} className="spin" /> : <ImageIcon size={15} />}
-                    插入到光标
+                    {insertButtonLabel}
                   </button>
                 </div>
                 <div className="knowledge-table-preview-scroll knowledge-image-preview-scroll">

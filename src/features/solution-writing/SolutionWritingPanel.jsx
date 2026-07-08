@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
 import SolutionDraftingPanel from "./SolutionDraftingPanel.jsx";
+import SolutionIllustrationPanel from "./SolutionIllustrationPanel.jsx";
 import TaskPlanningPanel from "./TaskPlanningPanel.jsx";
 
 const SOLUTION_STYLE_OPTIONS = [
@@ -27,6 +28,7 @@ function SolutionWritingPanel({
   onKnowledgeTopKChange,
   onRequestOutline,
   onInsertText,
+  onInsertImage,
   onSaveTemplate,
 }) {
   const [localOutline, setLocalOutline] = useState(null);
@@ -282,6 +284,19 @@ function SolutionWritingPanel({
             <span>
               <strong>方案编制</strong>
               <em>{generatedTaskPlan?.stats?.taskCount ? `承接 ${generatedTaskPlan.stats.taskCount} 个任务` : "待承接任务"}</em>
+            </span>
+            <ChevronRight size={15} />
+          </button>
+          <button
+            className={activePlanPanel === "illustration-plan" ? "solution-plan-tab active" : "solution-plan-tab"}
+            type="button"
+            onClick={() => setActivePlanPanel("illustration-plan")}
+            role="tab"
+            aria-selected={activePlanPanel === "illustration-plan"}
+          >
+            <span>
+              <strong>方案配图</strong>
+              <em>{selectedKnowledgeBases.length ? `知识库 ${selectedKnowledgeBases.length} 个` : "待选择配图"}</em>
             </span>
             <ChevronRight size={15} />
           </button>
@@ -577,11 +592,18 @@ function SolutionWritingPanel({
             onRefreshOutline={refreshOutline}
             onTaskPlanGenerated={setGeneratedTaskPlan}
           />
-        ) : (
+        ) : activePlanPanel === "draft-plan" ? (
           <SolutionDraftingPanel
             taskPlan={generatedTaskPlan}
             knowledgeOptions={knowledgeOptions}
             onInsertText={onInsertText}
+          />
+        ) : (
+          <SolutionIllustrationPanel
+            knowledgeBases={knowledgeBases}
+            selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
+            selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
+            onInsertImage={onInsertImage}
           />
         )}
       </div>
