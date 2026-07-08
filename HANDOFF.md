@@ -243,7 +243,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeInsertKnowledgeTable(table)`：发送 `insert-knowledge-table`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入表格片段 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退创建普通表格。
 - `requestOnlyOfficeInsertKnowledgeImage(image)`：发送 `insert-knowledge-image`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入后端生成的图片片段 DOCX。
 - `requestOnlyOfficeOutline(options)`：发送 `request-outline`，等待注入脚本回传 `onlyoffice-outline-probe`，用于按需读取当前文档大纲；回传结果可包含 `documentStyles`，大纲项可带 `styleName/bodyStyleName`，供前端使用模板段落真实 Word 样式名。
-- `requestOnlyOfficeInsertSolutionText(text, options)`：发送 `insert-solution-writing-text`，让注入脚本把内容写入当前光标或选区位置；`options.paragraphs` 可传结构化段落，段落支持 `type/level/style/styleName/styleFallback/text`，注入脚本会优先按精确 Word 样式名写入；`options.replaceTarget` 可传目标标题段落引用，注入脚本会按标题定位清理该标题下方正文并写入新段落。
+- `requestOnlyOfficeInsertSolutionText(text, options)`：写入方案编制文本；`options.paragraphs` 可传结构化段落，段落支持 `type/level/style/styleName/styleFallback/text`，Connector/注入脚本会优先按精确 Word 样式名写入；`options.replaceTarget` 可传目标标题段落引用，Connector 优先按标题定位清理该标题下方正文并写入新段落，Connector 不可用时回退注入脚本。
 - `requestOnlyOfficeAnalyzeLayoutFormat(standard)`：发送 `analyze-layout-format`，让排版注入脚本读取 OnlyOffice 文档段落并按标准规则返回 `layout-format-analyzed` findings。
 - `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按修复计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。

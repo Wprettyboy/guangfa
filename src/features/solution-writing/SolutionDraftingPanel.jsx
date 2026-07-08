@@ -80,7 +80,6 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText }) {
     const result = await onInsertText?.(payload.text, {
       paragraphs: payload.paragraphs,
       replaceTarget: payload.replaceTarget,
-      skipConnector: Boolean(payload.replaceTarget),
       timeoutMs: 20000,
     });
     if (result?.ok) {

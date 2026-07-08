@@ -537,8 +537,8 @@ function requestOnlyOfficeInsertSolutionText(text, options = {}) {
   const requestId = options.requestId || `solution-writing-${Date.now()}-${++onlyOfficeSolutionWritingRequestSeq}`;
   const timeoutMs = Number(options.timeoutMs || 12000);
   const paragraphs = Array.isArray(options.paragraphs) ? options.paragraphs : [];
-  if (paragraphs.length && !options.skipConnector && !options.replaceTarget) {
-    return insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeoutMs })
+  if (paragraphs.length && !options.skipConnector) {
+    return insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeoutMs, replaceTarget: options.replaceTarget || null })
       .then((result) => {
         if (result?.ok) return result;
         return requestOnlyOfficeInsertSolutionTextViaProbe(text, { ...options, requestId, timeoutMs, connectorResult: result });
