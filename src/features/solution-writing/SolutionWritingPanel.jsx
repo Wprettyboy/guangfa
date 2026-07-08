@@ -41,6 +41,7 @@ function SolutionWritingPanel({
   const [message, setMessage] = useState("");
   const effectiveOutline = localOutline || outline;
   const rawOutlineCount = Array.isArray(effectiveOutline?.items) ? effectiveOutline.items.length : 0;
+  const styleDebug = effectiveOutline?.styleDebug || null;
   const outlineItems = useMemo(() => normalizeOutlineItems(effectiveOutline?.items), [effectiveOutline]);
   const documentStyles = useMemo(() => normalizeDocumentStyles(effectiveOutline?.documentStyles), [effectiveOutline]);
   const templateGroups = useMemo(() => buildTemplateGroups(outlineItems), [outlineItems]);
@@ -312,6 +313,9 @@ function SolutionWritingPanel({
                       测试写入
                     </button>
                   </div>
+                  {styleDebug ? (
+                    <StyleDebugPanel debug={styleDebug} />
+                  ) : null}
                 </div>
               </div>
             </>
@@ -722,6 +726,34 @@ function buildStyleProbeRows(group, styleRows = [], styleSelections = {}) {
       capturedSource: template?.styleSource || "",
     };
   });
+}
+
+function StyleDebugPanel({ debug }) {
+  const samples = Array.isArray(debug?.samples) ? debug.samples : [];
+  const requestedTitles = Array.isArray(debug?.requestedTitles) ? debug.requestedTitles : [];
+  return (
+    <div className="solution-style-debug">
+      <div>
+        <span>探针</span>
+        <em>
+          段落 {debug?.paragraphCount ?? 0} 个 · 有文本 {debug?.nonEmptyParagraphCount ?? 0} 个
+          {debug?.error ? ` · ${debug.error}` : ""}
+        </em>
+      </div>
+      {requestedTitles.length ? (
+        <div>
+          <span>待匹配</span>
+          <em>{requestedTitles.map((item) => item.title).filter(Boolean).slice(0, 4).join(" / ")}</em>
+        </div>
+      ) : null}
+      {samples.slice(0, 6).map((sample) => (
+        <div key={`${sample.paragraphIndex}-${sample.text}`}>
+          <span>#{sample.paragraphIndex}</span>
+          <em>{sample.styleName || "无样式"} · {sample.text}</em>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function buildDefaultStyleSelections(group, documentStyles = []) {

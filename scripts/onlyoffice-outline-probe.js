@@ -174,6 +174,12 @@
           }
           return null;
         }
+        function callWithArgs(target, name, args) {
+          try {
+            if (target && typeof target[name] === "function") return target[name].apply(target, args || []);
+          } catch (error) {}
+          return null;
+        }
         function collectParagraphs(element, paragraphs) {
           if (!element) return;
           var className = String(element.constructor?.name || "");
@@ -192,8 +198,42 @@
           collectParagraphs(doc, paragraphs);
           return paragraphs;
         }
+        function collectChildText(element, parts, depth) {
+          if (!element || depth > 6) return;
+          var text = "";
+          try {
+            if (typeof element.GetText === "function") text = normalizeText(element.GetText());
+          } catch (error) {}
+          if (text) parts.push(text);
+          var count = Number(callAny(element, ["GetElementsCount"]) || 0) || 0;
+          for (var index = 0; index < count; index += 1) {
+            try {
+              collectChildText(element.GetElement(index), parts, depth + 1);
+            } catch (error) {}
+          }
+        }
         function getParagraphText(paragraph) {
-          return normalizeText(callAny(paragraph, ["GetText"]));
+          var options = { NewLine: true, ParaSeparator: "\n", Numbering: false };
+          var rangeAttempts = [
+            function () { return callWithArgs(paragraph, "GetRange", [0, -1]); },
+            function () { return callWithArgs(paragraph, "GetRange", []); },
+          ];
+          for (var rangeIndex = 0; rangeIndex < rangeAttempts.length; rangeIndex += 1) {
+            var range = rangeAttempts[rangeIndex]();
+            var rangeText = normalizeText(
+              callWithArgs(range, "GetText", [options])
+              || callWithArgs(range, "GetText", [])
+            );
+            if (rangeText) return rangeText;
+          }
+          var directText = normalizeText(
+            callWithArgs(paragraph, "GetText", [options])
+            || callWithArgs(paragraph, "GetText", [])
+          );
+          if (directText) return directText;
+          var parts = [];
+          collectChildText(paragraph, parts, 0);
+          return normalizeText(parts.join(" "));
         }
         function getStyleNameFromStyle(style) {
           return normalizeText(
@@ -221,6 +261,20 @@
               styleName: getParagraphStyleName(paragraph),
             };
           }).filter(function (row) { return row.text; });
+          Asc.scope.gfOutlineStyleDebug = {
+            paragraphCount: paragraphs.length,
+            nonEmptyParagraphCount: paragraphRows.length,
+            requestedTitles: (Asc.scope.gfOutlineStyleItems || []).map(function (item) {
+              return { index: item.index, title: item.title };
+            }).slice(0, 12),
+            samples: paragraphRows.slice(0, 18).map(function (row) {
+              return {
+                paragraphIndex: row.paragraphIndex,
+                text: row.text,
+                styleName: row.styleName,
+              };
+            }),
+          };
           var cursor = 0;
           var matched = [];
           var items = Asc.scope.gfOutlineStyleItems || [];
@@ -262,6 +316,7 @@
           Asc.scope.gfOutlineStyleResult = matched;
         } catch (error) {
           Asc.scope.gfOutlineStyleResult = [];
+          Asc.scope.gfOutlineStyleDebug = { error: String(error?.message || error || "样式读取失败") };
         }
       });
       return Array.isArray(window.Asc.scope.gfOutlineStyleResult) ? window.Asc.scope.gfOutlineStyleResult : [];
@@ -1916,6 +1971,7 @@
       })
       : [];
     payload.documentStyles = documentStyles;
+    payload.styleDebug = window.Asc?.scope?.gfOutlineStyleDebug || null;
     try {
       console.log("[guangfa-onlyoffice-outline]", payload);
       if (payload.items && console.table) console.table(payload.items);

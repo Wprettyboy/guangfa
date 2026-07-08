@@ -287,6 +287,37 @@
   flex: 0 0 auto;
 }
 
+.solution-style-debug {
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.95);
+  padding: 7px 8px;
+}
+
+.solution-style-debug div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.solution-style-debug span {
+  flex: 0 0 48px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.solution-style-debug em {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .solution-knowledge-group {
   display: grid;
   gap: 6px;
