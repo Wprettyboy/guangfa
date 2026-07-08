@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
+import TaskPlanningPanel from "./TaskPlanningPanel.jsx";
 
 const SOLUTION_STYLE_OPTIONS = [
   { value: "body", label: "正文" },
@@ -552,9 +553,13 @@ function SolutionWritingPanel({
         </section>
           </div>
         ) : (
-          <section className="solution-block">
-            <div className="empty-state compact">任务规划功能将在这里配置。</div>
-          </section>
+          <TaskPlanningPanel
+            outlineItems={outlineItems}
+            rawOutlineCount={rawOutlineCount}
+            busy={busy}
+            status={status}
+            onRefreshOutline={refreshOutline}
+          />
         )}
       </div>
 
