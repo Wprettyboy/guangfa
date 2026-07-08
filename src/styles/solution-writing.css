@@ -1,5 +1,9 @@
 .solution-writing-panel {
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -11,6 +15,19 @@
   gap: 12px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.solution-writing-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.solution-writing-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d4e3;
+}
+
+.solution-writing-scroll::-webkit-scrollbar-track {
+  background: #f5f7fb;
 }
 
 .solution-block {
