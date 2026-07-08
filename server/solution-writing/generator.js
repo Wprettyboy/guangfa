@@ -236,7 +236,7 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
   ].join("\n");
   const userPrompt = [
     "输出 JSON：",
-    '{"title":"一级类别名","sourceHeading":"来源一级标题","tasks":[{"sourceHeading":"来源标题","taskTitle":"任务名称","planningSummary":"这块要想清楚什么、怎么写、为什么这样规划","objective":"任务目标","exclusiveBoundary":{"include":["写什么"],"exclude":["不写什么"],"handoffToChildren":["下沉给子标题的内容"]},"executionPoints":["执行要点"],"deliverables":["交付物"],"dependsOn":["依赖任务"],"producesForNext":["产出给后续"]}],"warnings":["可为空"]}',
+    '{"title":"一级类别名","sourceHeading":"来源一级标题","tasks":[{"sourceHeading":"来源标题","taskTitle":"任务名称","planningSummary":"说明这个标题下应如何分层写：先详细描述什么，再详细描述什么，最后如何形成交付或验收","objective":"任务目标","exclusiveBoundary":{"include":["写什么"],"exclude":["不写什么"],"handoffToChildren":["下沉给子标题的内容"]},"executionPoints":["按顺序执行或写作的要点"],"deliverables":["交付物"],"dependsOn":["依赖任务"],"producesForNext":["产出给后续"]}],"warnings":["可为空"]}',
     "",
     "【完整方案大纲】",
     outlineText || "未读取到完整大纲。",
@@ -261,10 +261,10 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
     ].join("\n")).join("\n\n"),
     "",
     "生成规则：",
-    "1. tasks 必须覆盖上面每个来源标题，不能少于输入标题数量。",
-    "2. sourceHeading 必须使用输入中的来源标题原文。",
+    "1. tasks 必须覆盖上面每个来源标题，不能少于输入标题数量；适中/丰富模式的拆分必须体现为 tasks 数组里的多条对象，不能只堆在 executionPoints 里。",
+    "2. sourceHeading 必须使用输入中的来源标题原文；同一标题拆成多个任务时 sourceHeading 保持相同。",
     "3. taskTitle 不要输出章节编号。",
-    "4. planningSummary 要说明当前标题在整体方案架构中的作用、这块要写清楚什么、怎么写，以及如何避免和前序任务重复。",
+    "4. planningSummary 要先说明当前标题在整体方案架构中的作用，再说明本标题下内容应如何分层展开：先详细描述什么、再详细描述什么、最后如何落到交付或验收。",
     "5. exclusiveBoundary 必须明确写什么、不写什么；有下级标题时要说明哪些内容下沉给子标题。",
     "6. dependsOn 只能引用本类别前序任务；本类别第一个任务可为空数组。",
     "7. producesForNext 要写清楚给后续标题规划传递什么上下文。",
@@ -282,7 +282,7 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
       knowledgeSnippets: summarizeSnippetsForDebug(snippets),
     },
   });
-  return normalizeTaskPlanCategoryResult(parsed, category);
+  return normalizeTaskPlanCategoryResult(parsed, category, taskDensity);
 }
 
 async function generateSolutionDraftContent(payload = {}) {
@@ -411,9 +411,11 @@ function getTaskDensityRule(density) {
   if (density === "rich") {
     return {
       label: "丰富",
+      maxTasksPerHeading: 4,
       prompt: [
         "用于需要更充实篇幅的方案编制。",
-        "每个标题至少 1 个任务；当原文或知识库中存在多个建设点、角色、流程、数据、接口、配置、验收要求时，可以拆成 2-4 个任务。",
+        "每个标题至少 1 个任务；当原文或知识库中存在多个建设点、角色、流程、数据、接口、配置、验收要求时，优先围绕同一 sourceHeading 拆成 2-4 个任务对象。",
+        "拆分逻辑优先按“先说明建设背景/业务对象，再说明功能或流程设计，再说明数据/接口/配置，再说明测试验收和交付边界”展开。",
         "丰富只能细化本次建设范围内的设计、实现、配置、联调、测试、交付、培训、验收、风险边界，不得新增资料没有体现的功能或模块。",
         "如果资料不足，不要硬扩功能，改为补充待确认事项、验收口径、实施边界和交付说明。",
       ].join(""),
@@ -422,15 +424,18 @@ function getTaskDensityRule(density) {
   if (density === "moderate") {
     return {
       label: "适中",
+      maxTasksPerHeading: 2,
       prompt: [
         "用于常规正式方案编制。",
-        "每个标题至少 1 个任务；当原文明确包含多个事项时，可拆成 1-2 个任务。",
+        "每个标题至少 1 个任务；当原文明确包含多个事项时，优先围绕同一 sourceHeading 拆成 1-2 个任务对象。",
+        "拆分逻辑优先按“先说明内容对象和目标，再说明执行动作和交付验收”展开。",
         "适度补充执行步骤、交付物、验收关注点和前置依赖，但不得扩展本次建设范围外功能。",
       ].join(""),
     };
   }
   return {
-    label: "简洁",
+    label: "简单",
+    maxTasksPerHeading: 1,
     prompt: [
       "用于简单方案编制。",
       "原则上每个标题生成 1 个任务，只保留必要目标、关键动作和交付物。",
@@ -474,34 +479,23 @@ function normalizeTaskPlanInputTasks(tasks) {
     .slice(0, 80);
 }
 
-function normalizeTaskPlanCategoryResult(parsed, fallbackCategory) {
-  const inputHeadings = fallbackCategory.tasks.map((task) => task.sourceHeading);
+function normalizeTaskPlanCategoryResult(parsed, fallbackCategory, taskDensity = "concise") {
+  const densityRule = getTaskDensityRule(taskDensity);
+  const inputTasks = fallbackCategory.tasks;
   const rows = Array.isArray(parsed?.tasks) ? parsed.tasks : [];
-  const tasks = inputHeadings.map((sourceHeading, index) => {
-    const matched = rows.find((row) => cleanText(row?.sourceHeading) === sourceHeading) || rows[index] || {};
-    const inputTask = fallbackCategory.tasks[index] || {};
-    const taskTitle = cleanTitle(matched.taskTitle || inputTask.title || sourceHeading);
-    return {
-      id: inputTask.id || `task-${index + 1}`,
-      title: taskTitle ? `规划${taskTitle}对应执行任务` : `规划${cleanTitle(sourceHeading)}对应执行任务`,
-      sourceHeading,
-      sourceText: inputTask.sourceText || "未读取到标题下原文。",
-      bodyState: inputTask.sourceText ? "已有标题原文" : "原文待读取",
-      headingPath: inputTask.headingPath || [],
-      planningFocus: inputTask.planningFocus || [],
-      previousPlanSummary: inputTask.previousPlanSummary || "",
-      planningSummary: cleanMultilineText(matched.planningSummary || matched.objective || "AI 未返回规划摘要。"),
-      objective: cleanMultilineText(matched.objective || `形成“${cleanTitle(sourceHeading)}”对应的执行任务规划。`),
-      exclusiveBoundary: {
-        include: withFallbackList(matched.exclusiveBoundary?.include, inputTask.exclusiveBoundary?.include).slice(0, 8),
-        exclude: withFallbackList(matched.exclusiveBoundary?.exclude, inputTask.exclusiveBoundary?.exclude).slice(0, 8),
-        handoffToChildren: withFallbackList(matched.exclusiveBoundary?.handoffToChildren, inputTask.exclusiveBoundary?.handoffToChildren).slice(0, 8),
-      },
-      executionPoints: withFallbackList(matched.executionPoints, ["确认标题原文要求", "拆解执行步骤", "明确验收关注点"]).slice(0, 10),
-      deliverables: withFallbackList(matched.deliverables, ["任务边界说明", "执行要点清单", "验收关注点清单"]).slice(0, 10),
-      dependsOn: normalizeStringList(matched.dependsOn).slice(0, 8),
-      producesForNext: normalizeStringList(matched.producesForNext).slice(0, 8),
-    };
+  const tasks = inputTasks.flatMap((inputTask, index) => {
+    const sourceHeading = inputTask.sourceHeading;
+    const matchedRows = findTaskRowsForHeading(rows, sourceHeading);
+    const fallbackRows = matchedRows.length ? matchedRows : [rows[index] || {}];
+    return fallbackRows
+      .slice(0, densityRule.maxTasksPerHeading)
+      .map((matched, splitIndex) => normalizeTaskPlanRow({
+        matched,
+        inputTask,
+        sourceHeading,
+        index,
+        splitIndex,
+      }));
   });
   return {
     id: fallbackCategory.id,
@@ -511,6 +505,39 @@ function normalizeTaskPlanCategoryResult(parsed, fallbackCategory) {
     contextRule: fallbackCategory.contextRule,
     tasks,
     warnings: normalizeStringList(parsed?.warnings).slice(0, 5),
+  };
+}
+
+function findTaskRowsForHeading(rows, sourceHeading) {
+  const exact = rows.filter((row) => cleanText(row?.sourceHeading) === sourceHeading);
+  if (exact.length) return exact;
+  const normalized = normalizeTitle(sourceHeading);
+  return rows.filter((row) => normalizeTitle(row?.sourceHeading) === normalized);
+}
+
+function normalizeTaskPlanRow({ matched, inputTask, sourceHeading, index, splitIndex }) {
+  const taskTitle = cleanTitle(matched.taskTitle || inputTask.title || sourceHeading);
+  const idSuffix = splitIndex > 0 ? `-${splitIndex + 1}` : "";
+  return {
+    id: `${inputTask.id || `task-${index + 1}`}${idSuffix}`,
+    title: taskTitle ? `规划${taskTitle}对应执行任务` : `规划${cleanTitle(sourceHeading)}对应执行任务`,
+    sourceHeading,
+    sourceText: inputTask.sourceText || "未读取到标题下原文。",
+    bodyState: inputTask.sourceText ? "已有标题原文" : "原文待读取",
+    headingPath: inputTask.headingPath || [],
+    planningFocus: inputTask.planningFocus || [],
+    previousPlanSummary: inputTask.previousPlanSummary || "",
+    planningSummary: cleanMultilineText(matched.planningSummary || matched.objective || "AI 未返回规划摘要。"),
+    objective: cleanMultilineText(matched.objective || `形成“${cleanTitle(sourceHeading)}”对应的执行任务规划。`),
+    exclusiveBoundary: {
+      include: withFallbackList(matched.exclusiveBoundary?.include, inputTask.exclusiveBoundary?.include).slice(0, 8),
+      exclude: withFallbackList(matched.exclusiveBoundary?.exclude, inputTask.exclusiveBoundary?.exclude).slice(0, 8),
+      handoffToChildren: withFallbackList(matched.exclusiveBoundary?.handoffToChildren, inputTask.exclusiveBoundary?.handoffToChildren).slice(0, 8),
+    },
+    executionPoints: withFallbackList(matched.executionPoints, ["确认标题原文要求", "拆解执行步骤", "明确验收关注点"]).slice(0, 10),
+    deliverables: withFallbackList(matched.deliverables, ["任务边界说明", "执行要点清单", "验收关注点清单"]).slice(0, 10),
+    dependsOn: normalizeStringList(matched.dependsOn).slice(0, 8),
+    producesForNext: normalizeStringList(matched.producesForNext).slice(0, 8),
   };
 }
 

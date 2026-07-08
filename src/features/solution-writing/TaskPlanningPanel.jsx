@@ -4,7 +4,7 @@ import { generateSolutionTaskPlan, testSolutionTaskKnowledge } from "./service.j
 import { buildTaskPlanningPreview } from "./taskPlanning.js";
 
 const TASK_DENSITY_OPTIONS = [
-  { value: "concise", label: "简洁", description: "适合简单方案，任务保持必要颗粒度" },
+  { value: "concise", label: "简单", description: "适合简单方案，任务保持必要颗粒度" },
   { value: "moderate", label: "适中", description: "适度展开设计、执行、验收要求" },
   { value: "rich", label: "丰富", description: "在资料范围内细化任务，支撑更充实正文" },
 ];
