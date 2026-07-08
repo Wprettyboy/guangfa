@@ -1,5 +1,3 @@
-import { templateCategories } from "../constants/templates.js";
-
 import { normalizeFieldCategory } from "./fields.js";
 
 
@@ -21,7 +19,9 @@ function inferTemplateCategory(value = "") {
 }
 
 function normalizeTemplateCategory(category) {
-  return templateCategories.includes(category) && category !== "全部" ? category : "招标类";
+  const value = String(category || "").trim();
+  if (!value || value === "全部") return "招标类";
+  return value;
 }
 
 function getContractFolder(template = {}) {

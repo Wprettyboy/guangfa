@@ -2,6 +2,7 @@ const templateDbName = "tender-agent-template-db";
 
 const templateStoreName = "templates";
 const currentDraftVersion = 3;
+const defaultTemplateTypeNames = ["招标类", "合同类", "方案类"];
 
 async function openTemplateDb() {
   return new Promise((resolve, reject) => {
@@ -121,6 +122,49 @@ async function readDraftState() {
   } catch {
     return null;
   }
+}
+
+async function readTemplateTypes() {
+  try {
+    const response = await fetch("/api/template-types");
+    if (!response.ok) return defaultTemplateTypeNames.map(createFallbackTemplateType);
+    const types = await response.json();
+    const normalized = normalizeTemplateTypes(types);
+    return normalized.length > 0 ? normalized : defaultTemplateTypeNames.map(createFallbackTemplateType);
+  } catch {
+    return defaultTemplateTypeNames.map(createFallbackTemplateType);
+  }
+}
+
+async function createTemplateType(payload) {
+  const response = await fetch("/api/template-types", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "模板类别新增失败");
+  return result;
+}
+
+async function updateTemplateType(typeId, payload) {
+  const response = await fetch(`/api/template-types/${encodeURIComponent(typeId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "模板类别修改失败");
+  return result;
+}
+
+async function deleteTemplateType(typeId) {
+  const response = await fetch(`/api/template-types/${encodeURIComponent(typeId)}`, {
+    method: "DELETE",
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "模板类别删除失败");
+  return result;
 }
 
 async function saveDraftState(draft) {
@@ -279,6 +323,33 @@ function sortTemplatesBySavedAt(a, b) {
   return (b.savedAtMs || 0) - (a.savedAtMs || 0);
 }
 
+function normalizeTemplateTypes(types) {
+  const seen = new Set();
+  return (Array.isArray(types) ? types : [])
+    .map((type, index) => ({
+      id: String(type?.id || `TYPE-FALLBACK-${index + 1}`),
+      name: String(type?.name || "").trim(),
+      description: String(type?.description || ""),
+      sortOrder: Number(type?.sortOrder || index),
+      templateCount: Number(type?.templateCount || 0),
+    }))
+    .filter((type) => {
+      if (!type.name || seen.has(type.name)) return false;
+      seen.add(type.name);
+      return true;
+    });
+}
+
+function createFallbackTemplateType(name, index) {
+  return {
+    id: `TYPE-FALLBACK-${index + 1}`,
+    name,
+    description: "",
+    sortOrder: index,
+    templateCount: 0,
+  };
+}
+
 function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -323,6 +394,10 @@ export {
   readServerTemplates,
   readServerTemplate,
   storeServerTemplates,
+  readTemplateTypes,
+  createTemplateType,
+  updateTemplateType,
+  deleteTemplateType,
   readDraftState,
   saveDraftState,
   clearDraftState,

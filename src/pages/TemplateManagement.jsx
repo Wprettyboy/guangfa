@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Archive, FileCheck2, FolderOpen, Highlighter, Trash2, Upload, Wand2 } from "lucide-react";
-import { templateCategories } from "../constants/templates.js";
+import { Archive, Check, FileCheck2, FolderOpen, Highlighter, Pencil, Plus, Trash2, Upload, Wand2, X } from "lucide-react";
 import {
   buildContractFolders,
   getContractFolder,
@@ -27,10 +26,47 @@ function getTemplateMaintainedFieldCount(template = {}) {
   return 0;
 }
 
-function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDeleteTemplate, onUpdateCategory, onCreateTemplate }) {
+function normalizeTemplateTypes(templateTypes) {
+  const seen = new Set();
+  const types = (Array.isArray(templateTypes) ? templateTypes : [])
+    .map((type, index) => ({
+      id: String(type?.id || `TYPE-${index + 1}`),
+      name: normalizeCategoryInput(type?.name),
+      templateCount: Number(type?.templateCount || 0),
+    }))
+    .filter((type) => {
+      if (!type.name || seen.has(type.name)) return false;
+      seen.add(type.name);
+      return true;
+    });
+  return types.length > 0
+    ? types
+    : ["招标类", "合同类", "方案类"].map((name, index) => ({ id: `TYPE-FALLBACK-${index + 1}`, name, templateCount: 0 }));
+}
+
+function normalizeCategoryInput(value) {
+  return String(value || "").replace(/\s+/g, "").trim().slice(0, 30);
+}
+
+function TemplateManagement({
+  templates,
+  templateTypes = [],
+  onUseTemplate,
+  onEditTemplate,
+  onDeleteTemplate,
+  onUpdateCategory,
+  onCreateCategory,
+  onRenameCategory,
+  onDeleteCategory,
+  onCreateTemplate,
+}) {
   const managerRef = useRef(null);
   const [activeCategory, setActiveCategory] = useState("全部");
   const [activeContractFolder, setActiveContractFolder] = useState("全部");
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState("");
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [categoryMessage, setCategoryMessage] = useState("");
 
   useGSAP(
     () => {
@@ -48,6 +84,9 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
 
   const totalInsertedFields = templates.reduce((sum, template) => sum + getTemplateInsertedFieldCount(template), 0);
   const totalMaintainedFields = templates.reduce((sum, template) => sum + getTemplateMaintainedFieldCount(template), 0);
+  const categoryOptions = normalizeTemplateTypes(templateTypes);
+  const categoryNames = categoryOptions.map((type) => type.name);
+  const allCategories = ["全部", ...categoryNames];
   const normalizedTemplates = templates.map((template) => ({
     ...template,
     category: normalizeTemplateCategory(template.category || inferTemplateCategory(template.name || template.fileName)),
@@ -71,6 +110,15 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
     : activeFolder?.level1 || contractFolderGroups[0]?.level1 || "";
   const contractSelectValue = activeContractFolder === "全部" ? "全部" : `一级:${activeLevel1}`;
   const activeContractGroup = contractFolderGroups.find((group) => group.level1 === activeLevel1) || contractFolderGroups[0];
+  const activeCategoryType = categoryOptions.find((type) => type.name === activeCategory) || null;
+
+  useEffect(() => {
+    if (!allCategories.includes(activeCategory)) {
+      setActiveCategory("全部");
+      setEditingCategoryId("");
+      setEditingCategoryName("");
+    }
+  }, [activeCategory, allCategories.join("|")]);
 
   useEffect(() => {
     if (activeCategory !== "合同类") {
@@ -83,6 +131,69 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
       setActiveContractFolder("全部");
     }
   }, [activeCategory, activeContractFolder, contractFolders, contractFolderGroups]);
+
+  async function createCategory() {
+    const name = normalizeCategoryInput(newCategoryName);
+    if (!name) {
+      setCategoryMessage("类别名称不能为空。");
+      return;
+    }
+    if (categoryNames.includes(name)) {
+      setCategoryMessage("同名类别已存在。");
+      return;
+    }
+    try {
+      await onCreateCategory?.(name);
+      setNewCategoryName("");
+      setActiveCategory(name);
+      setCategoryMessage("");
+    } catch (error) {
+      setCategoryMessage(error?.message || "类别新增失败。");
+    }
+  }
+
+  async function renameCategory(type) {
+    const name = normalizeCategoryInput(editingCategoryName);
+    if (!type || !name) {
+      setCategoryMessage("类别名称不能为空。");
+      return;
+    }
+    if (name !== type.name && categoryNames.includes(name)) {
+      setCategoryMessage("同名类别已存在。");
+      return;
+    }
+    try {
+      await onRenameCategory?.(type.id, name);
+      setActiveCategory(name);
+      setEditingCategoryId("");
+      setEditingCategoryName("");
+      setCategoryMessage("");
+    } catch (error) {
+      setCategoryMessage(error?.message || "类别修改失败。");
+    }
+  }
+
+  async function deleteCategory(type) {
+    if (!type) return;
+    if (getCategoryTemplateCount(type.name) > 0) {
+      setCategoryMessage("该类别下还有模板，不能删除。");
+      return;
+    }
+    if (!window.confirm(`确认删除类别“${type.name}”？`)) return;
+    try {
+      await onDeleteCategory?.(type.id);
+      setActiveCategory("全部");
+      setEditingCategoryId("");
+      setEditingCategoryName("");
+      setCategoryMessage("");
+    } catch (error) {
+      setCategoryMessage(error?.message || "类别删除失败。");
+    }
+  }
+
+  function getCategoryTemplateCount(category) {
+    return normalizedTemplates.filter((template) => template.category === category).length;
+  }
 
   return (
     <section className="template-manager" ref={managerRef}>
@@ -116,7 +227,7 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
       </div>
 
       <div className="template-category-tabs">
-        {templateCategories.map((category) => {
+        {allCategories.map((category) => {
           const count = category === "全部"
             ? normalizedTemplates.length
             : normalizedTemplates.filter((template) => template.category === category).length;
@@ -131,6 +242,77 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
             </button>
           );
         })}
+      </div>
+
+      <div className="template-category-crud">
+        <div className="template-category-create">
+          <input
+            value={newCategoryName}
+            placeholder="新增模板类别"
+            onChange={(event) => setNewCategoryName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") createCategory();
+            }}
+          />
+          <button className="mini-button blue" type="button" onClick={createCategory}>
+            <Plus size={14} />
+            新增
+          </button>
+        </div>
+        {activeCategoryType ? (
+          <div className="template-category-manage">
+            {editingCategoryId === activeCategoryType.id ? (
+              <>
+                <input
+                  value={editingCategoryName}
+                  autoFocus
+                  onChange={(event) => setEditingCategoryName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") renameCategory(activeCategoryType);
+                    if (event.key === "Escape") {
+                      setEditingCategoryId("");
+                      setEditingCategoryName("");
+                    }
+                  }}
+                />
+                <button className="icon-button quiet" type="button" aria-label="保存类别名称" onClick={() => renameCategory(activeCategoryType)}>
+                  <Check size={15} />
+                </button>
+                <button className="icon-button quiet" type="button" aria-label="取消编辑类别" onClick={() => {
+                  setEditingCategoryId("");
+                  setEditingCategoryName("");
+                }}>
+                  <X size={15} />
+                </button>
+              </>
+            ) : (
+              <>
+                <span>当前类别：{activeCategoryType.name}</span>
+                <button className="mini-button" type="button" onClick={() => {
+                  setEditingCategoryId(activeCategoryType.id);
+                  setEditingCategoryName(activeCategoryType.name);
+                  setCategoryMessage("");
+                }}>
+                  <Pencil size={14} />
+                  重命名
+                </button>
+                <button
+                  className="icon-button quiet"
+                  type="button"
+                  aria-label={`删除类别${activeCategoryType.name}`}
+                  title={getCategoryTemplateCount(activeCategoryType.name) > 0 ? "该类别下还有模板，不能删除" : "删除类别"}
+                  disabled={getCategoryTemplateCount(activeCategoryType.name) > 0}
+                  onClick={() => deleteCategory(activeCategoryType)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <span className="template-category-hint">选择具体类别后可重命名或删除；“全部”仅用于筛选。</span>
+        )}
+        {categoryMessage ? <span className="template-category-message">{categoryMessage}</span> : null}
       </div>
 
       {activeCategory === "合同类" && contractFolders.length > 0 ? (
@@ -236,9 +418,9 @@ function TemplateManagement({ templates, onUseTemplate, onEditTemplate, onDelete
               <label className="template-category-editor">
                 <span>模板分类</span>
                 <select value={template.category} onChange={(event) => onUpdateCategory(template.id, event.target.value)}>
-                  <option>招标类</option>
-                  <option>合同类</option>
-                  <option>方案类</option>
+                  {categoryNames.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
                 </select>
               </label>
               <div className="template-type-list">

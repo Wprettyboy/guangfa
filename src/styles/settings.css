@@ -247,6 +247,52 @@
   font-size: 12px;
 }
 
+.template-category-crud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.template-category-create,
+.template-category-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.template-category-create input,
+.template-category-manage input {
+  width: 180px;
+  height: 32px;
+  border: 1px solid #cdd7e6;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: #25324a;
+  outline: none;
+}
+
+.template-category-manage {
+  padding-left: 10px;
+  border-left: 1px solid #e5ecf5;
+}
+
+.template-category-manage > span,
+.template-category-hint,
+.template-category-message {
+  color: #66748a;
+  font-size: 12px;
+}
+
+.template-category-message {
+  color: #b42318;
+}
+
 .contract-folder-browser {
   display: grid;
   gap: 10px;

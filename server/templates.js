@@ -1,9 +1,12 @@
 import {
+  createTemplateType,
+  deleteTemplateType,
   readTemplate,
   readTemplateLibraries,
   readTemplateLibrary,
   readTemplateTypes,
   replaceTemplateLibrary,
+  updateTemplateType,
 } from "./template-db.js";
 
 const templateLibraryBodyLimitBytes = 220 * 1024 * 1024;
@@ -28,6 +31,22 @@ export function templateLibraryMiddleware() {
 
       if (request.method === "GET" && url.pathname === "/api/template-types") {
         sendJson(response, 200, await readTemplateTypes(url.searchParams.get("libraryId") || ""));
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/template-types") {
+        sendJson(response, 200, await createTemplateType(await readJsonBody(request)));
+        return;
+      }
+
+      const typeMatch = url.pathname.match(/^\/api\/template-types\/([^/]+)$/);
+      if (request.method === "PUT" && typeMatch) {
+        sendJson(response, 200, await updateTemplateType(decodeURIComponent(typeMatch[1]), await readJsonBody(request)));
+        return;
+      }
+
+      if (request.method === "DELETE" && typeMatch) {
+        sendJson(response, 200, await deleteTemplateType(decodeURIComponent(typeMatch[1])));
         return;
       }
 

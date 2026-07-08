@@ -8,6 +8,10 @@ import {
   readStoredTemplates,
   readStoredTemplate,
   storeTemplates,
+  readTemplateTypes,
+  createTemplateType,
+  updateTemplateType,
+  deleteTemplateType,
   readDraftState,
   saveDraftState,
   clearDraftState,
@@ -39,6 +43,7 @@ import {
   initialFillFields,
   initialTemplateFields,
   initialTemplateFile,
+  templateCategories as defaultTemplateCategories,
 } from "./constants/templates.js";
 import {
   createPreviewId,
@@ -182,6 +187,11 @@ export default function App() {
   const [fillFieldPageMap, setFillFieldPageMap] = useState({});
   const [saveState, setSaveState] = useState("idle");
   const [templateLibrary, setTemplateLibrary] = useState([]);
+  const [templateTypes, setTemplateTypes] = useState(() =>
+    defaultTemplateCategories
+      .filter((category) => category !== "全部")
+      .map((name, index) => ({ id: `TYPE-DEFAULT-${index + 1}`, name, templateCount: 0 })),
+  );
   const [fillFields, setFillFields] = useState(initialFillFields);
   const [materialFiles, setMaterialFiles] = useState([]);
   const [selectedFieldId, setSelectedFieldId] = useState(initialSession.selectedFieldId || "F-002");
@@ -345,11 +355,12 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([readStoredTemplates(), readDraftState()]).then(async ([templates, draft]) => {
+    Promise.all([readStoredTemplates(), readDraftState(), readTemplateTypes()]).then(async ([templates, draft, types]) => {
       const draftToRestore = shouldRestoreDraftState(draft, templates) ? normalizeDraftFillState(draft) : null;
       if (draft && !draftToRestore) await clearDraftState();
       if (cancelled) return;
       setTemplateLibrary(templates);
+      setTemplateTypes(types);
       if (draftToRestore?.templateFile?.buffer) {
         setTemplateFile(draftToRestore.templateFile);
         setFilledTemplateFile(draftToRestore.filledTemplateFile || null);
@@ -1471,6 +1482,28 @@ export default function App() {
     }
   }
 
+  async function refreshTemplateTypesAndLibrary() {
+    const [templates, types] = await Promise.all([readStoredTemplates(), readTemplateTypes()]);
+    setTemplateLibrary(templates);
+    setTemplateTypes(types);
+    return { templates, types };
+  }
+
+  async function createTemplateCategory(name) {
+    await createTemplateType({ name });
+    await refreshTemplateTypesAndLibrary();
+  }
+
+  async function renameTemplateCategory(typeId, name) {
+    await updateTemplateType(typeId, { name });
+    await refreshTemplateTypesAndLibrary();
+  }
+
+  async function removeTemplateCategory(typeId) {
+    await deleteTemplateType(typeId);
+    await refreshTemplateTypesAndLibrary();
+  }
+
   async function storeAuditTemplate(file, category) {
     if (!file?.buffer) throw new Error("当前没有可保存的修订文件");
     const savedAtMs = Date.now();
@@ -2136,10 +2169,14 @@ export default function App() {
             {activeModule === "template-management" ? (
               <TemplateManagement
                 templates={templateLibrary}
+                templateTypes={templateTypes}
                 onUseTemplate={useTemplate}
                 onEditTemplate={editTemplate}
                 onDeleteTemplate={deleteTemplate}
                 onUpdateCategory={updateTemplateCategory}
+                onCreateCategory={createTemplateCategory}
+                onRenameCategory={renameTemplateCategory}
+                onDeleteCategory={removeTemplateCategory}
                 onCreateTemplate={startNewAnnotatedTemplate}
               />
             ) : activeModule === "knowledge-management" ? (
