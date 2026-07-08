@@ -1499,12 +1499,90 @@
     return false;
   }
 
+  function getLogicParagraphText(paragraph) {
+    return normalizeOutlineText(safeCall(paragraph, "GetText", "", { NewLine: true, ParaSeparator: "\n", Numbering: true }));
+  }
+
+  function getSolutionTargetTitle(target) {
+    return normalizeOutlineText(target?.title || target?.styleRef?.title || target?.styleRef?.text || "");
+  }
+
+  function findLogicSolutionHeadingIndex(paragraphs, target) {
+    const title = getSolutionTargetTitle(target);
+    const ref = target?.styleRef || null;
+    const refIndex = Number(ref?.paragraphIndex);
+    if (Number.isFinite(refIndex) && paragraphs[refIndex]) {
+      const expected = normalizeOutlineText(ref.title || ref.text || title);
+      const candidate = getLogicParagraphText(paragraphs[refIndex]);
+      if (!expected || candidate === expected || candidate === title) return refIndex;
+    }
+    if (!title) return -1;
+    return paragraphs.findIndex((paragraph) => getLogicParagraphText(paragraph) === title);
+  }
+
+  function findNextLogicSolutionHeadingIndex(paragraphs, headingIndex, logicDocument) {
+    for (let index = headingIndex + 1; index < paragraphs.length; index += 1) {
+      if (isSolutionHeadingStyleName(getLogicParagraphStyleName(paragraphs[index], logicDocument))) return index;
+    }
+    return paragraphs.length;
+  }
+
+  function deleteLogicParagraph(paragraph) {
+    const parent = safeCall(paragraph, "GetParent", null);
+    const index = Number(safeCall(paragraph, "GetIndex", -1));
+    if (!parent || !Number.isFinite(index) || index < 0) return false;
+    try { safeCall(paragraph, "PreDelete", null); } catch {}
+    const attempts = [
+      () => typeof parent.Remove_FromContent === "function" && parent.Remove_FromContent(index, 1, true) !== false,
+      () => typeof parent.RemoveFromContent === "function" && parent.RemoveFromContent(index, 1) !== false,
+      () => typeof parent.Internal_Content_Remove2 === "function" && parent.Internal_Content_Remove2(index, 1) !== false,
+    ];
+    for (const attempt of attempts) {
+      try {
+        if (attempt()) return true;
+      } catch {}
+    }
+    return false;
+  }
+
+  function clearLogicSolutionBodyParagraphs(paragraphs, headingIndex, nextHeadingIndex, logicDocument) {
+    let cleared = 0;
+    for (let index = nextHeadingIndex - 1; index > headingIndex; index -= 1) {
+      const paragraph = paragraphs[index];
+      if (!paragraph || isSolutionHeadingStyleName(getLogicParagraphStyleName(paragraph, logicDocument))) continue;
+      if (deleteLogicParagraph(paragraph)) cleared += 1;
+    }
+    return cleared;
+  }
+
+  function moveLogicCursorAfterParagraph(paragraph, logicDocument) {
+    try {
+      if (typeof paragraph?.Document_SetThisElementCurrent === "function") paragraph.Document_SetThisElementCurrent(false);
+      if (typeof paragraph?.MoveCursorToEndPos === "function") paragraph.MoveCursorToEndPos(false);
+      if (typeof logicDocument?.AddNewParagraph === "function") {
+        logicDocument.AddNewParagraph(false, true);
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
   function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
-    if (replaceTarget) return { ok: false, error: "当前 OnlyOffice 环境不支持按标题替换写入，请刷新文档后重试。" };
     const logicDocument = getLogicDocument();
     if (!logicDocument || typeof logicDocument.EnterText !== "function") return enterTextAtSelection(fallbackText, "solution-writing");
     try {
+      let cleared = 0;
+      if (replaceTarget) {
+        const allParagraphs = getLogicDocumentParagraphs(logicDocument);
+        const headingIndex = findLogicSolutionHeadingIndex(allParagraphs, replaceTarget);
+        if (headingIndex < 0) return { ok: false, error: `未找到对应原模板标题：${getSolutionTargetTitle(replaceTarget)}` };
+        const nextHeadingIndex = findNextLogicSolutionHeadingIndex(allParagraphs, headingIndex, logicDocument);
+        cleared = clearLogicSolutionBodyParagraphs(allParagraphs, headingIndex, nextHeadingIndex, logicDocument);
+        if (!moveLogicCursorAfterParagraph(allParagraphs[headingIndex], logicDocument)) {
+          return { ok: false, error: `未能定位到目标标题后方：${getSolutionTargetTitle(replaceTarget)}` };
+        }
+      }
       let textCount = 0;
       const styleResults = [];
       paragraphs.forEach((item, index) => {
@@ -1527,7 +1605,15 @@
       safeCall(logicDocument, "UpdateInterface", null);
       safeCall(logicDocument, "UpdateSelection", null);
       saveOnlyOfficeDocument("solution-writing");
-      return { ok: true, source: "logic-document-reference-style-enter-text", count: paragraphs.length, textCount, styles: styleResults };
+      return {
+        ok: true,
+        source: replaceTarget ? "logic-document-replace-heading-body" : "logic-document-reference-style-enter-text",
+        count: paragraphs.length,
+        textCount,
+        cleared,
+        targetTitle: replaceTarget ? getSolutionTargetTitle(replaceTarget) : "",
+        styles: styleResults,
+      };
     } catch (error) {
       return { ok: false, error: error?.message || "方案规划段落插入失败" };
     }
