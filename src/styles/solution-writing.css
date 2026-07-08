@@ -689,7 +689,8 @@
 }
 
 .solution-task-toolbar {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -719,11 +720,23 @@
   font-style: normal;
 }
 
+.solution-task-toolbar span {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .solution-task-actions {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
   gap: 8px;
+}
+
+.solution-task-actions .text-button,
+.solution-task-actions .tool-button {
+  min-width: 0;
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .solution-task-stats {
