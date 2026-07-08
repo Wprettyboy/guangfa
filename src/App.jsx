@@ -37,6 +37,7 @@ import FillWorkspace from "./pages/FillWorkspace.jsx";
 import LayoutWorkspace from "./pages/LayoutWorkspace.jsx";
 import KnowledgeImagePicker from "./features/knowledge/KnowledgeImagePicker.jsx";
 import KnowledgeTablePicker from "./features/knowledge/KnowledgeTablePicker.jsx";
+import SolutionAiImageModal from "./features/solution-writing/SolutionAiImageModal.jsx";
 import {
   currentProjectId,
   documentSlots,
@@ -66,6 +67,7 @@ import {
   requestOnlyOfficeInsertKnowledgeImage,
   requestOnlyOfficeInsertKnowledgeTable,
   requestOnlyOfficeInsertPlaceholderVariable,
+  requestOnlyOfficeOutline,
   requestOnlyOfficeSelectComplexFillAnchor,
   requestOnlyOfficeSelectPlaceholderAnchor,
 } from "./features/docx/office/bridge.jsx";
@@ -183,6 +185,7 @@ export default function App() {
   const [fillPreviewPage, setFillPreviewPage] = useState(initialSession.fillPreviewPage || 1);
   const [fillOfficeDocId, setFillOfficeDocId] = useState("");
   const [knowledgeImagePickerOpen, setKnowledgeImagePickerOpen] = useState(false);
+  const [solutionAiImageOpen, setSolutionAiImageOpen] = useState(false);
   const [knowledgeTablePickerOpen, setKnowledgeTablePickerOpen] = useState(false);
   const [filledTemplateFile, setFilledTemplateFile] = useState(null);
   const [fillFieldPageMap, setFillFieldPageMap] = useState({});
@@ -2140,7 +2143,7 @@ export default function App() {
                       <ImageIcon size={16} />
                       方案配图
                     </button>
-                    <button className="tool-button workspace-table-button" type="button" title="AI 生图功能待接入">
+                    <button className="tool-button workspace-table-button" type="button" onClick={() => setSolutionAiImageOpen(true)}>
                       <Sparkles size={16} />
                       AI生图
                     </button>
@@ -2331,6 +2334,13 @@ export default function App() {
         selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
         onInsert={insertKnowledgeImage}
         onClose={() => setKnowledgeImagePickerOpen(false)}
+      />
+      <SolutionAiImageModal
+        open={solutionAiImageOpen && activeModule === "workspace" && solutionWritingPanelActive}
+        outline={null}
+        onRequestOutline={requestOnlyOfficeOutline}
+        onInsertImage={insertKnowledgeImage}
+        onClose={() => setSolutionAiImageOpen(false)}
       />
     </div>
   );

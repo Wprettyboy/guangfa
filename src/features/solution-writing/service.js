@@ -18,6 +18,10 @@ async function generateSolutionDraftContent(payload) {
   return postSolutionWriting("/api/ai/solution-draft-content", payload, "方案编制生成失败");
 }
 
+async function generateSolutionPlantumlImage(payload) {
+  return postSolutionWriting("/api/ai/solution-plantuml-image", payload, "AI 生图失败");
+}
+
 async function postSolutionWriting(url, payload, fallbackMessage) {
   const response = await fetch(url, {
     method: "POST",
@@ -32,6 +36,7 @@ async function postSolutionWriting(url, payload, fallbackMessage) {
 export {
   generateSolutionDraftContent,
   generateSolutionModuleSections,
+  generateSolutionPlantumlImage,
   generateSolutionTaskPlan,
   identifySolutionModules,
   testSolutionTaskKnowledge,

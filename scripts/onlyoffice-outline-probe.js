@@ -188,6 +188,7 @@
       window.Asc = window.Asc || {};
       window.Asc.scope = window.Asc.scope || {};
       window.Asc.scope.gfOutlineStyleDebug = { error: "没有可匹配的大纲标题" };
+      window.Asc.scope.gfOutlineDocumentText = "";
       return [];
     }
     if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
@@ -310,6 +311,7 @@
               };
             }),
           };
+          Asc.scope.gfOutlineDocumentText = paragraphRows.map(function (row) { return row.text; }).filter(Boolean).join("\n").slice(0, 80000);
           var cursor = 0;
           var matched = [];
           var items = Asc.scope.gfOutlineStyleItems || [];
@@ -376,6 +378,7 @@
         } catch (error) {
           Asc.scope.gfOutlineStyleResult = [];
           Asc.scope.gfOutlineStyleDebug = { error: String(error?.message || error || "样式读取失败") };
+          Asc.scope.gfOutlineDocumentText = "";
         }
       });
       return Array.isArray(window.Asc.scope.gfOutlineStyleResult) ? window.Asc.scope.gfOutlineStyleResult : [];
@@ -407,9 +410,11 @@
           styleName: row.styleName,
         })),
       };
+      window.Asc.scope.gfOutlineDocumentText = paragraphRows.map((row) => row.text).filter(Boolean).join("\n").slice(0, 80000);
       return matched;
     } catch (error) {
       window.Asc.scope.gfOutlineStyleDebug = { source, error: String(error?.message || error || "逻辑文档样式读取失败") };
+      window.Asc.scope.gfOutlineDocumentText = "";
       return [];
     }
   }
@@ -2551,6 +2556,7 @@
       : [];
     payload.documentStyles = documentStyles;
     payload.styleDebug = window.Asc?.scope?.gfOutlineStyleDebug || null;
+    payload.documentText = String(window.Asc?.scope?.gfOutlineDocumentText || "").slice(0, 80000);
     try {
       console.log("[guangfa-onlyoffice-outline]", payload);
       if (payload.items && console.table) console.table(payload.items);
