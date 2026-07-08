@@ -82,7 +82,18 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
         return value && source.indexOf(value) === index;
       });
     }
+    function isSolutionHeadingStyleName(styleName) {
+      return /heading\\s*\\d|标题\\s*\\d|标题\\d/i.test(String(styleName || ""));
+    }
     function applyWordStyle(doc, paragraph, item) {
+      if (item && item.type === "body" && item.styleRef && isSolutionHeadingStyleName(item.styleRef.styleName)) {
+        item = {
+          type: item.type,
+          style: item.style,
+          styleName: item.styleName,
+          styleFallback: item.styleFallback,
+        };
+      }
       if (applyReferenceStyle(doc, paragraph, item)) return true;
       if (!doc || typeof doc.GetStyle !== "function" || !paragraph) return false;
       var candidates = getStyleCandidates(item);

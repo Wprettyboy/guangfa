@@ -349,7 +349,9 @@
               }
             }
             var body = paragraphRows.find(function (row) {
-              return row.paragraphIndex > current.paragraphIndex && row.paragraphIndex < nextParagraphIndex;
+              return row.paragraphIndex > current.paragraphIndex
+                && row.paragraphIndex < nextParagraphIndex
+                && !isSolutionHeadingStyleName(row.styleName);
             });
             current.bodyStyleName = body?.styleName || "";
             current.bodyParagraphIndex = body ? body.paragraphIndex : null;
@@ -407,6 +409,10 @@
 
   function normalizeOutlineText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function isSolutionHeadingStyleName(styleName) {
+    return /heading\s*\d|标题\s*\d|标题\d/i.test(String(styleName || ""));
   }
 
   function getLogicDocumentParagraphs(logicDocument) {
@@ -473,7 +479,11 @@
           break;
         }
       }
-      const body = paragraphRows.find((row) => row.paragraphIndex > current.paragraphIndex && row.paragraphIndex < nextParagraphIndex);
+      const body = paragraphRows.find((row) => (
+        row.paragraphIndex > current.paragraphIndex
+        && row.paragraphIndex < nextParagraphIndex
+        && !isSolutionHeadingStyleName(row.styleName)
+      ));
       current.bodyStyleName = body?.styleName || "";
       current.bodyParagraphIndex = body ? body.paragraphIndex : null;
       current.bodyStyleSource = body ? `${source}-next-paragraph-before-next-outline` : "not-found";
@@ -1432,7 +1442,8 @@
 
   function getLogicReferenceStyleName(item) {
     const paragraph = getLogicReferenceParagraph(item?.styleRef);
-    return paragraph ? getLogicParagraphStyleName(paragraph, getLogicDocument()) : "";
+    const styleName = paragraph ? getLogicParagraphStyleName(paragraph, getLogicDocument()) : "";
+    return item?.type === "body" && isSolutionHeadingStyleName(styleName) ? "" : styleName;
   }
 
   function findExistingLogicStyleName(logicDocument, candidates) {
@@ -1532,6 +1543,10 @@
           return ["正文", "Normal", "normal"];
         }
 
+        function isSolutionHeadingStyleName(styleName) {
+          return /heading\s*\d|标题\s*\d|标题\d/i.test(String(styleName || ""));
+        }
+
         function getParagraphText(paragraph) {
           try {
             if (paragraph && typeof paragraph.GetText === "function") {
@@ -1584,6 +1599,7 @@
         }
 
         function applyReferenceStyle(doc, paragraph, item) {
+          if (item && item.type === "body" && item.styleRef && isSolutionHeadingStyleName(item.styleRef.styleName)) return false;
           var reference = getReferenceParagraph(doc, item);
           if (!reference || typeof reference.GetParaPr !== "function") return false;
           try {

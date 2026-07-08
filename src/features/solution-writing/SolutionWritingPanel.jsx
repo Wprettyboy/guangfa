@@ -497,7 +497,7 @@ function SolutionWritingPanel({
                               <button
                                 className="text-button"
                                 type="button"
-                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1, styleSelections, sectionTemplate), `已插入 ${sectionTitle} 写作规划`)}
+                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1, styleSelections, sectionTemplate, selectedGroup), `已插入 ${sectionTitle} 写作规划`)}
                                 disabled={busy}
                               >
                                 <Send size={13} />
@@ -633,12 +633,14 @@ function buildTemplateGroups(items) {
             styleName: child.styleName,
             styleSource: child.styleSource,
             styleRef: child.styleRef,
-            bodyStyleName: child.bodyStyleName,
+            bodyStyleName: normalizeBodyStyleName(child.bodyStyleName),
             bodyStyleSource: child.bodyStyleSource,
-            bodyStyleRef: child.bodyStyleRef,
+            bodyStyleRef: normalizeBodyStyleRef(child.bodyStyleRef),
           });
         }
       }
+      const itemBodyStyleName = normalizeBodyStyleName(item.bodyStyleName);
+      const itemBodyStyleRef = normalizeBodyStyleRef(item.bodyStyleRef);
       const firstBodyTemplate = childTemplates.find((child) => child.bodyStyleName);
       return {
         key: String(item.index),
@@ -647,9 +649,9 @@ function buildTemplateGroups(items) {
         styleName: item.styleName,
         styleSource: item.styleSource,
         styleRef: item.styleRef,
-        bodyStyleName: item.bodyStyleName || firstBodyTemplate?.bodyStyleName || "",
-        bodyStyleSource: item.bodyStyleName ? item.bodyStyleSource : firstBodyTemplate?.bodyStyleSource || "",
-        bodyStyleRef: item.bodyStyleRef || firstBodyTemplate?.bodyStyleRef || null,
+        bodyStyleName: itemBodyStyleName || firstBodyTemplate?.bodyStyleName || "",
+        bodyStyleSource: itemBodyStyleName ? item.bodyStyleSource : firstBodyTemplate?.bodyStyleSource || "",
+        bodyStyleRef: itemBodyStyleRef || firstBodyTemplate?.bodyStyleRef || null,
         childTemplates,
       };
     })
@@ -868,18 +870,22 @@ function buildGeneratedModuleInsert(group, block, styleSelections = {}) {
   block.sections.forEach((section, sectionIndex) => {
     const title = stripHeadingNumber(section.templateTitle || section.heading);
     const template = getSectionTemplate(group, section, sectionIndex);
-    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections, template).paragraphs);
+    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections, template, group).paragraphs);
   });
   return paragraphsToInsertPayload(paragraphs);
 }
 
-function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}, template = null) {
+function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}, template = null, bodyTemplate = null) {
   const sectionLevel = Number.isFinite(Number(level)) ? Number(level) : 2;
   const bodyLines = splitBodyParagraphs(content || "需结合项目资料补充该标题的写作要点。");
   const headingStyle = resolveParagraphStyle("section-heading", sectionLevel, styleSelections);
   const bodyStyle = resolveParagraphStyle("body", null, styleSelections);
   const headingStyleRef = getSelectedStyleRef(template?.styleRef, headingStyle, template?.styleName);
-  const bodyStyleRef = getSelectedStyleRef(template?.bodyStyleRef, bodyStyle, template?.bodyStyleName);
+  const bodyStyleRef = getSelectedStyleRef(
+    normalizeBodyStyleRef(bodyTemplate?.bodyStyleRef),
+    bodyStyle,
+    normalizeBodyStyleName(bodyTemplate?.bodyStyleName),
+  );
   return paragraphsToInsertPayload([
     {
       type: "section-heading",
@@ -932,6 +938,20 @@ function normalizeStyleRef(ref) {
       styleName: String(ref.styleName || "").trim(),
     }
     : null;
+}
+
+function normalizeBodyStyleName(styleName) {
+  const value = String(styleName || "").trim();
+  return isHeadingStyleName(value) ? "" : value;
+}
+
+function normalizeBodyStyleRef(ref) {
+  const normalized = normalizeStyleRef(ref);
+  return normalized && !isHeadingStyleName(normalized.styleName) ? normalized : null;
+}
+
+function isHeadingStyleName(styleName) {
+  return /heading\s*\d|标题\s*\d|标题\d/i.test(String(styleName || ""));
 }
 
 function getSelectedStyleRef(ref, selectedStyle, referenceStyleName) {
