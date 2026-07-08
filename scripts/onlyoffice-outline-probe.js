@@ -1572,6 +1572,24 @@
     return false;
   }
 
+  function getFirstSolutionInsertText(paragraphs) {
+    const first = (Array.isArray(paragraphs) ? paragraphs : []).find((item) => normalizeOutlineText(item?.text));
+    return normalizeOutlineText(first?.text || "");
+  }
+
+  function verifyLogicSolutionInsertedText(logicDocument, replaceTarget, paragraphs) {
+    const expected = getFirstSolutionInsertText(paragraphs);
+    if (!expected) return false;
+    const allParagraphs = getLogicDocumentParagraphs(logicDocument);
+    const headingIndex = findLogicSolutionHeadingIndex(allParagraphs, replaceTarget);
+    if (headingIndex < 0) return false;
+    const nextHeadingIndex = findNextLogicSolutionHeadingIndex(allParagraphs, headingIndex, logicDocument);
+    const needle = expected.slice(0, Math.min(48, expected.length));
+    return allParagraphs.slice(headingIndex + 1, nextHeadingIndex).some((paragraph) => (
+      normalizeOutlineText(getLogicParagraphText(paragraph)).includes(needle)
+    ));
+  }
+
   function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) {
       return replaceTarget
@@ -1617,6 +1635,9 @@
       safeCall(logicDocument, "Recalculate", null);
       safeCall(logicDocument, "UpdateInterface", null);
       safeCall(logicDocument, "UpdateSelection", null);
+      if (replaceTarget && !verifyLogicSolutionInsertedText(logicDocument, replaceTarget, paragraphs)) {
+        return { ok: false, error: `OnlyOffice 未确认正文写入目标标题：${getSolutionTargetTitle(replaceTarget)}` };
+      }
       saveOnlyOfficeDocument("solution-writing");
       return {
         ok: true,
@@ -1634,7 +1655,6 @@
 
   async function insertStructuredSolutionWritingText(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
-    if (replaceTarget) return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget);
     if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
       return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget);
     }
@@ -1684,6 +1704,14 @@
               return String(paragraph.GetText({ NewLine: true, ParaSeparator: "\n", Numbering: true }) || "").replace(/\s+/g, " ").trim();
             }
           } catch (error) {}
+          return "";
+        }
+
+        function getFirstInsertText(rows) {
+          for (var index = 0; index < rows.length; index += 1) {
+            var text = normalizeText(rows[index] && rows[index].text);
+            if (text) return text;
+          }
           return "";
         }
 
@@ -1773,6 +1801,20 @@
             if (doc.AddElement(insertIndex + 1 + index, content[index]) === false) return false;
           }
           return true;
+        }
+
+        function verifyInsertedAfterHeading(doc, target, rows) {
+          var expected = getFirstInsertText(rows);
+          if (!expected) return false;
+          var paragraphs = getAllParagraphs(doc);
+          var headingIndex = findTargetHeadingIndex(paragraphs, target);
+          if (headingIndex < 0) return false;
+          var nextHeadingIndex = findNextHeadingIndex(paragraphs, headingIndex);
+          var needle = expected.slice(0, Math.min(48, expected.length));
+          for (var index = headingIndex + 1; index < nextHeadingIndex; index += 1) {
+            if (normalizeText(getParagraphText(paragraphs[index])).indexOf(needle) >= 0) return true;
+          }
+          return false;
         }
 
         function getReferenceParagraph(doc, item) {
@@ -1946,6 +1988,10 @@
               Asc.scope.gfSolutionWritingResult = { ok: false, error: "未能写入目标标题正文：" + getTargetTitle(replaceTarget) };
               return;
             }
+            if (!verifyInsertedAfterHeading(doc, replaceTarget, source)) {
+              Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 未确认正文写入目标标题：" + getTargetTitle(replaceTarget) };
+              return;
+            }
             Asc.scope.gfSolutionWritingResult = {
               ok: true,
               source: "api-replace-heading-body",
@@ -1974,8 +2020,9 @@
         safeCall(getLogicDocument(), "UpdateInterface", null);
         safeCall(getLogicDocument(), "UpdateSelection", null);
         saveOnlyOfficeDocument("solution-writing");
+        return result;
       }
-      return result;
+      return replaceTarget ? insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) : result;
     } catch (error) {
       return { ok: false, error: error?.message || "方案规划段落插入失败" };
     }
