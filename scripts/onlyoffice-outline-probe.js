@@ -2939,15 +2939,118 @@
       }, 120000);
     }
     try {
+      const imageUrl = String(data.image?.imageUrl || data.image?.fileUrl || data.image?.previewUrl || "");
+      if (imageUrl) {
+        const insertedImage = await insertKnowledgeImageApi(data.image, requestId);
+        if (insertedImage.ok || insertedImage.deferred) return insertedImage;
+      }
       const sourceDocxUrl = String(data.image?.sourceDocxUrl || data.image?.docxUrl || "");
       if (!sourceDocxUrl) {
-        return postKnowledgeImageResult({ ok: false, requestId, error: "所选图片缺少 DOCX 片段，无法插入。" });
+        return postKnowledgeImageResult({ ok: false, requestId, error: "所选图片缺少可插入图片地址。" });
       }
       const inserted = insertKnowledgeImageDocx(sourceDocxUrl, requestId);
       if (inserted.deferred) return inserted;
       return postKnowledgeImageResult({ ...inserted, requestId });
     } catch (error) {
       return postKnowledgeImageResult({ ok: false, requestId, error: error?.message || "资料图片插入失败" });
+    }
+  }
+
+  async function insertKnowledgeImageApi(image, requestId) {
+    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
+      return { ok: false, error: "OnlyOffice 图片 API 命令接口不可用。" };
+    }
+    try {
+      window.Asc.scope = window.Asc.scope || {};
+      window.Asc.scope.gfKnowledgeImagePayload = {
+        url: String(image?.imageUrl || image?.fileUrl || image?.previewUrl || ""),
+        widthEmu: Number(image?.widthEmu) || 0,
+        heightEmu: Number(image?.heightEmu) || 0,
+      };
+      window.Asc.scope.gfKnowledgeImageResult = null;
+      await window.Asc.Editor.callCommand(function () {
+        function callAny(targets, names, args) {
+          for (var targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+            var target = targets[targetIndex];
+            if (!target) continue;
+            for (var nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
+              var name = names[nameIndex];
+              try {
+                if (typeof target[name] === "function") {
+                  target[name].apply(target, args || []);
+                  return true;
+                }
+              } catch (error) {}
+            }
+          }
+          return false;
+        }
+
+        function clampImageSize(widthEmu, heightEmu) {
+          var fallbackWidth = Math.round(5.8 * 914400);
+          var fallbackHeight = Math.round(3.6 * 914400);
+          var width = Number(widthEmu) > 0 ? Number(widthEmu) : fallbackWidth;
+          var height = Number(heightEmu) > 0 ? Number(heightEmu) : fallbackHeight;
+          var maxWidth = Math.round(6.4 * 914400);
+          if (width > maxWidth) {
+            var scale = maxWidth / width;
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          return { width: width, height: height };
+        }
+
+        try {
+          var payload = Asc.scope.gfKnowledgeImagePayload || {};
+          var imageUrl = String(payload.url || "");
+          if (!imageUrl) {
+            Asc.scope.gfKnowledgeImageResult = { ok: false, error: "图片地址为空。" };
+            return;
+          }
+          var doc = Api.GetDocument();
+          if (!doc || typeof doc.InsertContent !== "function" || typeof Api.CreateImage !== "function") {
+            Asc.scope.gfKnowledgeImageResult = { ok: false, error: "OnlyOffice 图片创建接口不可用。" };
+            return;
+          }
+          var size = clampImageSize(payload.widthEmu, payload.heightEmu);
+          var drawing = Api.CreateImage(imageUrl, size.width, size.height);
+          if (!drawing) {
+            Asc.scope.gfKnowledgeImageResult = { ok: false, error: "OnlyOffice 未创建图片对象。" };
+            return;
+          }
+          var paragraph = typeof Api.CreateParagraph === "function" ? Api.CreateParagraph() : null;
+          var inserted = false;
+          if (paragraph) {
+            inserted = callAny([paragraph], ["AddDrawing", "AddElement"], [drawing]);
+            if (inserted) {
+              var result = doc.InsertContent([paragraph]);
+              if (result !== false) {
+                Asc.scope.gfKnowledgeImageResult = { ok: true, source: "api-create-image-paragraph", widthEmu: size.width, heightEmu: size.height };
+                return;
+              }
+            }
+          }
+          var direct = doc.InsertContent([drawing]);
+          if (direct !== false) {
+            Asc.scope.gfKnowledgeImageResult = { ok: true, source: "api-create-image-direct", widthEmu: size.width, heightEmu: size.height };
+            return;
+          }
+          Asc.scope.gfKnowledgeImageResult = { ok: false, error: "OnlyOffice 未确认图片插入。" };
+        } catch (error) {
+          Asc.scope.gfKnowledgeImageResult = { ok: false, error: error && error.message ? error.message : "图片 API 插入失败" };
+        }
+      });
+      const result = window.Asc.scope.gfKnowledgeImageResult || { ok: false, error: "OnlyOffice 图片命令未返回结果。" };
+      if (result.ok) {
+        safeCall(getLogicDocument(), "Recalculate", null);
+        safeCall(getLogicDocument(), "UpdateInterface", null);
+        safeCall(getLogicDocument(), "UpdateSelection", null);
+        saveOnlyOfficeDocument("insert-knowledge-image-api");
+        return postKnowledgeImageResult({ ...result, requestId });
+      }
+      return result;
+    } catch (error) {
+      return { ok: false, error: error?.message || "OnlyOffice 图片 API 插入失败" };
     }
   }
 

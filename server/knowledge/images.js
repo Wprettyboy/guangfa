@@ -58,6 +58,7 @@ async function extractDocxImages(database, document) {
     if (imageRels.length === 0) return;
     const imageIndex = images.length + 1;
     const title = lastText || text || `图片 ${imageIndex}`;
+    const extent = readImageExtentEmu(paragraph.xml);
     images.push({
       id: `${document.id}-I${imageIndex}`,
       documentId: document.id,
@@ -70,7 +71,10 @@ async function extractDocxImages(database, document) {
       page: resolveImagePage(pages, title || text),
       imageCount: imageRels.length,
       previewUrl: `/api/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/file`,
+      imageUrl: `${publicBaseUrl}/api/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/file`,
       sourceDocxUrl: `${publicBaseUrl}/api/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/docx`,
+      widthEmu: extent.widthEmu,
+      heightEmu: extent.heightEmu,
       plainText: normalizeText([title, text, imageRels.map((item) => item.target).join(" ")].filter(Boolean).join("\n")),
     });
     if (text) lastText = text;
@@ -159,6 +163,18 @@ function readImageRelationships(paragraphXml, rels) {
   return [...ids]
     .map((id) => rels.get(id))
     .filter((rel) => rel && (/\/image$/i.test(rel.type || "") || /^word\/media\//i.test(rel.path || "")));
+}
+
+function readImageExtentEmu(paragraphXml) {
+  const wpExtent = paragraphXml.match(/<wp:extent\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/);
+  const aExtent = paragraphXml.match(/<a:ext\b[^>]*\bcx="(\d+)"[^>]*\bcy="(\d+)"/);
+  const match = wpExtent || aExtent;
+  const widthEmu = Number(match?.[1]);
+  const heightEmu = Number(match?.[2]);
+  return {
+    widthEmu: Number.isFinite(widthEmu) && widthEmu > 0 ? widthEmu : 0,
+    heightEmu: Number.isFinite(heightEmu) && heightEmu > 0 ? heightEmu : 0,
+  };
 }
 
 function resolveWordTargetPath(target) {

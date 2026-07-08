@@ -175,6 +175,7 @@ async function savePlantumlImage({ title, plantuml, png, selectedTitle, prompt }
   const pngPath = path.join(imageDir, `${id}.png`);
   const docxPath = path.join(imageDir, `${id}.docx`);
   const metaPath = path.join(imageDir, `${id}.json`);
+  const size = getImageEmuSize(png);
   await writeFile(pngPath, png);
   await writeFile(docxPath, await buildImageDocx(png, safeTitle));
   await writeFile(metaPath, JSON.stringify({
@@ -190,19 +191,16 @@ async function savePlantumlImage({ title, plantuml, png, selectedTitle, prompt }
     title: safeTitle,
     documentName: "AI生成配图",
     previewUrl: `/api/solution-plantuml-images/${encodeURIComponent(id)}/file`,
+    imageUrl: `${publicBaseUrl}/api/solution-plantuml-images/${encodeURIComponent(id)}/file`,
     sourceDocxUrl: `${publicBaseUrl}/api/solution-plantuml-images/${encodeURIComponent(id)}/docx`,
+    widthEmu: size.widthEmu,
+    heightEmu: size.heightEmu,
   };
 }
 
 async function buildImageDocx(png, title) {
   const zip = new JSZip();
-  const size = readPngSize(png);
-  const maxWidthEmu = 6.4 * 914400;
-  const widthEmuRaw = Math.max(1, size.width) * 9525;
-  const heightEmuRaw = Math.max(1, size.height) * 9525;
-  const scale = widthEmuRaw > maxWidthEmu ? maxWidthEmu / widthEmuRaw : 1;
-  const widthEmu = Math.round(widthEmuRaw * scale);
-  const heightEmu = Math.round(heightEmuRaw * scale);
+  const { widthEmu, heightEmu } = getImageEmuSize(png);
   zip.file("[Content_Types].xml", buildContentTypesXml());
   zip.folder("_rels").file(".rels", buildRootRelsXml());
   zip.folder("word").file("document.xml", buildImageDocumentXml({ title, widthEmu, heightEmu }));
@@ -314,6 +312,18 @@ function readPngSize(buffer) {
   return {
     width: buffer.readUInt32BE(16),
     height: buffer.readUInt32BE(20),
+  };
+}
+
+function getImageEmuSize(buffer) {
+  const size = readPngSize(buffer);
+  const maxWidthEmu = 6.4 * 914400;
+  const widthEmuRaw = Math.max(1, size.width) * 9525;
+  const heightEmuRaw = Math.max(1, size.height) * 9525;
+  const scale = widthEmuRaw > maxWidthEmu ? maxWidthEmu / widthEmuRaw : 1;
+  return {
+    widthEmu: Math.round(widthEmuRaw * scale),
+    heightEmu: Math.round(heightEmuRaw * scale),
   };
 }
 
