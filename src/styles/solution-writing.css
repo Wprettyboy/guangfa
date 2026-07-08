@@ -30,6 +30,13 @@
   background: #f5f7fb;
 }
 
+.solution-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr);
+  align-items: start;
+  gap: 12px;
+}
+
 .solution-block {
   display: flex;
   flex-direction: column;
@@ -630,4 +637,10 @@
   border-color: rgba(239, 68, 68, 0.28);
   background: #fef2f2;
   color: #991b1b;
+}
+
+@media (max-width: 1180px) {
+  .solution-workspace-grid {
+    grid-template-columns: 1fr;
+  }
 }

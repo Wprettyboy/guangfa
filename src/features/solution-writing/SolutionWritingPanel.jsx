@@ -241,6 +241,7 @@ function SolutionWritingPanel({
       </div>
 
       <div className="solution-writing-scroll">
+        <div className="solution-workspace-grid">
         <SolutionSection
           title="方案大纲规划"
           summary={generatedBlocks.length ? `已生成 ${generatedBlocks.length} 个模块` : "大纲、模块与规划"}
@@ -536,6 +537,7 @@ function SolutionWritingPanel({
         >
           <div className="empty-state compact">任务规划功能将在这里配置。</div>
         </SolutionSection>
+        </div>
       </div>
 
       {message ? <div className={status === "error" ? "solution-message error" : "solution-message"}>{message}</div> : null}
