@@ -411,7 +411,31 @@ function getTaskDensityRule(density) {
   if (density === "rich") {
     return {
       label: "丰富",
+      defaultTasksPerHeading: 3,
       maxTasksPerHeading: 4,
+      fallbackStages: [
+        {
+          titleSuffix: "背景与对象说明",
+          summary: "先明确本标题在整体方案中的位置，说明涉及的业务对象、建设背景、适用范围和资料依据。",
+          objective: "形成该标题的背景、对象和边界规划。",
+          executionPoints: ["说明标题对应的业务对象", "提炼原文中的建设背景和范围", "明确不扩展到资料之外的内容"],
+          deliverables: ["背景对象说明", "范围边界说明"],
+        },
+        {
+          titleSuffix: "功能与流程设计",
+          summary: "再展开本标题下应写清楚的功能、流程、角色协同或处理步骤，形成正文展开主线。",
+          objective: "形成该标题的功能流程和执行动作规划。",
+          executionPoints: ["拆解功能或流程主线", "说明参与角色和处理步骤", "补充执行过程中的关键控制点"],
+          deliverables: ["功能流程规划", "执行步骤清单"],
+        },
+        {
+          titleSuffix: "数据配置与交付验收",
+          summary: "最后落到数据、接口、配置、交付物、验收口径和风险边界，保证正文可落地、可检查。",
+          objective: "形成该标题的配置、交付和验收规划。",
+          executionPoints: ["明确数据、接口或配置要求", "规划交付物和验收关注点", "补充风险边界和待确认事项"],
+          deliverables: ["配置交付说明", "验收关注点清单"],
+        },
+      ],
       prompt: [
         "用于需要更充实篇幅的方案编制。",
         "每个标题至少 1 个任务；当原文或知识库中存在多个建设点、角色、流程、数据、接口、配置、验收要求时，优先围绕同一 sourceHeading 拆成 2-4 个任务对象。",
@@ -424,7 +448,24 @@ function getTaskDensityRule(density) {
   if (density === "moderate") {
     return {
       label: "适中",
+      defaultTasksPerHeading: 2,
       maxTasksPerHeading: 2,
+      fallbackStages: [
+        {
+          titleSuffix: "对象与目标说明",
+          summary: "先明确本标题在整体方案中的作用、要描述的对象、目标和边界，避免和前后标题重复。",
+          objective: "形成该标题的对象、目标和写作边界规划。",
+          executionPoints: ["确认标题对应的对象和目标", "提炼标题下原文的核心要求", "明确不写哪些下级或相邻标题内容"],
+          deliverables: ["对象目标说明", "写作边界说明"],
+        },
+        {
+          titleSuffix: "执行与验收规划",
+          summary: "再说明本标题下应如何展开执行动作、交付物和验收关注点，让正文具备可落地性。",
+          objective: "形成该标题的执行动作和交付验收规划。",
+          executionPoints: ["拆解执行步骤", "说明交付物", "明确验收关注点和待确认事项"],
+          deliverables: ["执行要点清单", "交付验收关注点"],
+        },
+      ],
       prompt: [
         "用于常规正式方案编制。",
         "每个标题至少 1 个任务；当原文明确包含多个事项时，优先围绕同一 sourceHeading 拆成 1-2 个任务对象。",
@@ -435,7 +476,9 @@ function getTaskDensityRule(density) {
   }
   return {
     label: "简单",
+    defaultTasksPerHeading: 1,
     maxTasksPerHeading: 1,
+    fallbackStages: [],
     prompt: [
       "用于简单方案编制。",
       "原则上每个标题生成 1 个任务，只保留必要目标、关键动作和交付物。",
@@ -487,7 +530,8 @@ function normalizeTaskPlanCategoryResult(parsed, fallbackCategory, taskDensity =
     const sourceHeading = inputTask.sourceHeading;
     const matchedRows = findTaskRowsForHeading(rows, sourceHeading);
     const fallbackRows = matchedRows.length ? matchedRows : [rows[index] || {}];
-    return fallbackRows
+    const normalizedRows = expandTaskRowsByDensity(fallbackRows, densityRule, inputTask);
+    return normalizedRows
       .slice(0, densityRule.maxTasksPerHeading)
       .map((matched, splitIndex) => normalizeTaskPlanRow({
         matched,
@@ -505,6 +549,31 @@ function normalizeTaskPlanCategoryResult(parsed, fallbackCategory, taskDensity =
     contextRule: fallbackCategory.contextRule,
     tasks,
     warnings: normalizeStringList(parsed?.warnings).slice(0, 5),
+  };
+}
+
+function expandTaskRowsByDensity(rows, densityRule, inputTask) {
+  const sourceRows = rows.length ? rows : [{}];
+  if (sourceRows.length >= densityRule.defaultTasksPerHeading || !densityRule.fallbackStages.length) {
+    return sourceRows;
+  }
+  const base = {
+    ...(sourceRows[0] || {}),
+    sourceHeading: inputTask.sourceHeading,
+  };
+  return densityRule.fallbackStages
+    .slice(0, densityRule.defaultTasksPerHeading)
+    .map((stage) => buildDensityFallbackTaskRow(base, stage));
+}
+
+function buildDensityFallbackTaskRow(base, stage) {
+  return {
+    ...base,
+    taskTitle: [cleanTitle(base.taskTitle || base.sourceHeading), stage.titleSuffix].filter(Boolean).join(" - "),
+    planningSummary: [cleanMultilineText(base.planningSummary), stage.summary].filter(Boolean).join("\n"),
+    objective: cleanMultilineText([stage.objective, base.objective ? `参考原规划：${base.objective}` : ""].filter(Boolean).join("\n")),
+    executionPoints: mergeStringLists(base.executionPoints, stage.executionPoints),
+    deliverables: mergeStringLists(base.deliverables, stage.deliverables),
   };
 }
 
@@ -671,6 +740,11 @@ function normalizeStringList(value) {
   return (Array.isArray(value) ? value : [])
     .map(cleanText)
     .filter(Boolean);
+}
+
+function mergeStringLists(primary, fallback) {
+  const merged = [...normalizeStringList(primary), ...normalizeStringList(fallback)];
+  return Array.from(new Set(merged));
 }
 
 function cleanTitle(value) {
