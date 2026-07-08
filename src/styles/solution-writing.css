@@ -41,7 +41,10 @@
 }
 
 .solution-block.grow {
-  min-height: 220px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 260px;
+  max-height: 420px;
 }
 
 .solution-block-title,
@@ -238,6 +241,19 @@
 .solution-module-list {
   display: grid;
   gap: 10px;
+  min-height: 0;
+  overflow: hidden auto;
+  padding-right: 2px;
+  align-content: start;
+}
+
+.solution-module-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.solution-module-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d4e3;
 }
 
 .solution-module-card {
@@ -275,6 +291,8 @@
 
 .solution-module-card textarea {
   min-height: 50px;
+  resize: none;
+  overflow: auto;
   background: #fff;
 }
 
