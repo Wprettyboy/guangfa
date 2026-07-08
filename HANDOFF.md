@@ -101,6 +101,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/placeholders/variables.js`：自动字段设置的变量/Token/锚点归一化、排序和填充卡片聚合工具，独立于旧模板字段。
 - `src/features/placeholders/fill.js`：自动字段填充的 AI 请求字段构造、返回值归一化和写入失败状态辅助。
 - `src/features/placeholders/PlaceholderFillCards.jsx`：填充工作台的自动字段卡片列表，只展示已有插入位置的字段。
+- `src/features/solution-writing/`：方案编写面板与前端服务，负责读取 OnlyOffice 大纲、选择章节模板组、确认功能模块清单、生成模块章节并写入当前光标。
 - `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，负责 `GF_PH_` 书签插入、跳转、删除和按书签替换填充值。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
@@ -126,6 +127,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/ai/format-outline.js`：格式/大纲 AI 审查接口。
 - `server/ai/model.js`：模型调用封装。
 - `server/ai/debug-log.js`：AI 填充调试日志。
+- `server/solution-writing/generator.js`：方案编写 AI 业务模块，复用现有知识库检索与 JSON 模型调用，提供功能模块识别和模块章节生成。
 - `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
 - `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
 - `server/knowledge/tables.js`：从知识库原 DOCX 文件抽取表格结构，按知识库范围检索可插入表格。
@@ -235,6 +237,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
 - `requestOnlyOfficeInsertKnowledgeTable(table)`：发送 `insert-knowledge-table`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入表格片段 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退创建普通表格。
 - `requestOnlyOfficeInsertKnowledgeImage(image)`：发送 `insert-knowledge-image`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入后端生成的图片片段 DOCX。
+- `requestOnlyOfficeOutline(options)`：发送 `request-outline`，等待注入脚本回传 `onlyoffice-outline-probe`，用于按需读取当前文档大纲。
+- `requestOnlyOfficeInsertSolutionText(text)`：发送 `insert-solution-writing-text`，让注入脚本调用 OnlyOffice 文本输入接口把纯文本写入当前光标或选区位置。
 - `requestOnlyOfficeAnalyzeLayoutFormat(standard)`：发送 `analyze-layout-format`，让排版注入脚本读取 OnlyOffice 文档段落并按标准规则返回 `layout-format-analyzed` findings。
 - `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按修复计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
 - `requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex)`：发送 `insert-placeholder-variable`，等待 `placeholder-anchor-inserted` 回传。
@@ -272,6 +276,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `fillComplexFillField(payload)`：优先按 `GF_CF_SEL_` 选区范围书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
   - `insertKnowledgeTable(payload)`：调用 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入后端生成的单表格 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退 `Asc.Editor.callCommand()` + `Api.CreateTable(rows, columns)` + `ApiDocument.InsertContent([table])` 创建普通表格；按 `requestId` 去重，失败时返回 `knowledge-table-inserted` 错误结果。
   - `insertKnowledgeImage(payload)`：调用 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入后端生成的单图片 DOCX；按 `requestId` 去重，失败时返回 `knowledge-image-inserted` 错误结果。
+  - `request-outline` 消息：调用 `postOutline("request", requestId)`，回传当前 OnlyOffice 大纲。
+  - `insertSolutionWritingText(payload)`：复用 `enterTextAtSelection(text, "solution-writing")`，通过 OnlyOffice `asc_enterText` / `logicDocument.EnterText` 写入当前光标，并回传 `solution-writing-inserted`。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。

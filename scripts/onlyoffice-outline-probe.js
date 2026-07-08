@@ -922,19 +922,20 @@
     }
   }
 
-  function enterTextAtSelection(text) {
+  function enterTextAtSelection(text, saveTrigger) {
     const api = getEditorApi();
     const logicDocument = getLogicDocument();
     const value = String(text || "");
+    const trigger = saveTrigger || "fill-field";
     try {
       if (api && typeof api.asc_enterText === "function") {
         api.asc_enterText(Array.from(value).map(function (char) { return char.codePointAt(0); }));
-        saveOnlyOfficeDocument("fill-field");
+        saveOnlyOfficeDocument(trigger);
         return { ok: true, source: "asc-enter-text" };
       }
       if (logicDocument && typeof logicDocument.EnterText === "function") {
         logicDocument.EnterText(value);
-        saveOnlyOfficeDocument("fill-field");
+        saveOnlyOfficeDocument(trigger);
         return { ok: true, source: "logic-enter-text" };
       }
     } catch (error) {
@@ -1503,8 +1504,8 @@
     return setTrackRevisions(true);
   }
 
-  function postOutline(trigger) {
-    const payload = { ...extractOnlyOfficeOutline(), trigger };
+  function postOutline(trigger, requestId) {
+    const payload = { ...extractOnlyOfficeOutline(), trigger, requestId: requestId || "" };
     try {
       console.log("[guangfa-onlyoffice-outline]", payload);
       if (payload.items && console.table) console.table(payload.items);
@@ -1512,7 +1513,22 @@
     try {
       window.parent.postMessage({ source: "guangfa-onlyoffice-custom", action: "onlyoffice-outline-probe", outline: payload }, "*");
     } catch {}
+    try {
+      if (window.top && window.top !== window.parent) window.top.postMessage({ source: "guangfa-onlyoffice-custom", action: "onlyoffice-outline-probe", outline: payload }, "*");
+    } catch {}
     return payload;
+  }
+
+  function insertSolutionWritingText(payload) {
+    const requestId = payload?.requestId || "";
+    const text = String(payload?.text || "").trim();
+    const result = text
+      ? enterTextAtSelection(text, "solution-writing")
+      : { ok: false, error: "方案正文为空" };
+    const message = { source: "guangfa-onlyoffice-custom", action: "solution-writing-inserted", result: { ...result, requestId } };
+    try { window.parent?.postMessage(message, "*"); } catch {}
+    try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+    return result;
   }
 
   function postSelection(selection) {
@@ -2329,6 +2345,9 @@
     if (data.source === "guangfa-parent" && data.action === "save-document") {
       saveOnlyOfficeDocument(data.trigger);
     }
+    if (data.source === "guangfa-parent" && data.action === "request-outline") {
+      postOutline("request", data.requestId);
+    }
     if (data.source === "guangfa-parent" && data.action === "add-field-bookmark") {
       const result = addBookmarkToCurrentSelection(data.field || {});
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-bookmark", result }, "*");
@@ -2369,6 +2388,9 @@
     }
     if (data.source === "guangfa-parent" && data.action === "insert-knowledge-image") {
       insertKnowledgeImage(data);
+    }
+    if (data.source === "guangfa-parent" && data.action === "insert-solution-writing-text") {
+      insertSolutionWritingText(data);
     }
     if (data.source === "guangfa-parent" && data.action === "sync-annotation-fields") {
       try { restoreOnlyOfficeAnnotationFields(data.fields); } catch {}

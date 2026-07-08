@@ -1,0 +1,213 @@
+.solution-writing-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.solution-writing-scroll {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.solution-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.solution-block.grow {
+  min-height: 220px;
+}
+
+.solution-block-title,
+.solution-actions-row,
+.solution-module-head,
+.solution-topk,
+.solution-knowledge-group label {
+  display: flex;
+  align-items: center;
+}
+
+.solution-block-title {
+  justify-content: space-between;
+  gap: 8px;
+  color: #1f2937;
+}
+
+.solution-block-title strong {
+  font-size: 14px;
+}
+
+.solution-block-title span,
+.solution-module-card p,
+.solution-knowledge-group > span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.solution-block select,
+.solution-block input,
+.solution-block textarea {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.solution-block select,
+.solution-block input {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.solution-block textarea {
+  min-height: 64px;
+  resize: vertical;
+  padding: 9px 10px;
+  line-height: 1.55;
+}
+
+.solution-template-children {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.solution-template-children span {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.solution-knowledge-group {
+  display: grid;
+  gap: 6px;
+}
+
+.solution-knowledge-group strong,
+.solution-instruction span,
+.solution-topk span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.solution-knowledge-group label {
+  gap: 7px;
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.solution-knowledge-group input {
+  width: 14px;
+  min-height: 14px;
+  padding: 0;
+}
+
+.solution-topk {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.solution-topk input {
+  width: 76px;
+}
+
+.solution-instruction {
+  display: grid;
+  gap: 6px;
+}
+
+.solution-module-list {
+  display: grid;
+  gap: 10px;
+}
+
+.solution-module-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.solution-module-head {
+  gap: 6px;
+}
+
+.solution-module-head > span {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.solution-module-head input {
+  min-width: 0;
+  flex: 1;
+  font-weight: 700;
+}
+
+.solution-module-card textarea {
+  min-height: 50px;
+  background: #fff;
+}
+
+.solution-module-card p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.solution-actions-row {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.solution-draft-text {
+  min-height: 260px;
+  white-space: pre-wrap;
+}
+
+.solution-block .full-width {
+  width: 100%;
+  justify-content: center;
+}
+
+.solution-message {
+  margin-top: 10px;
+  border: 1px solid rgba(34, 197, 94, 0.24);
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 9px 10px;
+}
+
+.solution-message.error {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: #fef2f2;
+  color: #991b1b;
+}

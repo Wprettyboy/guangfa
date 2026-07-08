@@ -2207,6 +2207,11 @@ export default function App() {
                 complexFillFields={complexFillFields}
                 complexFillAnchors={complexFillAnchors}
                 sidePanelMode={annotateSidePanelMode}
+                knowledgeBases={knowledgeBases}
+                selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
+                selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
+                knowledgeTopK={knowledgeTopK}
+                currentProjectId={currentProjectId}
                 selectedField={selectedTemplateField}
                 selectedFieldId={selectedTemplateFieldId}
                 brushActive={brushActive}
@@ -2234,6 +2239,10 @@ export default function App() {
                 onDeletePlaceholderAnchor={deletePlaceholderAnchor}
                 onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}
                 onOpenComplexFillPanel={() => setAnnotateSidePanelMode("complex-fill")}
+                onOpenSolutionWritingPanel={() => setAnnotateSidePanelMode("solution-writing")}
+                onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
+                onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
+                onKnowledgeTopKChange={setKnowledgeTopK}
                 onAddComplexFillField={addComplexFillField}
                 onUpdateComplexFillField={updateComplexFillField}
                 onDeleteComplexFillField={deleteComplexFillField}

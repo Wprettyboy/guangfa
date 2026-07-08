@@ -20,6 +20,7 @@ let onlyOfficeLayoutRequestSeq = 0;
 let onlyOfficeLayoutAnalyzeRequestSeq = 0;
 let onlyOfficeKnowledgeTableRequestSeq = 0;
 let onlyOfficeKnowledgeImageRequestSeq = 0;
+let onlyOfficeSolutionWritingRequestSeq = 0;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
@@ -494,6 +495,65 @@ function requestOnlyOfficeInsertKnowledgeImage(image, options = {}) {
   });
 }
 
+function requestOnlyOfficeOutline(options = {}) {
+  const requestId = options.requestId || `outline-${Date.now()}-${++onlyOfficeSolutionWritingRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || 8000);
+  const message = {
+    source: "guangfa-parent",
+    action: "request-outline",
+    requestId,
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-outline-probe") return;
+      if (data.outline?.requestId !== requestId) return;
+      finish(data.outline);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应大纲读取命令。" }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 8);
+  });
+}
+
+function requestOnlyOfficeInsertSolutionText(text, options = {}) {
+  const requestId = options.requestId || `solution-writing-${Date.now()}-${++onlyOfficeSolutionWritingRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || 12000);
+  const message = {
+    source: "guangfa-parent",
+    action: "insert-solution-writing-text",
+    requestId,
+    text,
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      resolve(result);
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "solution-writing-inserted") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应方案正文写入命令。" }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    postAllOnlyOfficeFrames(message, 0);
+  });
+}
+
 function isTransientComplexFillWriteFailure(result) {
   const errors = [
     result?.error,
@@ -697,6 +757,8 @@ export {
   requestOnlyOfficeFillComplexFillField,
   requestOnlyOfficeInsertKnowledgeImage,
   requestOnlyOfficeInsertKnowledgeTable,
+  requestOnlyOfficeInsertSolutionText,
+  requestOnlyOfficeOutline,
   requestOnlyOfficeFillPlaceholderVariable,
   requestOnlyOfficeInsertPlaceholderVariable,
   requestOnlyOfficeSelectComplexFillAnchor,

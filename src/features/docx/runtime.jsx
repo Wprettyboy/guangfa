@@ -100,6 +100,8 @@ function DocumentFrame({
   onInputPointCaptured,
   onOpenPlaceholderPanel,
   onOpenComplexFillPanel,
+  onOpenSolutionWritingPanel,
+  onOfficeOutlineChange,
   onOfficeDocumentReady,
   aiKnowledgeContext,
   trackRevisionsEnabled = false,
@@ -403,6 +405,14 @@ function DocumentFrame({
         onOpenComplexFillPanel?.();
         return;
       }
+      if (data.action === "open-solution-writing-panel") {
+        onOpenSolutionWritingPanel?.();
+        return;
+      }
+      if (data.action === "onlyoffice-outline-probe") {
+        onOfficeOutlineChange?.(data.outline);
+        return;
+      }
       if (data.action === "field-bookmark" || data.action === "field-fill") {
         console.log("[onlyoffice-field]", data.action, data.result);
         return;
@@ -435,7 +445,7 @@ function DocumentFrame({
     }
     window.addEventListener("message", handleOfficeAnnotation);
     return () => window.removeEventListener("message", handleOfficeAnnotation);
-  }, [activeOfficePreview?.id, mode, onFieldPagesChange, onInputPointCaptured, onOpenComplexFillPanel, onOpenPlaceholderPanel, onSlotClick]);
+  }, [activeOfficePreview?.id, mode, onFieldPagesChange, onInputPointCaptured, onOfficeOutlineChange, onOpenComplexFillPanel, onOpenPlaceholderPanel, onOpenSolutionWritingPanel, onSlotClick]);
 
   function jumpToPage(pageNumber) {
     if (!isReady) return;

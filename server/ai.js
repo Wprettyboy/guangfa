@@ -2,12 +2,15 @@ import { createKnowledgeChat } from "./ai/chat.js";
 import { fillField } from "./ai/fill.js";
 import { createFormatOutlinePlan } from "./ai/format-outline.js";
 import { createAiKnowledgeSearch } from "./ai/knowledge-query.js";
+import { generateSolutionModuleSections, identifySolutionModules } from "./solution-writing/generator.js";
 
 const aiRoutes = new Set([
   "/api/ai/fill-field",
   "/api/ai/format-outline-plan",
   "/api/ai/chat",
   "/api/ai/knowledge-search",
+  "/api/ai/solution-identify-modules",
+  "/api/ai/solution-generate-sections",
 ]);
 
 export function aiFillMiddleware() {
@@ -25,7 +28,11 @@ export function aiFillMiddleware() {
           ? await createKnowledgeChat(payload)
           : request.url === "/api/ai/knowledge-search"
             ? await createAiKnowledgeSearch(payload)
-            : await fillField(payload);
+            : request.url === "/api/ai/solution-identify-modules"
+              ? await identifySolutionModules(payload)
+              : request.url === "/api/ai/solution-generate-sections"
+                ? await generateSolutionModuleSections(payload)
+                : await fillField(payload);
       sendJson(response, 200, result);
     } catch (error) {
       sendJson(response, error.statusCode || 500, {

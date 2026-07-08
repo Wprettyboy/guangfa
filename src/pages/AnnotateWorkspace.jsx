@@ -7,8 +7,10 @@ import StatusPill from "../components/StatusPill.jsx";
 import { templateCategories } from "../constants/templates.js";
 import ComplexFillPanel from "../features/complex-fill/ComplexFillPanel.jsx";
 import { FieldForm } from "../features/docx/fill/FieldControls.jsx";
+import { requestOnlyOfficeInsertSolutionText, requestOnlyOfficeOutline } from "../features/docx/office/bridge.jsx";
 import { DocumentFrame } from "../features/docx/runtime.jsx";
 import { comparePlaceholderAnchors, labelPlaceholderAnchorPages, normalizePlaceholderName, normalizePlaceholderVariables } from "../features/placeholders/variables.js";
+import SolutionWritingPanel from "../features/solution-writing/SolutionWritingPanel.jsx";
 import { getFillModeLabel, getTemplateFieldSourceText, normalizeFieldCategory, normalizeFillMode } from "../utils/fields.js";
 import { inferTemplateCategory, normalizeTemplateCategory } from "../utils/templates.js";
 
@@ -42,6 +44,7 @@ function AnnotateWorkspace({
   onDeletePlaceholderAnchor,
   onOpenPlaceholderPanel,
   onOpenComplexFillPanel,
+  onOpenSolutionWritingPanel,
   onAddComplexFillField,
   onUpdateComplexFillField,
   onDeleteComplexFillField,
@@ -55,9 +58,18 @@ function AnnotateWorkspace({
   complexFillAnchors = [],
   sidePanelMode = "fields",
   placeholderReuseTemplates = [],
+  knowledgeBases = [],
+  selectedProjectKnowledgeBaseIds = [],
+  selectedGlobalKnowledgeBaseIds = [],
+  knowledgeTopK = 8,
+  currentProjectId = "default-project",
+  onSelectedProjectKnowledgeBaseChange,
+  onSelectedGlobalKnowledgeBaseChange,
+  onKnowledgeTopKChange,
 }) {
   const fileInputRef = useRef(null);
   const panelRef = useRef(null);
+  const [officeOutline, setOfficeOutline] = useState(null);
   const [templateCategory, setTemplateCategory] = useState(() => normalizeTemplateCategory(inferTemplateCategory(templateFile?.name)));
   const currentPageFields = fields.filter((field) => (field.page || 1) === currentPage);
   const invalidFieldCount = fields.filter((field) => !getTemplateFieldSourceText(field) || !(field.category || field.type || "").trim()).length;
@@ -100,6 +112,7 @@ function AnnotateWorkspace({
 
   const showPlaceholderPanel = sidePanelMode === "placeholders";
   const showComplexFillPanel = sidePanelMode === "complex-fill";
+  const showSolutionWritingPanel = sidePanelMode === "solution-writing";
   const placeholderReuseSources = useMemo(
     () => buildPlaceholderReuseSources(placeholderReuseTemplates, templateFile),
     [placeholderReuseTemplates, templateFile],
@@ -124,12 +137,30 @@ function AnnotateWorkspace({
           onInputPointCaptured={onInputPointCaptured}
           onOpenPlaceholderPanel={onOpenPlaceholderPanel}
           onOpenComplexFillPanel={onOpenComplexFillPanel}
+          onOpenSolutionWritingPanel={onOpenSolutionWritingPanel}
+          onOfficeOutlineChange={setOfficeOutline}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />
       </section>
 
       <aside className="right-panel field-panel" ref={panelRef}>
-        {showComplexFillPanel ? (
+        {showSolutionWritingPanel ? (
+          <SolutionWritingPanel
+            outline={officeOutline}
+            saveState={saveState}
+            knowledgeBases={knowledgeBases}
+            selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
+            selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
+            knowledgeTopK={knowledgeTopK}
+            currentProjectId={currentProjectId}
+            onSelectedProjectKnowledgeBaseChange={onSelectedProjectKnowledgeBaseChange}
+            onSelectedGlobalKnowledgeBaseChange={onSelectedGlobalKnowledgeBaseChange}
+            onKnowledgeTopKChange={onKnowledgeTopKChange}
+            onRequestOutline={requestOnlyOfficeOutline}
+            onInsertText={requestOnlyOfficeInsertSolutionText}
+            onSaveTemplate={() => onSaveTemplate?.(templateCategory)}
+          />
+        ) : showComplexFillPanel ? (
           <ComplexFillPanel
             fields={complexFillFields}
             anchors={complexFillAnchors}
