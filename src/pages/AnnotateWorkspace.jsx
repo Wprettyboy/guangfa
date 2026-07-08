@@ -66,7 +66,6 @@ function AnnotateWorkspace({
   onSelectedProjectKnowledgeBaseChange,
   onSelectedGlobalKnowledgeBaseChange,
   onKnowledgeTopKChange,
-  onInsertKnowledgeImage,
 }) {
   const fileInputRef = useRef(null);
   const panelRef = useRef(null);
@@ -159,7 +158,6 @@ function AnnotateWorkspace({
             onKnowledgeTopKChange={onKnowledgeTopKChange}
             onRequestOutline={requestOnlyOfficeOutline}
             onInsertText={requestOnlyOfficeInsertSolutionText}
-            onInsertImage={onInsertKnowledgeImage}
             onSaveTemplate={() => onSaveTemplate?.(templateCategory)}
           />
         ) : showComplexFillPanel ? (

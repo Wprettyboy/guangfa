@@ -2022,6 +2022,8 @@ export default function App() {
     return requestOnlyOfficeInsertKnowledgeImage(image);
   }
 
+  const solutionWritingPanelActive = activeWorkspace === "annotate" && annotateSidePanelMode === "solution-writing";
+
   return (
     <div className="app-shell" ref={appRef}>
       <aside className="sidebar" aria-label="主导航">
@@ -2130,6 +2132,12 @@ export default function App() {
                       插入资料图片
                     </button>
                   </>
+                ) : null}
+                {solutionWritingPanelActive ? (
+                  <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeImagePickerOpen(true)}>
+                    <ImageIcon size={16} />
+                    方案配图
+                  </button>
                 ) : null}
                 <div className="workspace-tabs" role="tablist" aria-label="工作台切换">
                   <button
@@ -2243,7 +2251,6 @@ export default function App() {
                 onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
                 onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
                 onKnowledgeTopKChange={setKnowledgeTopK}
-                onInsertKnowledgeImage={insertKnowledgeImage}
                 onAddComplexFillField={addComplexFillField}
                 onUpdateComplexFillField={updateComplexFillField}
                 onDeleteComplexFillField={deleteComplexFillField}
@@ -2308,7 +2315,10 @@ export default function App() {
         onClose={() => setKnowledgeTablePickerOpen(false)}
       />
       <KnowledgeImagePicker
-        open={knowledgeImagePickerOpen && activeModule === "workspace" && activeWorkspace === "fill"}
+        open={knowledgeImagePickerOpen && activeModule === "workspace" && (activeWorkspace === "fill" || solutionWritingPanelActive)}
+        title={solutionWritingPanelActive ? "插入方案配图" : "插入资料图片"}
+        emptyScopeMessage={solutionWritingPanelActive ? "请先在方案编写的知识库范围中选择项目库或全局库。" : "请先在填充工作台选择项目库或全局库。"}
+        insertButtonLabel={solutionWritingPanelActive ? "插入配图" : "插入到光标"}
         knowledgeBases={knowledgeBases}
         selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
         selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
