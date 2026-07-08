@@ -114,7 +114,7 @@ function SolutionWritingPanel({
       }
       setGeneratedBlocks(nextBlocks);
       setStatus("idle");
-      setMessage(nextBlocks.length ? `已生成 ${nextBlocks.length} 个模块章节，可按模块或子标题插入。` : "没有可生成的模块。");
+      setMessage(nextBlocks.length ? `已生成 ${nextBlocks.length} 个模块写作规划，可按模块或子标题插入。` : "没有可生成的模块。");
     } catch (error) {
       setStatus("error");
       setMessage(error?.message || "方案章节生成失败");
@@ -332,18 +332,18 @@ function SolutionWritingPanel({
             </button>
             <button className="tool-button primary" type="button" onClick={generateSections} disabled={modules.length === 0 || busy}>
               {status === "generating" ? <Loader2 size={15} className="spin" /> : <Wand2 size={15} />}
-              生成章节
+              生成规划
             </button>
           </div>
         </SolutionSection>
 
         <section className="solution-block">
           <div className="solution-block-title">
-            <strong>生成结果</strong>
+            <strong>规划结果</strong>
             <span>{generatedBlocks.length ? `${generatedBlocks.length} 个模块` : "待生成"}</span>
           </div>
           {generatedBlocks.length === 0 ? (
-            <div className="empty-state compact">生成后的模块标题和子标题描述会出现在这里</div>
+            <div className="empty-state compact">生成后的模块写作规划会出现在这里</div>
           ) : (
             <div className="solution-generated-list">
               {generatedBlocks.map((block, moduleIndex) => {
@@ -356,11 +356,11 @@ function SolutionWritingPanel({
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => insertGeneratedText(buildGeneratedModuleText(selectedGroup, block, moduleIndex), `已插入 ${block.moduleName}`)}
+                        onClick={() => insertGeneratedText(buildGeneratedModuleText(selectedGroup, block, moduleIndex), `已插入 ${block.moduleName} 写作规划`)}
                         disabled={busy}
                       >
                         {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
-                        插入模块
+                        插入规划
                       </button>
                     </div>
                     <div className="solution-generated-sections">
@@ -374,14 +374,14 @@ function SolutionWritingPanel({
                               <button
                                 className="text-button"
                                 type="button"
-                                onClick={() => insertGeneratedText(buildGeneratedSectionText(sectionTitle, section.content), `已插入 ${sectionTitle}`)}
+                                onClick={() => insertGeneratedText(buildGeneratedSectionText(sectionTitle, section.content), `已插入 ${sectionTitle} 写作规划`)}
                                 disabled={busy}
                               >
                                 <Send size={13} />
-                                插入
+                                插入规划
                               </button>
                             </div>
-                            <p>{section.content || "需结合项目资料补充。"}</p>
+                            <p>{section.content || "需结合项目资料补充该标题的写作要点。"}</p>
                           </section>
                         );
                       })}
@@ -516,7 +516,7 @@ function buildGeneratedModuleText(group, block, moduleIndex) {
 }
 
 function buildGeneratedSectionText(title, content) {
-  return [title, content || "需结合项目资料补充。"].join("\n").trim();
+  return [title, content || "需结合项目资料补充该标题的写作要点。"].join("\n").trim();
 }
 
 function formatHeadingLine(number, title) {

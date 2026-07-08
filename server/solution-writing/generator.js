@@ -94,13 +94,14 @@ async function generateSolutionModuleSections(payload = {}) {
   const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, maxKnowledgeChars);
   const systemPrompt = [
     "你是政企软件方案文档的高级产品经理。",
-    "任务：按给定章节模板，为单个功能模块补齐详细功能设计正文。",
-    "保持模板子章节不增不减；依据不足时明确写“需结合项目资料补充”，不要编造。",
+    "任务：按给定章节模板，为单个功能模块规划每个子标题应该如何展开写作。",
+    "你输出的是写作规划、拓展方向、内容组织建议和专业化表达建议，不是可直接粘贴进方案的最终正文。",
+    "保持模板子章节不增不减；依据不足时说明应补充哪些资料，不要编造成熟正文。",
     "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
   ].join("\n");
   const userPrompt = [
     "输出 JSON：",
-    '{"moduleName":"模块名称","sections":[{"templateTitle":"功能概述","heading":"功能概述","content":"正文"}],"warnings":["可为空"]}',
+    '{"moduleName":"模块名称","sections":[{"templateTitle":"功能概述","heading":"功能概述","content":"写作规划：本标题下建议写哪些内容、按什么顺序展开、怎样写得专业充实"}],"warnings":["可为空"]}',
     "",
     `目标章节：${sectionTitle}`,
     `模块名称：${module.name}`,
@@ -112,11 +113,13 @@ async function generateSolutionModuleSections(payload = {}) {
     "",
     knowledgeText ? `【背景资料】\n${knowledgeText}` : "【背景资料】\n未检索到资料。",
     "",
-    "写作要求：",
-    "1. 每个 content 使用正式方案文档语气，避免口语和营销话术。",
-    "2. “具体功能列表”适合输出条目化功能点；其他章节输出连续段落。",
-    "3. 不输出提示词、内部分析、资料片段编号堆砌。",
-    "4. 不要改动模板标题语义。",
+    "规划要求：",
+    "1. 每个 content 只写“这个标题下应该怎么写”的规划建议，不要直接写最终方案正文。",
+    "2. 规划建议要说明建议覆盖的要点、展开顺序、专业化表达方向、可引用的资料要点。",
+    "3. 对“具体功能列表”，规划应说明功能点如何分组、每类功能应写哪些能力、是否需要补充约束或边界。",
+    "4. 对“业务流程与业务场景描述”，规划应说明应覆盖哪些角色、触发场景、流程节点、异常场景和闭环关系。",
+    "5. 对“功能概述”，规划应说明模块定位、建设目标、核心能力、管理价值和与其他模块的关系。",
+    "6. 不输出提示词、内部分析、资料片段编号堆砌；不要改动模板标题语义。",
   ].join("\n");
   const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 4096, {
     debugFileName: "solution-writing-generate-last.json",
@@ -158,7 +161,7 @@ function normalizeGeneratedSections(sections, childTemplates) {
     return {
       templateTitle: template.title,
       heading: cleanText(matched?.heading || template.title),
-      content: cleanMultilineText(matched?.content || "需结合项目资料补充。"),
+      content: cleanMultilineText(matched?.content || "需结合项目资料补充该标题的写作要点。"),
     };
   });
 }
