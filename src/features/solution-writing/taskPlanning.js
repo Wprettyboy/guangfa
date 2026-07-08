@@ -109,12 +109,12 @@ function createTask(item, { headingPath, childTitles, previousTask, outlineText 
     previousPlanSummary,
     exclusiveBoundary: {
       include: [
-        `只围绕“${title}”标题和标题下原文拆解执行事项。`,
-        "明确本标题对应的执行步骤、交付物和验收关注点。",
+        `基于“${title}”及其对应原文生成任务。`,
+        "任务需要说明执行目标、关键动作和交付结果。",
       ],
       exclude: [
-        parentTitle ? `不重复上级“${parentTitle}”的总体范围说明。` : "不重复一级类别的总体说明。",
-        childTitles.length ? "不提前展开下级标题的具体执行细节。" : "不扩展文档未体现的额外功能范围。",
+        parentTitle ? `不重复“${parentTitle}”已经覆盖的总体内容。` : "不重复类别总体说明。",
+        childTitles.length ? "不抢写下级标题负责的细节。" : "不扩展原文没有体现的内容。",
       ],
       handoffToChildren,
     },
@@ -123,9 +123,9 @@ function createTask(item, { headingPath, childTitles, previousTask, outlineText 
       : "本类别首个子任务，承接一级任务类别边界启动。",
     objective: `形成“${title}”对应的可执行任务安排。`,
     executionPoints: [
-      "确认标题正文中的任务边界和执行对象。",
-      "拆解具体执行步骤、责任输入和验收关注点。",
-      "对正文不足的部分标记为待补充或待确认。",
+      "判断这部分需要 AI 规划哪些执行任务。",
+      "提炼任务动作、交付物和验收关注点。",
+      "原文不足时标记需要补充或确认的内容。",
     ],
     deliverables: ["任务边界说明", `${title}执行要点`, "验收关注点清单"],
     produces: [`${title}任务边界`, `${title}执行依据`],

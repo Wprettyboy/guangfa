@@ -202,24 +202,31 @@ function TaskCard({ task, expanded, onToggle }) {
       </button>
       {expanded ? (
         <div className="solution-task-detail">
-          <InfoRow label="标题路径" value={task.headingPath.join(" / ")} />
-          <InfoRow label="当前标题" value={task.sourceHeading} />
           <InfoRow label="对应原文" value={task.sourceText} />
-          <ListRow label="规划焦点" values={task.planningFocus} />
-          <InfoRow label="任务目标" value={task.objective} />
-          <InfoRow label="前序规划输入" value={task.previousPlanSummary} />
+          <ListRow label="AI要干什么" values={getAiWorkItems(task)} />
+          <ListRow label="约束是什么" values={getTaskConstraints(task)} />
           {task.planningSummary ? <InfoRow label="AI规划摘要" value={task.planningSummary} /> : null}
-          <ListRow label="写什么" values={task.exclusiveBoundary.include} />
-          <ListRow label="不写什么" values={task.exclusiveBoundary.exclude} />
-          <ListRow label="下沉给子标题" values={task.exclusiveBoundary.handoffToChildren} emptyText="无下级标题承接" />
-          <ListRow label="执行要点" values={task.executionPoints} />
           <ListRow label="交付物" values={task.deliverables} />
-          <ListRow label="依赖任务" values={task.dependsOn} emptyText="无前置任务" />
-          <ListRow label="产出给后续" values={task.producesForNext} />
         </div>
       ) : null}
     </article>
   );
+}
+
+function getAiWorkItems(task) {
+  return [
+    task.objective,
+    ...(Array.isArray(task.executionPoints) ? task.executionPoints : []),
+  ].filter(Boolean);
+}
+
+function getTaskConstraints(task) {
+  return [
+    ...(Array.isArray(task.exclusiveBoundary?.include) ? task.exclusiveBoundary.include.map((item) => `范围：${item}`) : []),
+    ...(Array.isArray(task.exclusiveBoundary?.exclude) ? task.exclusiveBoundary.exclude.map((item) => `排除：${item}`) : []),
+    ...(Array.isArray(task.exclusiveBoundary?.handoffToChildren) ? task.exclusiveBoundary.handoffToChildren.map((item) => `下沉：${item}`) : []),
+    task.previousPlanSummary ? `上下文：${task.previousPlanSummary}` : "",
+  ].filter(Boolean);
 }
 
 function InfoRow({ label, value }) {
