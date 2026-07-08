@@ -47,8 +47,7 @@
 .solution-block-title,
 .solution-actions-row,
 .solution-module-head,
-.solution-topk,
-.solution-knowledge-group label {
+.solution-topk {
   display: flex;
   align-items: center;
 }
@@ -114,7 +113,6 @@
   gap: 6px;
 }
 
-.solution-knowledge-group strong,
 .solution-instruction span,
 .solution-topk span {
   color: #475569;
@@ -122,17 +120,91 @@
   font-weight: 700;
 }
 
-.solution-knowledge-group label {
+.solution-knowledge-dropdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  padding: 0 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.solution-knowledge-dropdown:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.solution-knowledge-dropdown > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.solution-knowledge-dropdown strong {
+  color: #475569;
+  font-size: 12px;
+}
+
+.solution-knowledge-dropdown em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.solution-knowledge-menu {
+  display: grid;
+  gap: 4px;
+  max-height: 150px;
+  overflow: hidden auto;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 7px;
+  background: #f8fafc;
+  padding: 6px;
+}
+
+.solution-knowledge-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.solution-knowledge-menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d4e3;
+}
+
+.solution-knowledge-menu label {
+  display: flex;
+  align-items: center;
   gap: 7px;
   min-width: 0;
   color: #334155;
   font-size: 13px;
+  padding: 5px 6px;
+  border-radius: 6px;
 }
 
-.solution-knowledge-group input {
+.solution-knowledge-menu label:hover {
+  background: #eef6ff;
+}
+
+.solution-knowledge-menu input {
   width: 14px;
   min-height: 14px;
   padding: 0;
+}
+
+.solution-knowledge-menu span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .solution-topk {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
 
 function SolutionWritingPanel({
@@ -313,21 +313,44 @@ function SolutionWritingPanel({
 }
 
 function KnowledgeScopeList({ title, bases, selectedIds, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selectedNames = bases.filter((base) => selectedIds.includes(base.id)).map((base) => base.name);
+  const summary = bases.length === 0
+    ? "无可选知识库"
+    : selectedNames.length > 0
+      ? `已选 ${selectedNames.length} 个`
+      : "未选择";
+
   function toggle(id) {
     const nextIds = selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id];
     onChange?.(nextIds);
   }
+
   return (
     <div className="solution-knowledge-group">
-      <strong>{title}</strong>
-      {bases.length === 0 ? (
-        <span>暂无可选知识库</span>
-      ) : bases.map((base) => (
-        <label key={base.id}>
-          <input type="checkbox" checked={selectedIds.includes(base.id)} onChange={() => toggle(base.id)} />
-          <span>{base.name}</span>
-        </label>
-      ))}
+      <button
+        className="solution-knowledge-dropdown"
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        disabled={bases.length === 0}
+        aria-expanded={open}
+      >
+        <span>
+          <strong>{title}</strong>
+          <em>{summary}</em>
+        </span>
+        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+      </button>
+      {open && bases.length > 0 ? (
+        <div className="solution-knowledge-menu">
+          {bases.map((base) => (
+            <label key={base.id}>
+              <input type="checkbox" checked={selectedIds.includes(base.id)} onChange={() => toggle(base.id)} />
+              <span title={base.name}>{base.name}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
