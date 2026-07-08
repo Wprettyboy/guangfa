@@ -204,6 +204,13 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 这段只记录可复用接口和封装，不记录具体场景规则。新增 OnlyOffice 能力时先查这里和现有封装，优先复用，不要把 OnlyOffice 内部 API 直接散落到页面组件。
 
+生产化接入优先级：
+
+1. 外层 React 业务面板触发的 Office 操作，优先通过 `DocsAPI.DocEditor.createConnector()` 建立官方 Connector，再用 `connector.callCommand()` 执行 `Api.GetDocument()`、`Api.CreateParagraph()`、`ApiDocument.InsertContent()` 等公开文档 API。
+2. 需要显示在 OnlyOffice 内部工具栏、右侧面板或弹窗里的工具，优先做官方 `sdkjs-plugins` 插件，通过 `Asc.plugin.callCommand()` 执行文档命令。
+3. `scripts/patch-onlyoffice.py` 注入脚本只作为现有功能兼容层或 Connector/插件不可用时的 fallback；后续新业务能力不要默认继续堆到注入脚本里。
+4. Connector 属于 OnlyOffice Automation API，部分部署版本可能不可用；调用方必须先探测能力并保留明确降级路径，不允许静默假装成功。
+
 #### 通信约定
 
 - React -> OnlyOffice：统一发送 `postMessage({ source: "guangfa-parent", action, ...payload }, "*")`。

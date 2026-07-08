@@ -12,6 +12,12 @@ import {
   hasInputPoint,
   requiresInputPoint,
 } from "../../../utils/fields.js";
+import {
+  clearOnlyOfficeEditor,
+  getOnlyOfficeConnectorStatus,
+  registerOnlyOfficeEditor,
+} from "./connector.js";
+import { insertSolutionWritingWithConnector } from "./solutionConnector.js";
 
 let onlyOfficeFillRequestSeq = 0;
 let onlyOfficePlaceholderRequestSeq = 0;
@@ -116,6 +122,7 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
             },
             onDocumentReady: () => {
               config.events?.onDocumentReady?.();
+              registerOnlyOfficeEditor(editor);
               if (mode === "fill") {
                 window.setTimeout(() => {
                   postOnlyOfficeCommand(container, {
@@ -134,12 +141,14 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
           },
         });
         window.__guangfaActiveOnlyOfficeEditor = editor;
+        registerOnlyOfficeEditor(editor);
       })
       .catch(() => onError?.());
 
     return () => {
       cancelled = true;
       if (window.__guangfaActiveOnlyOfficeEditor === editor) window.__guangfaActiveOnlyOfficeEditor = null;
+      clearOnlyOfficeEditor(editor);
       try {
         editor?.destroyEditor?.();
       } catch {}
@@ -527,12 +536,27 @@ function requestOnlyOfficeOutline(options = {}) {
 function requestOnlyOfficeInsertSolutionText(text, options = {}) {
   const requestId = options.requestId || `solution-writing-${Date.now()}-${++onlyOfficeSolutionWritingRequestSeq}`;
   const timeoutMs = Number(options.timeoutMs || 12000);
+  const paragraphs = Array.isArray(options.paragraphs) ? options.paragraphs : [];
+  if (paragraphs.length) {
+    return insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeoutMs })
+      .then((result) => {
+        if (result?.ok) return result;
+        return requestOnlyOfficeInsertSolutionTextViaProbe(text, { ...options, requestId, timeoutMs, connectorResult: result });
+      });
+  }
+  return requestOnlyOfficeInsertSolutionTextViaProbe(text, { ...options, requestId, timeoutMs });
+}
+
+function requestOnlyOfficeInsertSolutionTextViaProbe(text, options = {}) {
+  const requestId = options.requestId || `solution-writing-${Date.now()}-${++onlyOfficeSolutionWritingRequestSeq}`;
+  const timeoutMs = Number(options.timeoutMs || 12000);
   const message = {
     source: "guangfa-parent",
     action: "insert-solution-writing-text",
     requestId,
     text,
     paragraphs: Array.isArray(options.paragraphs) ? options.paragraphs : [],
+    connectorResult: options.connectorResult || null,
   };
   return new Promise((resolve) => {
     let done = false;
@@ -745,6 +769,7 @@ export {
   postAllOnlyOfficeFrames,
   postOnlyOfficeCommand,
   readOnlyOfficePageNumber,
+  getOnlyOfficeConnectorStatus,
   requestOnlyOfficeAddFieldBookmark,
   requestOnlyOfficeAddInputPoint,
   requestOnlyOfficeAddComplexFillAnchor,
