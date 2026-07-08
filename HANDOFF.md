@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-05
+更新时间：2026-07-08
 
 ## 新会话先读
 
@@ -165,7 +165,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 3. 模板标注以 OnlyOffice 真实选区为准，字段保存的是选区原文、页码、bookmark/selection/inputPoint 等信息。
 4. 填充确认工作台优先用 OnlyOffice 现场写入与下载回传保存，避免旧 HTML DOCX 预览链路导致状态丢失。
 5. 格式审核工作台保留脚本审查 + AI 大纲审查；修复仍由脚本写 DOCX 副本。
-6. 本地接口开始迁移到 `server/api/` 注册表：当前只迁移知识库接口，其他 AI、OnlyOffice、模板、设置接口仍保持原中间件，后续按模块逐步迁移。
+6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/_meta/routes` 和 `/api/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
 
 ## 最近已完成
 
