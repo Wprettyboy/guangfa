@@ -474,14 +474,37 @@ function requestOnlyOfficeInsertKnowledgeTable(table, options = {}) {
   });
 }
 
-function requestOnlyOfficeInsertKnowledgeImage(image, options = {}) {
+async function imageToOnlyOfficeDataUrl(image) {
+  if (image?.dataUrl || image?.base64) return image;
+  const candidates = [image?.previewUrl, image?.fileUrl, image?.imageUrl].filter(Boolean);
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("图片读取失败"));
+        reader.readAsDataURL(blob);
+      });
+      if (dataUrl) return { ...image, dataUrl };
+    } catch {
+      // Keep the original URL fallback when the browser cannot read one candidate.
+    }
+  }
+  return image;
+}
+
+async function requestOnlyOfficeInsertKnowledgeImage(image, options = {}) {
   const requestId = options.requestId || `knowledge-image-${Date.now()}-${++onlyOfficeKnowledgeImageRequestSeq}`;
   const timeoutMs = Number(options.timeoutMs || 30000);
+  const officeImage = await imageToOnlyOfficeDataUrl(image);
   const message = {
     source: "guangfa-parent",
     action: "insert-knowledge-image",
     requestId,
-    image,
+    image: officeImage,
   };
   return new Promise((resolve) => {
     let done = false;

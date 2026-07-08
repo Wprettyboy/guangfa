@@ -2939,8 +2939,8 @@
       }, 120000);
     }
     try {
-      const imageUrl = String(data.image?.imageUrl || data.image?.fileUrl || data.image?.previewUrl || "");
-      if (imageUrl) {
+      const imageSource = String(data.image?.dataUrl || data.image?.base64 || data.image?.imageUrl || data.image?.fileUrl || data.image?.previewUrl || "");
+      if (imageSource) {
         const insertedImage = await insertKnowledgeImageApi(data.image, requestId);
         if (insertedImage.ok || insertedImage.deferred) return insertedImage;
       }
@@ -2957,13 +2957,13 @@
   }
 
   async function insertKnowledgeImageApi(image, requestId) {
-    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
-      return { ok: false, error: "OnlyOffice 图片 API 命令接口不可用。" };
-    }
+    const nativeInserted = await insertKnowledgeImageByNativeApi(image, requestId);
+    if (nativeInserted.ok) return nativeInserted;
+    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") return nativeInserted;
     try {
       window.Asc.scope = window.Asc.scope || {};
       window.Asc.scope.gfKnowledgeImagePayload = {
-        url: String(image?.imageUrl || image?.fileUrl || image?.previewUrl || ""),
+        url: String(image?.dataUrl || image?.base64 || image?.imageUrl || image?.fileUrl || image?.previewUrl || ""),
         widthEmu: Number(image?.widthEmu) || 0,
         heightEmu: Number(image?.heightEmu) || 0,
       };
@@ -3051,6 +3051,26 @@
       return result;
     } catch (error) {
       return { ok: false, error: error?.message || "OnlyOffice 图片 API 插入失败" };
+    }
+  }
+
+  async function insertKnowledgeImageByNativeApi(image, requestId) {
+    const api = getEditorApi() || window.Asc?.editor || window.editor;
+    const imageSource = String(image?.dataUrl || image?.base64 || image?.imageUrl || image?.fileUrl || image?.previewUrl || "");
+    if (!api || typeof api.AddImageUrl !== "function") {
+      return { ok: false, error: "OnlyOffice 原生图片插入接口不可用。" };
+    }
+    if (!imageSource) return { ok: false, error: "图片地址为空。" };
+    try {
+      api.AddImageUrl([imageSource], undefined, undefined);
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+      safeCall(getLogicDocument(), "Recalculate", null);
+      safeCall(getLogicDocument(), "UpdateInterface", null);
+      safeCall(getLogicDocument(), "UpdateSelection", null);
+      saveOnlyOfficeDocument("insert-knowledge-image-native");
+      return postKnowledgeImageResult({ ok: true, requestId, source: "native-add-image-url" });
+    } catch (error) {
+      return { ok: false, error: error?.message || "OnlyOffice 原生图片插入失败" };
     }
   }
 

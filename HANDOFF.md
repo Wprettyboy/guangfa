@@ -243,7 +243,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeDeleteComplexFillAnchor(anchor)`：发送 `delete-complex-fill-anchor`，删除 `GF_CF_` 业务书签；清高亮只通过 `GF_CF_SEL_` 选区范围书签定位，清除后保留 `GF_CF_SEL_`，不删除书签范围内的文档文字。
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
 - `requestOnlyOfficeInsertKnowledgeTable(table)`：发送 `insert-knowledge-table`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入表格片段 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退创建普通表格。
-- `requestOnlyOfficeInsertKnowledgeImage(image)`：发送 `insert-knowledge-image`，让注入脚本优先用 OnlyOffice `Api.CreateImage(imageUrl, widthEmu, heightEmu)` + `ApiDocument.InsertContent()` 在当前光标插入图片；`asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 插入图片片段 DOCX 只作为旧数据兜底。
+- `requestOnlyOfficeInsertKnowledgeImage(image)`：发送 `insert-knowledge-image`，桥接层先把图片预览地址读取为 Base64 data URL；注入脚本优先用 OnlyOffice `api.AddImageUrl([imageSrc])` 在当前光标插入图片，`Api.CreateImage(imageSrc, widthEmu, heightEmu)` + `ApiDocument.InsertContent()` 和图片片段 DOCX 只作为兜底。
 - `requestOnlyOfficeOutline(options)`：发送 `request-outline`，等待注入脚本回传 `onlyoffice-outline-probe`，用于按需读取当前文档大纲和 `documentText` 全文文本；回传结果可包含 `documentStyles`，大纲项可带 `styleName/bodyStyleName`，供前端使用模板段落真实 Word 样式名。
 - `requestOnlyOfficeInsertSolutionText(text, options)`：写入方案编制文本；`options.paragraphs` 可传结构化段落，段落支持 `type/level/style/styleName/styleFallback/text`，Connector/注入脚本会优先按精确 Word 样式名写入；`options.replaceTarget` 可传目标标题段落引用，Connector 优先按标题定位清理该标题下方正文并写入新段落，Connector 不可用时回退注入脚本。
 - `requestOnlyOfficeAnalyzeLayoutFormat(standard)`：发送 `analyze-layout-format`，让排版注入脚本读取 OnlyOffice 文档段落并按标准规则返回 `layout-format-analyzed` findings。
@@ -282,7 +282,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `deleteComplexFillAnchor(payload)`：单独删除 `GF_CF_` 业务书签；再按 `GF_CF_SEL_` 选区范围书签选中原范围并调用 `clearTextHighlightFromCurrentSelection()` 清背景，清完保留 `GF_CF_SEL_` 供后续选区替换。
   - `fillComplexFillField(payload)`：优先按 `GF_CF_SEL_` 选区范围书签选中范围，先调用 `logicDocument.RemoveBeforePaste()` 删除当前选区原文，再用 `CSelectedContent`、`CParagraphBookmark`、`ParaRun.AddText()` 插入纯文本填充值，并重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
   - `insertKnowledgeTable(payload)`：调用 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入后端生成的单表格 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退 `Asc.Editor.callCommand()` + `Api.CreateTable(rows, columns)` + `ApiDocument.InsertContent([table])` 创建普通表格；按 `requestId` 去重，失败时返回 `knowledge-table-inserted` 错误结果。
-  - `insertKnowledgeImage(payload)`：优先调用 OnlyOffice Office API `Api.CreateImage(imageUrl, widthEmu, heightEmu)` 创建图片并用 `ApiDocument.InsertContent()` 插入当前光标；旧数据缺少 `imageUrl` 时才回退 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入单图片 DOCX；按 `requestId` 去重，失败时返回 `knowledge-image-inserted` 错误结果。
+  - `insertKnowledgeImage(payload)`：优先调用 OnlyOffice 工具栏同源接口 `api.AddImageUrl([imageSrc])` 插入当前光标；`imageSrc` 优先使用前端桥接层由图片预览地址转换出的 Base64 data URL，避免 Docker 内外 `127.0.0.1` / `host.docker.internal` 可访问性不一致导致空白图；原生接口不可用时才回退 `Api.CreateImage(imageSrc, widthEmu, heightEmu)` + `ApiDocument.InsertContent()`，旧数据缺少图片源时再回退 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入单图片 DOCX；按 `requestId` 去重，失败时返回 `knowledge-image-inserted` 错误结果。
   - `request-outline` 消息：调用 `postOutline("request", requestId)`，回传当前 OnlyOffice 大纲。
   - `insertSolutionWritingText(payload)`：接收方案写入文本；当 payload 带 `paragraphs` 时，优先通过 OnlyOffice `Asc.Editor.callCommand()`、`Api.CreateParagraph()`、`ApiDocument.InsertContent()` 插入结构化段落，并用 `ApiDocument.GetStyle()` + `ApiParagraph.SetStyle()` 套用 Word 段落样式；如传入 `styleName` 则优先使用文档真实样式名，只有样式未命中时才对 `ApiParagraph.AddText()` 返回的 run 做字体/字号/加粗兜底；传入 `replaceTarget` 时，会按目标标题段落定位，使用 `ApiParagraph.Delete()` / `RemoveAllElements()` 清理标题到下一个标题之间的原正文，再用 `ApiDocumentContent.AddElement()` 把新段落插入目标标题后方；没有结构化段落或接口不可用时，回退 `enterTextAtSelection(text, "solution-writing")`。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
@@ -327,8 +327,9 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `ParaRun.AddText(text)`：通过 OnlyOffice run 写入纯文本内容；不设置 run 直接字体属性时，字号等由当前位置的段落/样式体系决定。
 - `Asc.Editor.callCommand(callback)`：在 OnlyOffice 命令上下文中执行文档编辑动作，适合插入表格等需要编辑器事务包裹的操作。
 - `api.asc_insertTextFromUrl(url)` / `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)`：把外部 DOCX 内容插入当前光标位置，适合 Word 到 Word 的内容复用。
+- `api.AddImageUrl([imageSrc], undefined, token?)`：OnlyOffice 文档编辑器工具栏插入图片同源接口，适合把 URL/Base64 图片插入当前光标，项目图片插入优先走该接口。
 - `Api.CreateTable(rows, columns)`：创建 OnlyOffice 表格对象。
-- `Api.CreateImage(imageSrc, width, height)`：创建 OnlyOffice 图片对象；`imageSrc` 使用容器可访问的绝对图片 URL，`width/height` 使用 EMU。图片插入优先用该接口，不再默认走 DOCX 图片片段。
+- `Api.CreateImage(imageSrc, width, height)`：创建 OnlyOffice 图片对象；OnlyOffice 官方支持互联网 URL 或 Base64 图片源，`width/height` 使用 EMU。项目内图片插入优先传 Base64 data URL；只有明确确认 URL 在浏览器与 DocumentServer 容器两侧都可访问时才直接传 URL。
 - `ApiDocument.InsertContent([element])`：把表格等文档对象插入当前光标位置。
 - `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。
 - `logicDocument.Recalculate()`、`UpdateInterface()`、`UpdateSelection()`：插入或删除后刷新文档状态和 UI。
