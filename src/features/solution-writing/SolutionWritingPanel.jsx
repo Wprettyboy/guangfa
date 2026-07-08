@@ -26,6 +26,7 @@ function SolutionWritingPanel({
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
   const effectiveOutline = localOutline || outline;
+  const rawOutlineCount = Array.isArray(effectiveOutline?.items) ? effectiveOutline.items.length : 0;
   const outlineItems = useMemo(() => normalizeOutlineItems(effectiveOutline?.items), [effectiveOutline]);
   const templateGroups = useMemo(() => buildTemplateGroups(outlineItems), [outlineItems]);
   const selectedGroup = templateGroups.find((group) => group.key === selectedGroupKey) || templateGroups[0] || null;
@@ -45,7 +46,7 @@ function SolutionWritingPanel({
 
   useEffect(() => {
     if (selectedGroupKey && templateGroups.some((group) => group.key === selectedGroupKey)) return;
-    const recommended = templateGroups.find((group) => /功能模块|详细功能/.test(group.title)) || templateGroups[0];
+    const recommended = getRecommendedTemplateGroup(templateGroups);
     setSelectedGroupKey(recommended?.key || "");
   }, [selectedGroupKey, templateGroups]);
 
@@ -54,9 +55,11 @@ function SolutionWritingPanel({
     setMessage("");
     const result = await onRequestOutline?.();
     if (result?.ok) {
+      const nextOutlineItems = normalizeOutlineItems(result.items);
+      const nextTemplateGroups = buildTemplateGroups(nextOutlineItems);
       setLocalOutline(result);
       setStatus("idle");
-      setMessage(`已读取 ${result.items?.length || 0} 个大纲标题`);
+      setMessage(`已读取有效标题 ${nextOutlineItems.length} 个（原始 ${result.items?.length || 0} 个），可选章节模板 ${nextTemplateGroups.length} 组`);
       return;
     }
     setStatus("error");
@@ -183,7 +186,7 @@ function SolutionWritingPanel({
           <div className="solution-block-title">
             <FileText size={15} />
             <strong>章节模板</strong>
-            <span>{outlineItems.length ? `${outlineItems.length} 个大纲标题` : "未读取大纲"}</span>
+            <span>{templateGroups.length ? `模板组 ${templateGroups.length} 个` : "未读取大纲"}</span>
           </div>
           <select value={selectedGroup?.key || ""} onChange={(event) => setSelectedGroupKey(event.target.value)} disabled={templateGroups.length === 0}>
             {templateGroups.length === 0 ? (
@@ -193,9 +196,15 @@ function SolutionWritingPanel({
             ))}
           </select>
           {selectedGroup ? (
-            <div className="solution-template-children">
-              {selectedGroup.childTemplates.map((item) => <span key={`${selectedGroup.key}-${item.index}`}>{item.title}</span>)}
-            </div>
+            <>
+              <div className="solution-outline-stats">
+                <span>有效标题 {outlineItems.length} 个</span>
+                <span>原始返回 {rawOutlineCount} 个</span>
+              </div>
+              <div className="solution-template-children">
+                {selectedGroup.childTemplates.map((item) => <span key={`${selectedGroup.key}-${item.index}`}>{item.title}</span>)}
+              </div>
+            </>
           ) : null}
         </section>
 
@@ -391,6 +400,12 @@ function buildTemplateGroups(items) {
       };
     })
     .filter((group) => group.childTemplates.length > 0);
+}
+
+function getRecommendedTemplateGroup(groups) {
+  return groups.find((group) => /功能模块/.test(group.title))
+    || groups.find((group) => /详细功能/.test(group.title))
+    || groups[0];
 }
 
 function composeSolutionText(group, blocks) {

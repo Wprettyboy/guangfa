@@ -99,6 +99,20 @@
   gap: 6px;
 }
 
+.solution-outline-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.solution-outline-stats span {
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
 .solution-template-children span {
   border: 1px solid rgba(37, 99, 235, 0.16);
   border-radius: 999px;
