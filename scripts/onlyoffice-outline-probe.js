@@ -1568,9 +1568,17 @@
   }
 
   function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) {
-    if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
+    if (!Array.isArray(paragraphs) || paragraphs.length === 0) {
+      return replaceTarget
+        ? { ok: false, error: "方案正文为空，无法按标题替换写入。" }
+        : enterTextAtSelection(fallbackText, "solution-writing");
+    }
     const logicDocument = getLogicDocument();
-    if (!logicDocument || typeof logicDocument.EnterText !== "function") return enterTextAtSelection(fallbackText, "solution-writing");
+    if (!logicDocument || typeof logicDocument.EnterText !== "function") {
+      return replaceTarget
+        ? { ok: false, error: "OnlyOffice 逻辑文档接口不可用，无法按标题定位写入。" }
+        : enterTextAtSelection(fallbackText, "solution-writing");
+    }
     try {
       let cleared = 0;
       if (replaceTarget) {
@@ -1621,6 +1629,7 @@
 
   async function insertStructuredSolutionWritingText(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
+    if (replaceTarget) return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget);
     if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
       return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget);
     }
