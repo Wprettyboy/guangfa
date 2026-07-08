@@ -21,6 +21,7 @@ function SolutionWritingPanel({
   const [selectedGroupKey, setSelectedGroupKey] = useState("");
   const [userInstruction, setUserInstruction] = useState("");
   const [modules, setModules] = useState([]);
+  const [collapsedModuleIds, setCollapsedModuleIds] = useState([]);
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
   const [draftText, setDraftText] = useState("");
   const [status, setStatus] = useState("idle");
@@ -77,7 +78,9 @@ function SolutionWritingPanel({
         userInstruction,
         knowledgeOptions,
       });
-      setModules(result.modules || []);
+      const nextModules = result.modules || [];
+      setModules(nextModules);
+      setCollapsedModuleIds(nextModules.map((module) => module.id));
       setGeneratedBlocks([]);
       setDraftText("");
       setStatus("idle");
@@ -137,10 +140,10 @@ function SolutionWritingPanel({
   }
 
   function addModule() {
-    setModules((current) => [
-      ...current,
-      { id: `SOL-M${String(current.length + 1).padStart(3, "0")}-${Date.now()}`, name: "新功能模块", description: "", reason: "", sourceRefs: [] },
-    ]);
+    const nextId = `SOL-M${String(modules.length + 1).padStart(3, "0")}-${Date.now()}`;
+    const nextModule = { id: nextId, name: "新功能模块", description: "", reason: "", sourceRefs: [] };
+    setModules((current) => [...current, nextModule]);
+    setCollapsedModuleIds((ids) => [...ids, nextId]);
   }
 
   function updateModule(moduleId, patch) {
@@ -150,6 +153,13 @@ function SolutionWritingPanel({
   function removeModule(moduleId) {
     setModules((current) => current.filter((module) => module.id !== moduleId));
     setGeneratedBlocks((current) => current.filter((block) => block.moduleId !== moduleId));
+    setCollapsedModuleIds((current) => current.filter((id) => id !== moduleId));
+  }
+
+  function toggleModule(moduleId) {
+    setCollapsedModuleIds((current) => (
+      current.includes(moduleId) ? current.filter((id) => id !== moduleId) : [...current, moduleId]
+    ));
   }
 
   function moveModule(moduleId, direction) {
@@ -260,9 +270,22 @@ function SolutionWritingPanel({
           <div className="solution-module-list">
             {modules.length === 0 ? (
               <div className="empty-state compact">先识别或手动新增功能模块</div>
-            ) : modules.map((module, index) => (
-              <article className="solution-module-card" key={module.id}>
+            ) : modules.map((module, index) => {
+              const collapsed = collapsedModuleIds.includes(module.id);
+              const detailId = `solution-module-detail-${module.id}`;
+              return (
+              <article className={collapsed ? "solution-module-card collapsed" : "solution-module-card"} key={module.id}>
                 <div className="solution-module-head">
+                  <button
+                    className="icon-button quiet solution-module-toggle"
+                    type="button"
+                    onClick={() => toggleModule(module.id)}
+                    aria-expanded={!collapsed}
+                    aria-controls={detailId}
+                    aria-label={collapsed ? "展开模块" : "收起模块"}
+                  >
+                    {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                  </button>
                   <span>{index + 1}</span>
                   <input value={module.name} onChange={(event) => updateModule(module.id, { name: event.target.value })} />
                   <button className="icon-button quiet" type="button" onClick={() => moveModule(module.id, -1)} disabled={index === 0} aria-label="上移">
@@ -275,16 +298,21 @@ function SolutionWritingPanel({
                     <Trash2 size={14} />
                   </button>
                 </div>
-                <textarea
-                  value={module.description}
-                  placeholder="模块职责说明"
-                  onChange={(event) => updateModule(module.id, { description: event.target.value })}
-                />
-                {module.reason || module.sourceRefs?.length ? (
-                  <p>{module.reason}{module.sourceRefs?.length ? ` · ${module.sourceRefs.join("、")}` : ""}</p>
+                {!collapsed ? (
+                  <div className="solution-module-detail" id={detailId}>
+                    <textarea
+                      value={module.description}
+                      placeholder="模块职责说明"
+                      onChange={(event) => updateModule(module.id, { description: event.target.value })}
+                    />
+                    {module.reason || module.sourceRefs?.length ? (
+                      <p>{module.reason}{module.sourceRefs?.length ? ` · ${module.sourceRefs.join("、")}` : ""}</p>
+                    ) : null}
+                  </div>
                 ) : null}
               </article>
-            ))}
+              );
+            })}
           </div>
           <div className="solution-actions-row">
             <button className="text-button" type="button" onClick={addModule}>

@@ -265,8 +265,16 @@
   padding: 10px;
 }
 
+.solution-module-card.collapsed {
+  gap: 0;
+}
+
 .solution-module-head {
   gap: 6px;
+}
+
+.solution-module-toggle {
+  flex: 0 0 auto;
 }
 
 .solution-module-head > span {
@@ -294,6 +302,11 @@
   resize: none;
   overflow: auto;
   background: #fff;
+}
+
+.solution-module-detail {
+  display: grid;
+  gap: 8px;
 }
 
 .solution-module-card p {
