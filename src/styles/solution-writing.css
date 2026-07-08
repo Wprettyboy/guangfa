@@ -740,6 +740,44 @@
   padding: 4px 8px;
 }
 
+.solution-task-architecture {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.solution-task-architecture > div {
+  display: grid;
+  gap: 3px;
+}
+
+.solution-task-architecture strong {
+  color: #25324a;
+  font-size: 13px;
+}
+
+.solution-task-architecture span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.solution-task-architecture pre {
+  max-height: 168px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  padding: 8px;
+}
+
 .solution-task-category,
 .solution-task-card {
   display: grid;

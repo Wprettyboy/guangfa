@@ -1,8 +1,9 @@
 function buildTaskPlanningPreview(outlineItems = []) {
   const rows = normalizeOutlineRows(outlineItems);
-  if (!rows.length) return { categories: [], stats: getTaskPlanStats([]) };
+  if (!rows.length) return { categories: [], stats: getTaskPlanStats([]), outlineText: "" };
 
   const rootLevel = Math.min(...rows.map((item) => item.level));
+  const outlineText = buildOutlineText(rows, rootLevel);
   const categories = [];
   let currentCategory = null;
   const stack = [];
@@ -28,6 +29,7 @@ function buildTaskPlanningPreview(outlineItems = []) {
       headingPath,
       childTitles: getChildTitles(rows, position),
       previousTask,
+      outlineText,
     });
     currentCategory.tasks.push(task);
     stack.push(item);
@@ -37,6 +39,7 @@ function buildTaskPlanningPreview(outlineItems = []) {
   return {
     categories: filteredCategories,
     stats: getTaskPlanStats(filteredCategories),
+    outlineText,
   };
 }
 
@@ -63,6 +66,7 @@ function createCategory(item, position) {
       include: `围绕“${title}”一级章节下的全部标题生成执行任务。`,
       exclude: "不承接其他一级章节的实施、运维、管理或保障类任务。",
     },
+    contextRule: "本类别内按大纲顺序传递前序规划；进入下一个一级类别后，前序规划上下文重置。",
     tasks: [],
   };
 }
@@ -76,23 +80,36 @@ function createFallbackCategory(position) {
       include: "承接未挂靠到一级标题下的标题节点。",
       exclude: "不合并到其他已识别一级章节。",
     },
+    contextRule: "未归类节点只在本组内传递前序规划。",
     tasks: [],
   };
 }
 
-function createTask(item, { headingPath, childTitles, previousTask }) {
+function createTask(item, { headingPath, childTitles, previousTask, outlineText }) {
   const title = stripHeadingNumber(item.title);
   const handoffToChildren = childTitles.slice(0, 4).map((childTitle) => `具体内容下沉到“${stripHeadingNumber(childTitle)}”任务处理`);
   const parentTitle = headingPath.length > 1 ? stripHeadingNumber(headingPath[headingPath.length - 2]) : "";
+  const sourceText = item.bodyText || "当前前端预览仅读取到标题；后续接 OnlyOffice 正文区间后，这里展示该标题下对应原文。";
+  const previousPlanSummary = previousTask
+    ? `上个已规划标题：${previousTask.sourceHeading}；已形成：${previousTask.producesForNext.join("、")}。当前标题规划时需要承接这些产出，避免重复。`
+    : "本类别第一个规划单元，无前序规划输入。";
   return {
     id: `task-${item.id}`,
-    title: `完成${title}相关执行任务`,
+    title: `规划${title}对应执行任务`,
     sourceHeading: item.title,
+    sourceText,
     headingPath,
-    bodyState: item.bodyText ? "已有正文" : "正文待读取",
+    bodyState: item.bodyText ? "已有标题原文" : "原文待读取",
+    globalArchitecture: outlineText,
+    planningFocus: [
+      `先判断“${title}”在整体方案架构中的作用。`,
+      "再基于本标题和标题下原文规划这部分应该写清楚什么、怎么写、形成哪些执行任务。",
+      "规划结果必须符合完整大纲结构，不跨章节抢写其他标题内容。",
+    ],
+    previousPlanSummary,
     exclusiveBoundary: {
       include: [
-        `围绕“${title}”标题及正文要求拆解执行事项。`,
+        `只围绕“${title}”标题和标题下原文拆解执行事项。`,
         "明确本标题对应的执行步骤、交付物和验收关注点。",
       ],
       exclude: [
@@ -112,8 +129,18 @@ function createTask(item, { headingPath, childTitles, previousTask }) {
     ],
     deliverables: ["任务边界说明", `${title}执行要点`, "验收关注点清单"],
     produces: [`${title}任务边界`, `${title}执行依据`],
+    producesForNext: [`${title}规划边界`, `${title}执行任务清单`, `${title}交付物要求`],
     dependsOn: previousTask ? [previousTask.title] : [],
   };
+}
+
+function buildOutlineText(rows, rootLevel) {
+  return rows
+    .map((item) => {
+      const depth = Math.max(0, item.level - rootLevel);
+      return `${"  ".repeat(depth)}- ${item.title}`;
+    })
+    .join("\n");
 }
 
 function getChildTitles(rows, position) {
@@ -137,7 +164,7 @@ function getTaskPlanStats(categories) {
     categoryCount: categories.length,
     taskCount: tasks.length,
     maxDepth,
-    pendingBodyCount: tasks.filter((task) => task.bodyState === "正文待读取").length,
+    pendingBodyCount: tasks.filter((task) => task.bodyState === "原文待读取").length,
   };
 }
 

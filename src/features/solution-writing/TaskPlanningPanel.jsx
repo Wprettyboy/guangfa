@@ -13,7 +13,8 @@ function TaskPlanningPanel({
   const [preview, setPreview] = useState(() => ({ categories: [], stats: buildTaskPlanningPreview([]).stats }));
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
   const [expandedTaskIds, setExpandedTaskIds] = useState([]);
-  const outlineStats = useMemo(() => buildTaskPlanningPreview(outlineItems).stats, [outlineItems]);
+  const outlinePreview = useMemo(() => buildTaskPlanningPreview(outlineItems), [outlineItems]);
+  const outlineStats = outlinePreview.stats;
 
   function generatePreview() {
     const nextPreview = buildTaskPlanningPreview(outlineItems);
@@ -43,7 +44,7 @@ function TaskPlanningPanel({
         <div className="solution-task-toolbar">
           <div>
             <strong>任务规划</strong>
-            <span>按一级标题分类，所有下级标题至少生成一个执行任务</span>
+            <span>完整大纲作全局架构约束，当前标题加标题下原文作为生成单元</span>
           </div>
           <div className="solution-task-actions">
             <button className="text-button" type="button" onClick={onRefreshOutline} disabled={busy}>
@@ -52,7 +53,7 @@ function TaskPlanningPanel({
             </button>
             <button className="tool-button primary" type="button" onClick={generatePreview} disabled={generatingDisabled}>
               <Wand2 size={15} />
-              生成前端预览
+              生成输入预览
             </button>
           </div>
         </div>
@@ -63,6 +64,14 @@ function TaskPlanningPanel({
           <span>任务类别 {outlineStats.categoryCount} 个</span>
           <span>预计任务 {outlineStats.taskCount} 个</span>
           <span>最大层级 {outlineStats.maxDepth || 0}</span>
+        </div>
+
+        <div className="solution-task-architecture">
+          <div>
+            <strong>全局大纲架构</strong>
+            <span>后续生成每个标题任务时，完整大纲都会作为结构约束传给 AI。</span>
+          </div>
+          <pre>{outlinePreview.outlineText || "请先读取左侧文档大纲。"}</pre>
         </div>
 
         <label className="solution-instruction">
@@ -78,7 +87,7 @@ function TaskPlanningPanel({
       {preview.categories.length === 0 ? (
         <section className="solution-block">
           <div className="empty-state compact">
-            {hasOutline ? "点击生成前端预览，查看任务规划结构。" : "请先读取左侧文档大纲。"}
+            {hasOutline ? "点击生成输入预览，查看后续传给 AI 的任务规划结构。" : "请先读取左侧文档大纲。"}
           </div>
         </section>
       ) : (
@@ -109,6 +118,10 @@ function TaskPlanningPanel({
                       <span>
                         <strong>不写什么</strong>
                         <em>{category.boundary.exclude}</em>
+                      </span>
+                      <span>
+                        <strong>上下文规则</strong>
+                        <em>{category.contextRule}</em>
                       </span>
                     </div>
                     <div className="solution-task-list">
@@ -145,15 +158,18 @@ function TaskCard({ task, expanded, onToggle }) {
       {expanded ? (
         <div className="solution-task-detail">
           <InfoRow label="标题路径" value={task.headingPath.join(" / ")} />
+          <InfoRow label="当前标题" value={task.sourceHeading} />
+          <InfoRow label="对应原文" value={task.sourceText} />
+          <ListRow label="规划焦点" values={task.planningFocus} />
           <InfoRow label="任务目标" value={task.objective} />
-          <InfoRow label="上下文承接" value={task.previousContextUsed} />
+          <InfoRow label="前序规划输入" value={task.previousPlanSummary} />
           <ListRow label="写什么" values={task.exclusiveBoundary.include} />
           <ListRow label="不写什么" values={task.exclusiveBoundary.exclude} />
           <ListRow label="下沉给子标题" values={task.exclusiveBoundary.handoffToChildren} emptyText="无下级标题承接" />
           <ListRow label="执行要点" values={task.executionPoints} />
           <ListRow label="交付物" values={task.deliverables} />
           <ListRow label="依赖任务" values={task.dependsOn} emptyText="无前置任务" />
-          <ListRow label="产出给后续" values={task.produces} />
+          <ListRow label="产出给后续" values={task.producesForNext} />
         </div>
       ) : null}
     </article>
