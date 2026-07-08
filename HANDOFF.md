@@ -234,7 +234,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `requestOnlyOfficeFillComplexFillField(complexFill)`：发送 `fill-complex-fill-field`，优先按 `GF_CF_SEL_` 选区范围书签替换选区内容，并在写入后重新保留 `GF_CF_SEL_` 和 `GF_CF_`。
 - `requestOnlyOfficeInsertKnowledgeTable(table)`：发送 `insert-knowledge-table`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入表格片段 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退创建普通表格。
 - `requestOnlyOfficeInsertKnowledgeImage(image)`：发送 `insert-knowledge-image`，让注入脚本用 OnlyOffice `asc_insertTextFromUrl` / `CInsertDocumentManager.insertTextFromUrl()` 在当前光标插入后端生成的图片片段 DOCX。
-- `requestOnlyOfficeOutline(options)`：发送 `request-outline`，等待注入脚本回传 `onlyoffice-outline-probe`，用于按需读取当前文档大纲；回传结果可包含 `documentStyles`，供前端使用文档真实 Word 样式名。
+- `requestOnlyOfficeOutline(options)`：发送 `request-outline`，等待注入脚本回传 `onlyoffice-outline-probe`，用于按需读取当前文档大纲；回传结果可包含 `documentStyles`，大纲项可带 `styleName/bodyStyleName`，供前端使用模板段落真实 Word 样式名。
 - `requestOnlyOfficeInsertSolutionText(text, options)`：发送 `insert-solution-writing-text`，让注入脚本把内容写入当前光标或选区位置；`options.paragraphs` 可传结构化段落，段落支持 `type/level/style/styleName/styleFallback/text`，注入脚本会优先按精确 Word 样式名写入。
 - `requestOnlyOfficeAnalyzeLayoutFormat(standard)`：发送 `analyze-layout-format`，让排版注入脚本读取 OnlyOffice 文档段落并按标准规则返回 `layout-format-analyzed` findings。
 - `requestOnlyOfficeApplyLayoutFormat(plan)`：发送 `apply-layout-format`，让排版注入脚本按修复计划调用 OnlyOffice 文档 API 执行页面、正文、标题、落款等格式调整，并等待 `layout-format-applied` 回传。
@@ -324,6 +324,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
 - `ApiParagraph.GetParaPr()` / `ApiParagraph.GetTextPr()`：取得段落属性和文本属性对象，格式调整优先改属性对象，不要只猜测段落对象上是否有同名 setter。
 - `ApiDocument.GetAllStyles()`：读取当前文档可用 Word 样式列表；涉及插入内容样式匹配时，优先使用它返回的真实样式名，不要只靠 `标题2`、`Heading 2` 这类静态猜测。
+- `ApiParaPr.GetStyle()` / `ApiStyle.GetName()`：读取某个已有段落实际绑定的 Word 样式名。需要“按模板原文样式写入”时，应优先从模板段落读取真实样式名，再调用 `ApiDocument.GetStyle(name)` 绑定到新段落。
 - `ApiDocument.GetStyle(name)` / `ApiParagraph.SetStyle(style)`：取得并套用 Word 段落样式，适合让插入内容匹配文档内已有 `正文`、`Heading 2`、`标题2` 等样式；可与 `Api.CreateParagraph()`、`ApiDocument.InsertContent()` 一起使用。
 - 通过 `ApiDocument.InsertContent()` 向当前光标插入结构化段落时，先插入一个 `Api.CreateParagraph()` 空段落建立当前位置插入锚点，再插入真实内容；否则可能出现命令返回成功但内容未落到当前可见正文的情况。
 - `ApiRun.SetFontFamily(font)` / `SetFontSize(halfPoints)` / `SetBold(enabled)`：对 `ApiParagraph.AddText()` 返回的 run 设置文字字体、字号、加粗；字号单位是半磅值，例如 16pt 传 `32`。插入新文本且段落样式不稳定时，优先在 run 级做可见格式兜底。

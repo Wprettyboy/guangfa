@@ -535,6 +535,10 @@ function normalizeOutlineItems(items) {
       index: Number.isFinite(Number(item.index)) ? Number(item.index) : position,
       level: Number.isFinite(Number(item.level)) ? Number(item.level) : 0,
       title: String(item.displayTitle || item.title || "").trim(),
+      styleName: String(item.styleName || "").trim(),
+      styleSource: String(item.styleSource || "").trim(),
+      bodyStyleName: String(item.bodyStyleName || "").trim(),
+      bodyStyleSource: String(item.bodyStyleSource || "").trim(),
     }))
     .filter((item) => item.title && !item.isEmptyItem);
 }
@@ -567,14 +571,23 @@ function buildTemplateGroups(items) {
             title: stripHeadingNumber(child.title),
             level: child.level,
             number: parseHeadingNumber(child.title),
+            styleName: child.styleName,
+            styleSource: child.styleSource,
+            bodyStyleName: child.bodyStyleName,
+            bodyStyleSource: child.bodyStyleSource,
           });
         }
       }
+      const firstBodyTemplate = childTemplates.find((child) => child.bodyStyleName);
       return {
         key: String(item.index),
         title: item.title,
         number: parseHeadingNumber(item.title),
         level: item.level,
+        styleName: item.styleName,
+        styleSource: item.styleSource,
+        bodyStyleName: item.bodyStyleName || firstBodyTemplate?.bodyStyleName || "",
+        bodyStyleSource: item.bodyStyleName ? item.bodyStyleSource : firstBodyTemplate?.bodyStyleSource || "",
         childTemplates,
       };
     })
@@ -595,22 +608,24 @@ function buildStyleMappingRows(group, documentStyles = []) {
       key: "module-heading",
       label: "模块标题",
       sample: group.title,
-      defaultStyle: getDefaultStyleValueForLevel(group.level, documentStyles),
+      defaultStyle: getDefaultStyleValueForTemplate(group.styleName, group.level, documentStyles),
     },
     ...sectionLevels.map((level) => {
       const sample = group.childTemplates.find((item) => Number(item.level) === level)?.title || `子标题 ${level + 1}`;
+      const template = group.childTemplates.find((item) => Number(item.level) === level && item.styleName)
+        || group.childTemplates.find((item) => Number(item.level) === level);
       return {
         key: getSectionStyleKey(level),
         label: "子标题",
         sample,
-        defaultStyle: getDefaultStyleValueForLevel(level, documentStyles),
+        defaultStyle: getDefaultStyleValueForTemplate(template?.styleName, level, documentStyles),
       };
     }),
     {
       key: "body",
       label: "正文描述",
       sample: "写作规划正文",
-      defaultStyle: getDefaultBodyStyleValue(documentStyles),
+      defaultStyle: getDefaultBodyStyleValue(documentStyles, group.bodyStyleName),
     },
   ];
 }
@@ -654,6 +669,17 @@ function findDocumentStyleByPatterns(documentStyles, patterns) {
   return documentStyles.find((style) => patterns.some((pattern) => pattern.test(style.name)));
 }
 
+function findExactDocumentStyle(documentStyles, styleName) {
+  const wanted = String(styleName || "").trim().toLowerCase();
+  return wanted ? documentStyles.find((style) => style.name.toLowerCase() === wanted) : null;
+}
+
+function getDefaultStyleValueForTemplate(styleName, level, documentStyles = []) {
+  const exactTemplateStyle = findExactDocumentStyle(documentStyles, styleName);
+  if (exactTemplateStyle) return toWordStyleValue(exactTemplateStyle.name);
+  return getDefaultStyleValueForLevel(level, documentStyles);
+}
+
 function getDefaultStyleValueForLevel(level, documentStyles = []) {
   const fallback = getHeadingStyleValue(level);
   const headingLevel = Math.max(1, Math.min(6, Number(level) + 1 || 1));
@@ -664,7 +690,9 @@ function getDefaultStyleValueForLevel(level, documentStyles = []) {
   return exact ? toWordStyleValue(exact.name) : fallback;
 }
 
-function getDefaultBodyStyleValue(documentStyles = []) {
+function getDefaultBodyStyleValue(documentStyles = [], bodyStyleName = "") {
+  const exactTemplateStyle = findExactDocumentStyle(documentStyles, bodyStyleName);
+  if (exactTemplateStyle) return toWordStyleValue(exactTemplateStyle.name);
   const exact = findDocumentStyleByPatterns(documentStyles, [/^正文$/i, /^normal$/i]);
   return exact ? toWordStyleValue(exact.name) : "body";
 }

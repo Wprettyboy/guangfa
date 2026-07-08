@@ -148,6 +148,128 @@
     }
   }
 
+  async function readOutlineStyleMetadataForPost(items) {
+    const sourceItems = (Array.isArray(items) ? items : [])
+      .map(function (item) {
+        return {
+          index: Number(item?.index),
+          title: String(item?.title || item?.displayTitle || ""),
+        };
+      })
+      .filter(function (item) { return Number.isFinite(item.index) && item.title.trim(); });
+    if (!sourceItems.length || !window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") return [];
+    try {
+      window.Asc.scope = window.Asc.scope || {};
+      window.Asc.scope.gfOutlineStyleItems = sourceItems;
+      window.Asc.scope.gfOutlineStyleResult = [];
+      await window.Asc.Editor.callCommand(function () {
+        function normalizeText(value) {
+          return String(value || "").replace(/\s+/g, " ").trim();
+        }
+        function callAny(target, names) {
+          for (var index = 0; index < names.length; index += 1) {
+            try {
+              if (target && typeof target[names[index]] === "function") return target[names[index]]();
+            } catch (error) {}
+          }
+          return null;
+        }
+        function collectParagraphs(element, paragraphs) {
+          if (!element) return;
+          var className = String(element.constructor?.name || "");
+          if (/Paragraph/i.test(className) || typeof element.GetText === "function") paragraphs.push(element);
+          var count = Number(callAny(element, ["GetElementsCount"]) || 0) || 0;
+          for (var index = 0; index < count; index += 1) {
+            try {
+              collectParagraphs(element.GetElement(index), paragraphs);
+            } catch (error) {}
+          }
+        }
+        function getParagraphs(doc) {
+          var direct = callAny(doc, ["GetAllParagraphs"]);
+          if (Array.isArray(direct)) return direct;
+          var paragraphs = [];
+          collectParagraphs(doc, paragraphs);
+          return paragraphs;
+        }
+        function getParagraphText(paragraph) {
+          return normalizeText(callAny(paragraph, ["GetText"]));
+        }
+        function getStyleNameFromStyle(style) {
+          return normalizeText(
+            style?.name
+            || style?.Name
+            || callAny(style, ["GetName", "get_Name"])
+            || "",
+          );
+        }
+        function getParagraphStyleName(paragraph) {
+          var directStyle = callAny(paragraph, ["GetStyle", "get_Style"]);
+          var directName = getStyleNameFromStyle(directStyle);
+          if (directName) return directName;
+          var paraPr = callAny(paragraph, ["GetParaPr"]);
+          var style = callAny(paraPr, ["GetStyle", "get_Style"]);
+          return getStyleNameFromStyle(style);
+        }
+        try {
+          var doc = Api.GetDocument();
+          var paragraphs = getParagraphs(doc);
+          var paragraphRows = paragraphs.map(function (paragraph, paragraphIndex) {
+            return {
+              paragraphIndex: paragraphIndex,
+              text: getParagraphText(paragraph),
+              styleName: getParagraphStyleName(paragraph),
+            };
+          }).filter(function (row) { return row.text; });
+          var cursor = 0;
+          var matched = [];
+          var items = Asc.scope.gfOutlineStyleItems || [];
+          for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+            var item = items[itemIndex];
+            var targetText = normalizeText(item.title);
+            var found = null;
+            for (var rowIndex = cursor; rowIndex < paragraphRows.length; rowIndex += 1) {
+              if (paragraphRows[rowIndex].text === targetText) {
+                found = paragraphRows[rowIndex];
+                cursor = rowIndex + 1;
+                break;
+              }
+            }
+            matched.push({
+              index: item.index,
+              paragraphIndex: found ? found.paragraphIndex : null,
+              styleName: found?.styleName || "",
+              styleSource: found ? "paragraph-exact-title" : "not-found",
+            });
+          }
+          for (var matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
+            var current = matched[matchIndex];
+            if (!Number.isFinite(Number(current.paragraphIndex))) continue;
+            var nextParagraphIndex = Number.POSITIVE_INFINITY;
+            for (var nextIndex = matchIndex + 1; nextIndex < matched.length; nextIndex += 1) {
+              if (Number.isFinite(Number(matched[nextIndex].paragraphIndex))) {
+                nextParagraphIndex = matched[nextIndex].paragraphIndex;
+                break;
+              }
+            }
+            var body = paragraphRows.find(function (row) {
+              return row.paragraphIndex > current.paragraphIndex && row.paragraphIndex < nextParagraphIndex;
+            });
+            current.bodyStyleName = body?.styleName || "";
+            current.bodyParagraphIndex = body ? body.paragraphIndex : null;
+            current.bodyStyleSource = body ? "next-paragraph-before-next-outline" : "not-found";
+          }
+          Asc.scope.gfOutlineStyleResult = matched;
+        } catch (error) {
+          Asc.scope.gfOutlineStyleResult = [];
+        }
+      });
+      return Array.isArray(window.Asc.scope.gfOutlineStyleResult) ? window.Asc.scope.gfOutlineStyleResult : [];
+    } catch {
+      return [];
+    }
+  }
+
   function extractOnlyOfficeOutline() {
     const manager = getOutlineManager();
     if (!manager) return { ok: false, source: "outline-manager", count: 0, items: [], error: "未获取到 zl办公 大纲管理器" };
@@ -1782,7 +1904,18 @@
 
   async function postOutline(trigger, requestId) {
     const payload = { ...extractOnlyOfficeOutline(), trigger, requestId: requestId || "" };
-    payload.documentStyles = await readDocumentStylesForPost();
+    const [documentStyles, outlineStyles] = await Promise.all([
+      readDocumentStylesForPost(),
+      readOutlineStyleMetadataForPost(payload.items),
+    ]);
+    const stylesByIndex = new Map(outlineStyles.map(function (item) { return [Number(item.index), item]; }));
+    payload.items = Array.isArray(payload.items)
+      ? payload.items.map(function (item) {
+        const styleInfo = stylesByIndex.get(Number(item.index)) || {};
+        return { ...item, ...styleInfo };
+      })
+      : [];
+    payload.documentStyles = documentStyles;
     try {
       console.log("[guangfa-onlyoffice-outline]", payload);
       if (payload.items && console.table) console.table(payload.items);
