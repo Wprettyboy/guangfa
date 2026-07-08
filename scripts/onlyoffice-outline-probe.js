@@ -1064,11 +1064,13 @@
           for (var index = 0; index < source.length; index += 1) {
             var item = source[index] || {};
             var paragraph = Api.CreateParagraph();
+            var styled = applyWordStyle(doc, paragraph, item);
+            if (!styled) applyParagraphFormat(paragraph, item);
             if (item.text && typeof paragraph.AddText === "function") {
               paragraph.AddText(String(item.text));
               textCount += 1;
             }
-            if (!applyWordStyle(doc, paragraph, item)) applyParagraphFormat(paragraph, item);
+            if (!styled) applyParagraphFormat(paragraph, item);
             content.push(paragraph);
           }
           if (textCount === 0) {
