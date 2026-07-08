@@ -59,11 +59,46 @@
     return items;
   }
 
+  function readDocumentStyles() {
+    try {
+      const doc = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
+      if (!doc || typeof doc.GetAllStyles !== "function") return [];
+      const rawStyles = doc.GetAllStyles();
+      const styles = Array.isArray(rawStyles)
+        ? rawStyles
+        : rawStyles && Number.isFinite(Number(rawStyles.length))
+          ? Array.prototype.slice.call(rawStyles)
+          : [];
+      return styles
+        .map(function (style, index) {
+          const name = String(
+            style?.name
+            || style?.Name
+            || safeCall(style, "GetName", "")
+            || safeCall(style, "get_Name", "")
+            || style
+            || "",
+          ).trim();
+          const id = String(
+            style?.id
+            || style?.Id
+            || safeCall(style, "GetId", "")
+            || safeCall(style, "get_Id", "")
+            || name,
+          ).trim();
+          return name ? { id, name, index } : null;
+        })
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
   function extractOnlyOfficeOutline() {
     const manager = getOutlineManager();
     if (!manager) return { ok: false, source: "outline-manager", count: 0, items: [], error: "未获取到 zl办公 大纲管理器" };
     const items = readManagerOutline(manager);
-    return { ok: true, source: "outline-manager", count: items.length, items };
+    return { ok: true, source: "outline-manager", count: items.length, items, documentStyles: readDocumentStyles() };
   }
 
   function normalizeSelectionText(value) {
@@ -952,6 +987,8 @@
           type: String(row?.type || "body"),
           level: Number.isFinite(Number(row?.level)) ? Number(row.level) : null,
           style: String(row?.style || ""),
+          styleName: String(row?.styleName || ""),
+          styleFallback: String(row?.styleFallback || ""),
           text: String(row?.text || ""),
         };
       })
@@ -986,7 +1023,10 @@
         }
 
         function getStyleCandidates(style) {
-          var value = String(style || "").toLowerCase();
+          var raw = String(style || "");
+          var value = raw.toLowerCase();
+          if (value.indexOf("word-style:") === 0) return [raw.slice("word-style:".length)];
+          if (raw && !/^heading-\d$/.test(value) && value !== "body") return [raw];
           var headingMatch = value.match(/^heading-(\d)$/);
           if (headingMatch) {
             var level = headingMatch[1];
@@ -996,7 +1036,7 @@
         }
 
         function getFormat(item) {
-          var style = String(item.style || "");
+          var style = String(item.styleFallback || item.style || "");
           var headingMatch = style.match(/^heading-(\d)$/);
           if (headingMatch) {
             var headingLevel = Math.max(1, Math.min(6, Number(headingMatch[1]) || 1));
@@ -1042,6 +1082,16 @@
           callAny([paragraph, textPr], ["SetBold"], [Boolean(format.bold)]);
         }
 
+        function applyRunFormat(run, item) {
+          if (!run) return false;
+          var format = getFormat(item);
+          var applied = false;
+          applied = callAny([run], ["SetFontFamily", "SetFont"], [format.font]) || applied;
+          applied = callAny([run], ["SetFontSize"], [Math.round((format.size || 16) * 2)]) || applied;
+          applied = callAny([run], ["SetBold"], [Boolean(format.bold)]) || applied;
+          return applied;
+        }
+
         function prepareCurrentInsertPosition(doc) {
           try {
             var anchorParagraph = Api.CreateParagraph();
@@ -1061,16 +1111,29 @@
           }
           var content = [];
           var textCount = 0;
+          var styleResults = [];
           for (var index = 0; index < source.length; index += 1) {
             var item = source[index] || {};
             var paragraph = Api.CreateParagraph();
-            var styled = applyWordStyle(doc, paragraph, item);
+            var styleRequest = item.styleName || item.style || "";
+            var styleItem = {};
+            for (var key in item) {
+              if (Object.prototype.hasOwnProperty.call(item, key)) styleItem[key] = item[key];
+            }
+            styleItem.style = styleRequest;
+            var styled = applyWordStyle(doc, paragraph, styleItem);
             if (!styled) applyParagraphFormat(paragraph, item);
             if (item.text && typeof paragraph.AddText === "function") {
-              paragraph.AddText(String(item.text));
+              var run = paragraph.AddText(String(item.text));
+              applyRunFormat(run, item);
               textCount += 1;
             }
             if (!styled) applyParagraphFormat(paragraph, item);
+            styleResults.push({
+              requested: styleRequest,
+              fallback: item.styleFallback || "",
+              styleApplied: Boolean(styled),
+            });
             content.push(paragraph);
           }
           if (textCount === 0) {
@@ -1083,7 +1146,7 @@
             Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 未确认方案规划段落插入。" };
             return;
           }
-          Asc.scope.gfSolutionWritingResult = { ok: true, source: "api-insert-content-paragraphs", count: content.length, textCount: textCount };
+          Asc.scope.gfSolutionWritingResult = { ok: true, source: "api-insert-content-paragraphs", count: content.length, textCount: textCount, styles: styleResults };
         } catch (error) {
           Asc.scope.gfSolutionWritingResult = { ok: false, error: error?.message || "方案规划段落插入失败" };
         }

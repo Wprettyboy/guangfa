@@ -40,9 +40,11 @@ function SolutionWritingPanel({
   const effectiveOutline = localOutline || outline;
   const rawOutlineCount = Array.isArray(effectiveOutline?.items) ? effectiveOutline.items.length : 0;
   const outlineItems = useMemo(() => normalizeOutlineItems(effectiveOutline?.items), [effectiveOutline]);
+  const documentStyles = useMemo(() => normalizeDocumentStyles(effectiveOutline?.documentStyles), [effectiveOutline]);
   const templateGroups = useMemo(() => buildTemplateGroups(outlineItems), [outlineItems]);
   const selectedGroup = templateGroups.find((group) => group.key === selectedGroupKey) || templateGroups[0] || null;
-  const styleMappingRows = useMemo(() => buildStyleMappingRows(selectedGroup), [selectedGroup]);
+  const styleOptions = useMemo(() => buildStyleOptions(documentStyles), [documentStyles]);
+  const styleMappingRows = useMemo(() => buildStyleMappingRows(selectedGroup, documentStyles), [selectedGroup, documentStyles]);
   const projectBases = knowledgeBases.filter((base) => base.scope !== "global");
   const globalBases = knowledgeBases.filter((base) => base.scope === "global");
   const selectedKnowledgeBases = knowledgeBases.filter(
@@ -65,8 +67,8 @@ function SolutionWritingPanel({
 
   useEffect(() => {
     if (!selectedGroup) return;
-    setStyleSelections(buildDefaultStyleSelections(selectedGroup));
-  }, [selectedGroup?.key]);
+    setStyleSelections(buildDefaultStyleSelections(selectedGroup, documentStyles));
+  }, [documentStyles, selectedGroup?.key]);
 
   async function refreshOutline() {
     setStatus("loading-outline");
@@ -238,7 +240,7 @@ function SolutionWritingPanel({
               <div className="solution-style-map">
                 <div className="solution-style-map-title">
                   <strong>样式匹配</strong>
-                  <span>插入时按这里套用 Word 样式</span>
+                  <span>插入时优先套用文档真实 Word 样式</span>
                 </div>
                 {styleMappingRows.map((row) => (
                   <label className="solution-style-row" key={row.key}>
@@ -250,7 +252,7 @@ function SolutionWritingPanel({
                       value={styleSelections[row.key] || row.defaultStyle}
                       onChange={(event) => setStyleSelections((current) => ({ ...current, [row.key]: event.target.value }))}
                     >
-                      {SOLUTION_STYLE_OPTIONS.map((option) => (
+                      {styleOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
@@ -402,7 +404,7 @@ function SolutionWritingPanel({
               {generatedBlocks.map((block, moduleIndex) => {
                 const moduleNumber = nextSiblingNumber(selectedGroup?.number, moduleIndex);
                 const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
-                const moduleStyleLabel = getStyleLabel(resolveParagraphStyle("module-heading", selectedGroup?.level, styleSelections));
+                const moduleStyleLabel = getStyleLabel(resolveParagraphStyle("module-heading", selectedGroup?.level, styleSelections), styleOptions);
                 return (
                   <article className="solution-generated-card" key={block.moduleId || `${block.moduleName}-${moduleIndex}`}>
                     <div className="solution-generated-head">
@@ -425,8 +427,8 @@ function SolutionWritingPanel({
                         const sectionNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
                         const sectionLevel = Number(selectedGroup?.level || 0) + 1;
                         const sectionTitle = formatHeadingLine(sectionNumber, stripHeadingNumber(section.templateTitle));
-                        const sectionStyleLabel = getStyleLabel(resolveParagraphStyle("section-heading", sectionLevel, styleSelections));
-                        const bodyStyleLabel = getStyleLabel(resolveParagraphStyle("body", null, styleSelections));
+                        const sectionStyleLabel = getStyleLabel(resolveParagraphStyle("section-heading", sectionLevel, styleSelections), styleOptions);
+                        const bodyStyleLabel = getStyleLabel(resolveParagraphStyle("body", null, styleSelections), styleOptions);
                         return (
                           <section className="solution-generated-section" key={`${block.moduleId}-${section.templateTitle}-${sectionIndex}`}>
                             <div>
@@ -537,6 +539,21 @@ function normalizeOutlineItems(items) {
     .filter((item) => item.title && !item.isEmptyItem);
 }
 
+function normalizeDocumentStyles(styles) {
+  const seen = new Set();
+  return (Array.isArray(styles) ? styles : [])
+    .map((style, index) => ({
+      id: String(style?.id || style?.name || index),
+      name: String(style?.name || style?.id || "").trim(),
+    }))
+    .filter((style) => {
+      const key = style.name.toLowerCase();
+      if (!style.name || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function buildTemplateGroups(items) {
   return items
     .map((item, position) => {
@@ -570,7 +587,7 @@ function getRecommendedTemplateGroup(groups) {
     || groups[0];
 }
 
-function buildStyleMappingRows(group) {
+function buildStyleMappingRows(group, documentStyles = []) {
   if (!group) return [];
   const sectionLevels = [...new Set(group.childTemplates.map((item) => Number(item.level)).filter((level) => Number.isFinite(level)))];
   return [
@@ -578,7 +595,7 @@ function buildStyleMappingRows(group) {
       key: "module-heading",
       label: "模块标题",
       sample: group.title,
-      defaultStyle: getHeadingStyleValue(group.level),
+      defaultStyle: getDefaultStyleValueForLevel(group.level, documentStyles),
     },
     ...sectionLevels.map((level) => {
       const sample = group.childTemplates.find((item) => Number(item.level) === level)?.title || `子标题 ${level + 1}`;
@@ -586,20 +603,20 @@ function buildStyleMappingRows(group) {
         key: getSectionStyleKey(level),
         label: "子标题",
         sample,
-        defaultStyle: getHeadingStyleValue(level),
+        defaultStyle: getDefaultStyleValueForLevel(level, documentStyles),
       };
     }),
     {
       key: "body",
       label: "正文描述",
       sample: "写作规划正文",
-      defaultStyle: "body",
+      defaultStyle: getDefaultBodyStyleValue(documentStyles),
     },
   ];
 }
 
-function buildDefaultStyleSelections(group) {
-  return Object.fromEntries(buildStyleMappingRows(group).map((row) => [row.key, row.defaultStyle]));
+function buildDefaultStyleSelections(group, documentStyles = []) {
+  return Object.fromEntries(buildStyleMappingRows(group, documentStyles).map((row) => [row.key, row.defaultStyle]));
 }
 
 function getHeadingStyleValue(level) {
@@ -617,8 +634,53 @@ function resolveParagraphStyle(type, level, styleSelections = {}) {
   return styleSelections.body || "body";
 }
 
-function getStyleLabel(value) {
-  return SOLUTION_STYLE_OPTIONS.find((option) => option.value === value)?.label || "正文";
+function buildStyleOptions(documentStyles = []) {
+  const wordOptions = documentStyles.map((style) => ({
+    value: toWordStyleValue(style.name),
+    label: `Word样式：${style.name}`,
+  }));
+  return [...wordOptions, ...SOLUTION_STYLE_OPTIONS];
+}
+
+function getStyleLabel(value, styleOptions = SOLUTION_STYLE_OPTIONS) {
+  return styleOptions.find((option) => option.value === value)?.label || "正文";
+}
+
+function toWordStyleValue(name) {
+  return `word-style:${String(name || "").trim()}`;
+}
+
+function findDocumentStyleByPatterns(documentStyles, patterns) {
+  return documentStyles.find((style) => patterns.some((pattern) => pattern.test(style.name)));
+}
+
+function getDefaultStyleValueForLevel(level, documentStyles = []) {
+  const fallback = getHeadingStyleValue(level);
+  const headingLevel = Math.max(1, Math.min(6, Number(level) + 1 || 1));
+  const exact = findDocumentStyleByPatterns(documentStyles, [
+    new RegExp(`^标题\\s*${headingLevel}$`, "i"),
+    new RegExp(`^heading\\s*${headingLevel}$`, "i"),
+  ]);
+  return exact ? toWordStyleValue(exact.name) : fallback;
+}
+
+function getDefaultBodyStyleValue(documentStyles = []) {
+  const exact = findDocumentStyleByPatterns(documentStyles, [/^正文$/i, /^normal$/i]);
+  return exact ? toWordStyleValue(exact.name) : "body";
+}
+
+function getStyleFallback(value, type, level) {
+  if (String(value || "").startsWith("word-style:")) {
+    if (type === "module-heading") return getHeadingStyleValue(level);
+    if (type === "section-heading") return getHeadingStyleValue(level);
+    return "body";
+  }
+  return value || "body";
+}
+
+function getStyleName(value) {
+  const raw = String(value || "");
+  return raw.startsWith("word-style:") ? raw.slice("word-style:".length) : "";
 }
 
 function buildAllGeneratedModulesInsert(group, blocks, styleSelections = {}) {
@@ -635,10 +697,13 @@ function buildGeneratedModuleInsert(group, block, moduleIndex, styleSelections =
   const moduleNumber = nextSiblingNumber(group?.number, moduleIndex);
   const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
   const moduleLevel = Number.isFinite(Number(group?.level)) ? Number(group.level) : 1;
+  const moduleStyle = resolveParagraphStyle("module-heading", moduleLevel, styleSelections);
   const paragraphs = [{
     type: "module-heading",
     level: moduleLevel,
-    style: resolveParagraphStyle("module-heading", moduleLevel, styleSelections),
+    style: moduleStyle,
+    styleName: getStyleName(moduleStyle),
+    styleFallback: getStyleFallback(moduleStyle, "module-heading", moduleLevel),
     text: moduleTitle,
   }];
   block.sections.forEach((section, sectionIndex) => {
@@ -652,9 +717,24 @@ function buildGeneratedModuleInsert(group, block, moduleIndex, styleSelections =
 function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}) {
   const sectionLevel = Number.isFinite(Number(level)) ? Number(level) : 2;
   const bodyLines = splitBodyParagraphs(content || "需结合项目资料补充该标题的写作要点。");
+  const headingStyle = resolveParagraphStyle("section-heading", sectionLevel, styleSelections);
+  const bodyStyle = resolveParagraphStyle("body", null, styleSelections);
   return paragraphsToInsertPayload([
-    { type: "section-heading", level: sectionLevel, style: resolveParagraphStyle("section-heading", sectionLevel, styleSelections), text: title },
-    ...bodyLines.map((text) => ({ type: "body", style: resolveParagraphStyle("body", null, styleSelections), text })),
+    {
+      type: "section-heading",
+      level: sectionLevel,
+      style: headingStyle,
+      styleName: getStyleName(headingStyle),
+      styleFallback: getStyleFallback(headingStyle, "section-heading", sectionLevel),
+      text: title,
+    },
+    ...bodyLines.map((text) => ({
+      type: "body",
+      style: bodyStyle,
+      styleName: getStyleName(bodyStyle),
+      styleFallback: getStyleFallback(bodyStyle, "body", null),
+      text,
+    })),
   ]);
 }
 
@@ -664,6 +744,8 @@ function paragraphsToInsertPayload(paragraphs) {
       type: paragraph.type || "body",
       level: Number.isFinite(Number(paragraph.level)) ? Number(paragraph.level) : null,
       style: paragraph.style || "",
+      styleName: paragraph.styleName || "",
+      styleFallback: paragraph.styleFallback || "",
       text: String(paragraph.text || ""),
     }))
     .filter((paragraph) => paragraph.text || paragraph.type === "blank");
@@ -678,7 +760,7 @@ function normalizeInsertPayload(content) {
   const text = String(content || "").trim();
   return {
     text,
-    paragraphs: text.split(/\n+/).map((line) => ({ type: "body", style: "body", text: line.trim() })).filter((line) => line.text),
+    paragraphs: text.split(/\n+/).map((line) => ({ type: "body", style: "body", styleFallback: "body", text: line.trim() })).filter((line) => line.text),
   };
 }
 
