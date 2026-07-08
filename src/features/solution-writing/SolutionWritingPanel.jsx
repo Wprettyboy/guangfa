@@ -486,6 +486,7 @@ function SolutionWritingPanel({
                         const sectionNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
                         const sectionLevel = Number(selectedGroup?.level || 0) + 1;
                         const sectionTitle = formatHeadingLine(sectionNumber, stripHeadingNumber(section.templateTitle));
+                        const sectionTemplate = getSectionTemplate(selectedGroup, section, sectionIndex);
                         const sectionStyleLabel = getStyleLabel(resolveParagraphStyle("section-heading", sectionLevel, styleSelections), styleOptions);
                         const bodyStyleLabel = getStyleLabel(resolveParagraphStyle("body", null, styleSelections), styleOptions);
                         return (
@@ -498,7 +499,7 @@ function SolutionWritingPanel({
                               <button
                                 className="text-button"
                                 type="button"
-                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1, styleSelections), `已插入 ${sectionTitle} 写作规划`)}
+                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1, styleSelections, sectionTemplate), `已插入 ${sectionTitle} 写作规划`)}
                                 disabled={busy}
                               >
                                 <Send size={13} />
@@ -596,8 +597,10 @@ function normalizeOutlineItems(items) {
       title: String(item.displayTitle || item.title || "").trim(),
       styleName: String(item.styleName || "").trim(),
       styleSource: String(item.styleSource || "").trim(),
+      styleRef: normalizeStyleRef(item.styleRef),
       bodyStyleName: String(item.bodyStyleName || "").trim(),
       bodyStyleSource: String(item.bodyStyleSource || "").trim(),
+      bodyStyleRef: normalizeStyleRef(item.bodyStyleRef),
     }))
     .filter((item) => item.title && !item.isEmptyItem);
 }
@@ -632,8 +635,10 @@ function buildTemplateGroups(items) {
             number: parseHeadingNumber(child.title),
             styleName: child.styleName,
             styleSource: child.styleSource,
+            styleRef: child.styleRef,
             bodyStyleName: child.bodyStyleName,
             bodyStyleSource: child.bodyStyleSource,
+            bodyStyleRef: child.bodyStyleRef,
           });
         }
       }
@@ -645,8 +650,10 @@ function buildTemplateGroups(items) {
         level: item.level,
         styleName: item.styleName,
         styleSource: item.styleSource,
+        styleRef: item.styleRef,
         bodyStyleName: item.bodyStyleName || firstBodyTemplate?.bodyStyleName || "",
         bodyStyleSource: item.bodyStyleName ? item.bodyStyleSource : firstBodyTemplate?.bodyStyleSource || "",
+        bodyStyleRef: item.bodyStyleRef || firstBodyTemplate?.bodyStyleRef || null,
         childTemplates,
       };
     })
@@ -853,27 +860,32 @@ function buildGeneratedModuleInsert(group, block, moduleIndex, styleSelections =
   const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
   const moduleLevel = Number.isFinite(Number(group?.level)) ? Number(group.level) : 1;
   const moduleStyle = resolveParagraphStyle("module-heading", moduleLevel, styleSelections);
+  const moduleStyleRef = getSelectedStyleRef(group?.styleRef, moduleStyle, group?.styleName);
   const paragraphs = [{
     type: "module-heading",
     level: moduleLevel,
     style: moduleStyle,
     styleName: getStyleName(moduleStyle),
     styleFallback: getStyleFallback(moduleStyle, "module-heading", moduleLevel),
+    styleRef: moduleStyleRef,
     text: moduleTitle,
   }];
   block.sections.forEach((section, sectionIndex) => {
     const headingNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
     const title = formatHeadingLine(headingNumber, stripHeadingNumber(section.templateTitle));
-    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections).paragraphs);
+    const template = getSectionTemplate(group, section, sectionIndex);
+    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections, template).paragraphs);
   });
   return paragraphsToInsertPayload(paragraphs);
 }
 
-function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}) {
+function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}, template = null) {
   const sectionLevel = Number.isFinite(Number(level)) ? Number(level) : 2;
   const bodyLines = splitBodyParagraphs(content || "需结合项目资料补充该标题的写作要点。");
   const headingStyle = resolveParagraphStyle("section-heading", sectionLevel, styleSelections);
   const bodyStyle = resolveParagraphStyle("body", null, styleSelections);
+  const headingStyleRef = getSelectedStyleRef(template?.styleRef, headingStyle, template?.styleName);
+  const bodyStyleRef = getSelectedStyleRef(template?.bodyStyleRef, bodyStyle, template?.bodyStyleName);
   return paragraphsToInsertPayload([
     {
       type: "section-heading",
@@ -881,6 +893,7 @@ function buildGeneratedSectionInsert(title, content, level = 2, styleSelections 
       style: headingStyle,
       styleName: getStyleName(headingStyle),
       styleFallback: getStyleFallback(headingStyle, "section-heading", sectionLevel),
+      styleRef: headingStyleRef,
       text: title,
     },
     ...bodyLines.map((text) => ({
@@ -888,6 +901,7 @@ function buildGeneratedSectionInsert(title, content, level = 2, styleSelections 
       style: bodyStyle,
       styleName: getStyleName(bodyStyle),
       styleFallback: getStyleFallback(bodyStyle, "body", null),
+      styleRef: bodyStyleRef,
       text,
     })),
   ]);
@@ -901,6 +915,7 @@ function paragraphsToInsertPayload(paragraphs) {
       style: paragraph.style || "",
       styleName: paragraph.styleName || "",
       styleFallback: paragraph.styleFallback || "",
+      styleRef: normalizeStyleRef(paragraph.styleRef),
       text: String(paragraph.text || ""),
     }))
     .filter((paragraph) => paragraph.text || paragraph.type === "blank");
@@ -908,6 +923,38 @@ function paragraphsToInsertPayload(paragraphs) {
     text: normalized.map((paragraph) => paragraph.text).join("\n").trim(),
     paragraphs: normalized,
   };
+}
+
+function normalizeStyleRef(ref) {
+  if (!ref || typeof ref !== "object") return null;
+  const paragraphIndex = Number(ref.paragraphIndex);
+  return Number.isFinite(paragraphIndex)
+    ? {
+      paragraphIndex,
+      outlineIndex: Number.isFinite(Number(ref.outlineIndex)) ? Number(ref.outlineIndex) : null,
+      title: String(ref.title || "").trim(),
+      text: String(ref.text || "").trim(),
+      level: Number.isFinite(Number(ref.level)) ? Number(ref.level) : null,
+      styleName: String(ref.styleName || "").trim(),
+    }
+    : null;
+}
+
+function getSelectedStyleRef(ref, selectedStyle, referenceStyleName) {
+  const normalized = normalizeStyleRef(ref);
+  if (!normalized) return null;
+  const selectedName = getStyleName(selectedStyle);
+  if (!selectedName) return null;
+  return selectedName.toLowerCase() === String(referenceStyleName || normalized.styleName || "").trim().toLowerCase()
+    ? normalized
+    : null;
+}
+
+function getSectionTemplate(group, section, sectionIndex) {
+  const title = stripHeadingNumber(section?.templateTitle);
+  return group?.childTemplates?.find((item) => stripHeadingNumber(item.title) === title)
+    || group?.childTemplates?.[sectionIndex]
+    || null;
 }
 
 function normalizeInsertPayload(content) {

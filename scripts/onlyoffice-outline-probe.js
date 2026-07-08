@@ -179,6 +179,7 @@
       .map(function (item) {
         return {
           index: Number(item?.index),
+          level: Number(item?.level),
           title: String(item?.title || item?.displayTitle || ""),
         };
       })
@@ -328,6 +329,13 @@
               paragraphIndex: found ? found.paragraphIndex : null,
               styleName: found?.styleName || "",
               styleSource: found ? "paragraph-exact-title" : "not-found",
+              styleRef: found ? {
+                paragraphIndex: found.paragraphIndex,
+                outlineIndex: item.index,
+                title: item.title,
+                level: Number.isFinite(Number(item.level)) ? Number(item.level) : null,
+                styleName: found.styleName || "",
+              } : null,
             });
           }
           for (var matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
@@ -346,6 +354,14 @@
             current.bodyStyleName = body?.styleName || "";
             current.bodyParagraphIndex = body ? body.paragraphIndex : null;
             current.bodyStyleSource = body ? "next-paragraph-before-next-outline" : "not-found";
+            current.bodyStyleRef = body ? {
+              paragraphIndex: body.paragraphIndex,
+              outlineIndex: current.index,
+              title: current.styleRef?.title || "",
+              text: body.text || "",
+              level: current.styleRef?.level ?? null,
+              styleName: body.styleName || "",
+            } : null;
           }
           Asc.scope.gfOutlineStyleResult = matched;
         } catch (error) {
@@ -438,6 +454,13 @@
         paragraphIndex: found ? found.paragraphIndex : null,
         styleName: found?.styleName || "",
         styleSource: found ? `${source}-paragraph-exact-title` : "not-found",
+        styleRef: found ? {
+          paragraphIndex: found.paragraphIndex,
+          outlineIndex: item.index,
+          title: item.title,
+          level: Number.isFinite(Number(item.level)) ? Number(item.level) : null,
+          styleName: found.styleName || "",
+        } : null,
       });
     }
     for (let matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
@@ -454,6 +477,14 @@
       current.bodyStyleName = body?.styleName || "";
       current.bodyParagraphIndex = body ? body.paragraphIndex : null;
       current.bodyStyleSource = body ? `${source}-next-paragraph-before-next-outline` : "not-found";
+      current.bodyStyleRef = body ? {
+        paragraphIndex: body.paragraphIndex,
+        outlineIndex: current.index,
+        title: current.styleRef?.title || "",
+        text: body.text || "",
+        level: current.styleRef?.level ?? null,
+        styleName: body.styleName || "",
+      } : null;
     }
     return matched;
   }
@@ -1353,16 +1384,118 @@
           style: String(row?.style || ""),
           styleName: String(row?.styleName || ""),
           styleFallback: String(row?.styleFallback || ""),
+          styleRef: normalizeSolutionStyleRef(row?.styleRef),
           text: String(row?.text || ""),
         };
       })
       .filter(function (row) { return row.text || row.type === "blank"; });
   }
 
+  function normalizeSolutionStyleRef(ref) {
+    if (!ref || typeof ref !== "object") return null;
+    const paragraphIndex = Number(ref.paragraphIndex);
+    if (!Number.isFinite(paragraphIndex)) return null;
+    return {
+      paragraphIndex,
+      outlineIndex: Number.isFinite(Number(ref.outlineIndex)) ? Number(ref.outlineIndex) : null,
+      title: String(ref.title || "").trim(),
+      text: String(ref.text || "").trim(),
+      level: Number.isFinite(Number(ref.level)) ? Number(ref.level) : null,
+      styleName: String(ref.styleName || "").trim(),
+    };
+  }
+
+  function getSolutionStyleCandidates(item) {
+    const raw = String(item?.styleName || item?.style || item?.styleFallback || "");
+    const value = raw.toLowerCase();
+    if (value.indexOf("word-style:") === 0) return [raw.slice("word-style:".length)];
+    if (raw && !/^heading-\d$/.test(value) && value !== "body") return [raw];
+    const headingMatch = value.match(/^heading-(\d)$/);
+    if (headingMatch) {
+      const level = headingMatch[1];
+      return [`Heading ${level}`, `标题 ${level}`, `标题${level}`, `heading ${level}`];
+    }
+    return ["正文", "Normal", "normal"];
+  }
+
+  function getLogicReferenceParagraph(styleRef) {
+    const logicDocument = getLogicDocument();
+    const paragraphs = getLogicDocumentParagraphs(logicDocument);
+    const paragraphIndex = Number(styleRef?.paragraphIndex);
+    const expected = normalizeOutlineText(styleRef?.title || styleRef?.text || "");
+    const candidate = Number.isFinite(paragraphIndex) ? paragraphs[paragraphIndex] : null;
+    const readText = (paragraph) => normalizeOutlineText(safeCall(paragraph, "GetText", "", { NewLine: true, ParaSeparator: "\n", Numbering: true }));
+    if (candidate && (!expected || readText(candidate) === expected)) return candidate;
+    if (!expected) return null;
+    return paragraphs.find((paragraph) => readText(paragraph) === expected) || null;
+  }
+
+  function getLogicReferenceStyleName(item) {
+    const paragraph = getLogicReferenceParagraph(item?.styleRef);
+    return paragraph ? getLogicParagraphStyleName(paragraph, getLogicDocument()) : "";
+  }
+
+  function findExistingLogicStyleName(logicDocument, candidates) {
+    const styles = safeCall(logicDocument, "GetStyles", null) || safeCall(logicDocument, "Get_Styles", null);
+    if (!styles) return "";
+    for (const candidate of candidates) {
+      try {
+        if (safeCall(styles, "GetStyleIdByName", null, candidate, false)) return candidate;
+      } catch {}
+    }
+    return candidates[0] || "";
+  }
+
+  function applyLogicParagraphStyle(logicDocument, item) {
+    const styleName = getLogicReferenceStyleName(item)
+      || findExistingLogicStyleName(logicDocument, getSolutionStyleCandidates(item));
+    if (!styleName) return false;
+    try {
+      if (typeof logicDocument.SetParagraphStyle === "function") {
+        logicDocument.SetParagraphStyle(styleName, true);
+        return true;
+      }
+    } catch (error) {}
+    return false;
+  }
+
+  function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText) {
+    if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
+    const logicDocument = getLogicDocument();
+    if (!logicDocument || typeof logicDocument.EnterText !== "function") return enterTextAtSelection(fallbackText, "solution-writing");
+    try {
+      let textCount = 0;
+      const styleResults = [];
+      paragraphs.forEach((item, index) => {
+        const styled = applyLogicParagraphStyle(logicDocument, item);
+        if (item.text) {
+          logicDocument.EnterText(String(item.text));
+          textCount += 1;
+        }
+        styleResults.push({
+          requested: item.styleName || item.style || "",
+          reference: item.styleRef?.styleName || "",
+          styleApplied: Boolean(styled),
+        });
+        if (index < paragraphs.length - 1 && typeof logicDocument.AddNewParagraph === "function") {
+          logicDocument.AddNewParagraph(false, true);
+        }
+      });
+      if (textCount === 0) return { ok: false, error: "方案规划没有可插入文本段落。" };
+      safeCall(logicDocument, "Recalculate", null);
+      safeCall(logicDocument, "UpdateInterface", null);
+      safeCall(logicDocument, "UpdateSelection", null);
+      saveOnlyOfficeDocument("solution-writing");
+      return { ok: true, source: "logic-document-reference-style-enter-text", count: paragraphs.length, textCount, styles: styleResults };
+    } catch (error) {
+      return { ok: false, error: error?.message || "方案规划段落插入失败" };
+    }
+  }
+
   async function insertStructuredSolutionWritingText(paragraphs, fallbackText) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
     if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
-      return enterTextAtSelection(fallbackText, "solution-writing");
+      return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText);
     }
     try {
       window.Asc.scope = window.Asc.scope || {};
@@ -1399,6 +1532,69 @@
           return ["正文", "Normal", "normal"];
         }
 
+        function getParagraphText(paragraph) {
+          try {
+            if (paragraph && typeof paragraph.GetText === "function") {
+              return String(paragraph.GetText({ NewLine: true, ParaSeparator: "\n", Numbering: true }) || "").replace(/\s+/g, " ").trim();
+            }
+          } catch (error) {}
+          return "";
+        }
+
+        function getAllParagraphs(doc) {
+          try {
+            var direct = doc && typeof doc.GetAllParagraphs === "function" ? doc.GetAllParagraphs() : null;
+            return Array.isArray(direct) ? direct : [];
+          } catch (error) {
+            return [];
+          }
+        }
+
+        function getReferenceParagraph(doc, item) {
+          var ref = item && item.styleRef;
+          if (!ref) return null;
+          var paragraphs = getAllParagraphs(doc);
+          var paragraphIndex = Number(ref.paragraphIndex);
+          var expected = String(ref.title || ref.text || "").replace(/\s+/g, " ").trim();
+          var candidate = Number.isFinite(paragraphIndex) ? paragraphs[paragraphIndex] : null;
+          if (candidate && (!expected || getParagraphText(candidate) === expected)) return candidate;
+          if (!expected) return null;
+          for (var index = 0; index < paragraphs.length; index += 1) {
+            if (getParagraphText(paragraphs[index]) === expected) return paragraphs[index];
+          }
+          return null;
+        }
+
+        function applyStyleObject(paragraph, style) {
+          if (!style || !paragraph) return false;
+          try {
+            var paraPr = typeof paragraph.GetParaPr === "function" ? paragraph.GetParaPr() : null;
+            if (paraPr && typeof paraPr.SetStyle === "function") {
+              paraPr.SetStyle(style);
+              return true;
+            }
+          } catch (error) {}
+          try {
+            if (typeof paragraph.SetStyle === "function") {
+              paragraph.SetStyle(style);
+              return true;
+            }
+          } catch (error) {}
+          return false;
+        }
+
+        function applyReferenceStyle(doc, paragraph, item) {
+          var reference = getReferenceParagraph(doc, item);
+          if (!reference || typeof reference.GetParaPr !== "function") return false;
+          try {
+            var referencePr = reference.GetParaPr();
+            var style = referencePr && typeof referencePr.GetStyle === "function" ? referencePr.GetStyle() : null;
+            return applyStyleObject(paragraph, style);
+          } catch (error) {
+            return false;
+          }
+        }
+
         function getFormat(item) {
           var style = String(item.styleFallback || item.style || "");
           var headingMatch = style.match(/^heading-(\d)$/);
@@ -1415,14 +1611,14 @@
         }
 
         function applyWordStyle(doc, paragraph, item) {
-          if (!doc || typeof doc.GetStyle !== "function" || !paragraph || typeof paragraph.SetStyle !== "function") return false;
+          if (applyReferenceStyle(doc, paragraph, item)) return true;
+          if (!doc || typeof doc.GetStyle !== "function" || !paragraph) return false;
           var candidates = getStyleCandidates(item.style || "body");
           for (var index = 0; index < candidates.length; index += 1) {
             try {
               var style = doc.GetStyle(candidates[index]);
               if (style) {
-                paragraph.SetStyle(style);
-                return true;
+                return applyStyleObject(paragraph, style);
               }
             } catch (error) {}
           }

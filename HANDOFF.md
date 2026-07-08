@@ -210,6 +210,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 2. 需要显示在 OnlyOffice 内部工具栏、右侧面板或弹窗里的工具，优先做官方 `sdkjs-plugins` 插件，通过 `Asc.plugin.callCommand()` 执行文档命令。
 3. `scripts/patch-onlyoffice.py` 注入脚本只作为现有功能兼容层或 Connector/插件不可用时的 fallback；后续新业务能力不要默认继续堆到注入脚本里。
 4. Connector 属于 OnlyOffice Automation API，部分部署版本可能不可用；调用方必须先探测能力并保留明确降级路径，不允许静默假装成功。
+5. 需要“沿用原文标题/正文样式”时，优先保存参考段落定位信息，在写入命令同一 Office 上下文里重新定位参考段落，并用 `referenceParagraph.GetParaPr().GetStyle()` + `targetParagraph.GetParaPr().SetStyle(style)` 复制真实段落样式；只有参考段落缺失时才退回样式名匹配。
 
 #### 通信约定
 
