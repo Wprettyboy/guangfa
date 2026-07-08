@@ -261,7 +261,7 @@ function TaskPlanningPanel({
 }
 
 function getTaskDensityLabel(value) {
-  return TASK_DENSITY_OPTIONS.find((option) => option.value === value)?.label || "简洁";
+  return TASK_DENSITY_OPTIONS.find((option) => option.value === value)?.label || "简单";
 }
 
 function TaskCard({ task, expanded, onToggle }) {
