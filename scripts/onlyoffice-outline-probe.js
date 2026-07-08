@@ -62,30 +62,56 @@
   function readDocumentStyles() {
     try {
       const doc = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
-      if (!doc || typeof doc.GetAllStyles !== "function") return [];
-      const rawStyles = doc.GetAllStyles();
-      const styles = Array.isArray(rawStyles)
-        ? rawStyles
-        : rawStyles && Number.isFinite(Number(rawStyles.length))
-          ? Array.prototype.slice.call(rawStyles)
-          : [];
-      return styles
-        .map(function (style, index) {
-          const name = String(
-            style?.name
-            || style?.Name
-            || safeCall(style, "GetName", "")
-            || safeCall(style, "get_Name", "")
-            || style
-            || "",
-          ).trim();
-          const id = String(
-            style?.id
-            || style?.Id
-            || safeCall(style, "GetId", "")
-            || safeCall(style, "get_Id", "")
-            || name,
-          ).trim();
+      if (doc && typeof doc.GetAllStyles === "function") {
+        return normalizeOnlyOfficeStyles(doc.GetAllStyles());
+      }
+    } catch {
+      return readLogicDocumentStyles();
+    }
+    return readLogicDocumentStyles();
+  }
+
+  function normalizeOnlyOfficeStyles(rawStyles) {
+    const styles = Array.isArray(rawStyles)
+      ? rawStyles
+      : rawStyles && Number.isFinite(Number(rawStyles.length))
+        ? Array.prototype.slice.call(rawStyles)
+        : [];
+    return styles
+      .map(function (style, index) {
+        const name = getOnlyOfficeStyleName(style);
+        const id = String(
+          style?.id
+          || style?.Id
+          || safeCall(style, "GetId", "")
+          || safeCall(style, "get_Id", "")
+          || safeCall(style, "GetStyleId", "")
+          || name,
+        ).trim();
+        return name ? { id, name, index } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function getOnlyOfficeStyleName(style) {
+    return String(
+      style?.name
+      || style?.Name
+      || safeCall(style, "GetName", "")
+      || safeCall(style, "get_Name", "")
+      || safeCall(style, "Get_Name", "")
+      || style
+      || "",
+    ).trim();
+  }
+
+  function readLogicDocumentStyles() {
+    try {
+      const styles = safeCall(getLogicDocument(), "GetStyles", null) || safeCall(getLogicDocument(), "Get_Styles", null);
+      const styleMap = styles?.Style || {};
+      return Object.keys(styleMap)
+        .map((id, index) => {
+          const name = getOnlyOfficeStyleName(styleMap[id]);
           return name ? { id, name, index } : null;
         })
         .filter(Boolean);
@@ -157,7 +183,15 @@
         };
       })
       .filter(function (item) { return Number.isFinite(item.index) && item.title.trim(); });
-    if (!sourceItems.length || !window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") return [];
+    if (!sourceItems.length) {
+      window.Asc = window.Asc || {};
+      window.Asc.scope = window.Asc.scope || {};
+      window.Asc.scope.gfOutlineStyleDebug = { error: "没有可匹配的大纲标题" };
+      return [];
+    }
+    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
+      return readOutlineStyleMetadataFromLogic(sourceItems, "logic-document-no-call-command");
+    }
     try {
       window.Asc.scope = window.Asc.scope || {};
       window.Asc.scope.gfOutlineStyleItems = sourceItems;
@@ -321,8 +355,107 @@
       });
       return Array.isArray(window.Asc.scope.gfOutlineStyleResult) ? window.Asc.scope.gfOutlineStyleResult : [];
     } catch {
+      return readOutlineStyleMetadataFromLogic(sourceItems, "logic-document-call-command-failed");
+    }
+  }
+
+  function readOutlineStyleMetadataFromLogic(sourceItems, source) {
+    window.Asc = window.Asc || {};
+    window.Asc.scope = window.Asc.scope || {};
+    try {
+      const logicDocument = getLogicDocument();
+      const paragraphs = getLogicDocumentParagraphs(logicDocument);
+      const paragraphRows = paragraphs.map((paragraph, paragraphIndex) => ({
+        paragraphIndex,
+        text: normalizeOutlineText(safeCall(paragraph, "GetText", "", { NewLine: true, ParaSeparator: "\n", Numbering: true })),
+        styleName: getLogicParagraphStyleName(paragraph, logicDocument),
+      })).filter((row) => row.text);
+      const matched = matchOutlineStyleRows(sourceItems, paragraphRows, source);
+      window.Asc.scope.gfOutlineStyleDebug = {
+        source,
+        paragraphCount: paragraphs.length,
+        nonEmptyParagraphCount: paragraphRows.length,
+        requestedTitles: sourceItems.slice(0, 12).map((item) => ({ index: item.index, title: item.title })),
+        samples: paragraphRows.slice(0, 18).map((row) => ({
+          paragraphIndex: row.paragraphIndex,
+          text: row.text,
+          styleName: row.styleName,
+        })),
+      };
+      return matched;
+    } catch (error) {
+      window.Asc.scope.gfOutlineStyleDebug = { source, error: String(error?.message || error || "逻辑文档样式读取失败") };
       return [];
     }
+  }
+
+  function normalizeOutlineText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function getLogicDocumentParagraphs(logicDocument) {
+    if (!logicDocument) return [];
+    const attempts = [
+      () => safeCall(logicDocument, "GetAllParagraphs", null, { OnlyMainDocument: true, All: true }),
+      () => safeCall(logicDocument, "GetAllParagraphs", null, { All: true }),
+      () => safeCall(logicDocument, "GetAllParagraphs", null),
+    ];
+    for (const attempt of attempts) {
+      try {
+        const paragraphs = attempt();
+        if (Array.isArray(paragraphs)) return paragraphs;
+      } catch {}
+    }
+    return [];
+  }
+
+  function getLogicParagraphStyleName(paragraph, logicDocument) {
+    const paraPr = safeCall(paragraph, "GetCalculatedParaPr", null)
+      || safeCall(paragraph, "Get_CompiledPr2", null, false)?.ParaPr
+      || paragraph?.Pr
+      || null;
+    const styleId = paraPr?.PStyle || paragraph?.Pr?.PStyle || "";
+    const styles = safeCall(logicDocument, "GetStyles", null) || safeCall(logicDocument, "Get_Styles", null);
+    const style = styleId ? safeCall(styles, "Get", null, styleId) || styles?.Style?.[styleId] : null;
+    return getOnlyOfficeStyleName(style);
+  }
+
+  function matchOutlineStyleRows(items, paragraphRows, source) {
+    let cursor = 0;
+    const matched = [];
+    for (const item of items) {
+      const targetText = normalizeOutlineText(item.title);
+      let found = null;
+      for (let rowIndex = cursor; rowIndex < paragraphRows.length; rowIndex += 1) {
+        if (paragraphRows[rowIndex].text === targetText) {
+          found = paragraphRows[rowIndex];
+          cursor = rowIndex + 1;
+          break;
+        }
+      }
+      matched.push({
+        index: item.index,
+        paragraphIndex: found ? found.paragraphIndex : null,
+        styleName: found?.styleName || "",
+        styleSource: found ? `${source}-paragraph-exact-title` : "not-found",
+      });
+    }
+    for (let matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
+      const current = matched[matchIndex];
+      if (!Number.isFinite(Number(current.paragraphIndex))) continue;
+      let nextParagraphIndex = Number.POSITIVE_INFINITY;
+      for (let nextIndex = matchIndex + 1; nextIndex < matched.length; nextIndex += 1) {
+        if (Number.isFinite(Number(matched[nextIndex].paragraphIndex))) {
+          nextParagraphIndex = matched[nextIndex].paragraphIndex;
+          break;
+        }
+      }
+      const body = paragraphRows.find((row) => row.paragraphIndex > current.paragraphIndex && row.paragraphIndex < nextParagraphIndex);
+      current.bodyStyleName = body?.styleName || "";
+      current.bodyParagraphIndex = body ? body.paragraphIndex : null;
+      current.bodyStyleSource = body ? `${source}-next-paragraph-before-next-outline` : "not-found";
+    }
+    return matched;
   }
 
   function extractOnlyOfficeOutline() {

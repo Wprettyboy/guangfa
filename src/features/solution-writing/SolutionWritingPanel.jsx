@@ -737,6 +737,7 @@ function StyleDebugPanel({ debug }) {
         <span>探针</span>
         <em>
           段落 {debug?.paragraphCount ?? 0} 个 · 有文本 {debug?.nonEmptyParagraphCount ?? 0} 个
+          {debug?.source ? ` · ${debug.source}` : ""}
           {debug?.error ? ` · ${debug.error}` : ""}
         </em>
       </div>
