@@ -2,6 +2,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
 
+const SOLUTION_STYLE_OPTIONS = [
+  { value: "body", label: "正文" },
+  { value: "heading-1", label: "标题1" },
+  { value: "heading-2", label: "标题2" },
+  { value: "heading-3", label: "标题3" },
+  { value: "heading-4", label: "标题4" },
+  { value: "heading-5", label: "标题5" },
+  { value: "heading-6", label: "标题6" },
+];
+
 function SolutionWritingPanel({
   outline,
   saveState,
@@ -24,6 +34,7 @@ function SolutionWritingPanel({
   const [collapsedModuleIds, setCollapsedModuleIds] = useState([]);
   const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
+  const [styleSelections, setStyleSelections] = useState({});
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
   const effectiveOutline = localOutline || outline;
@@ -31,6 +42,7 @@ function SolutionWritingPanel({
   const outlineItems = useMemo(() => normalizeOutlineItems(effectiveOutline?.items), [effectiveOutline]);
   const templateGroups = useMemo(() => buildTemplateGroups(outlineItems), [outlineItems]);
   const selectedGroup = templateGroups.find((group) => group.key === selectedGroupKey) || templateGroups[0] || null;
+  const styleMappingRows = useMemo(() => buildStyleMappingRows(selectedGroup), [selectedGroup]);
   const projectBases = knowledgeBases.filter((base) => base.scope !== "global");
   const globalBases = knowledgeBases.filter((base) => base.scope === "global");
   const selectedKnowledgeBases = knowledgeBases.filter(
@@ -50,6 +62,11 @@ function SolutionWritingPanel({
     const recommended = getRecommendedTemplateGroup(templateGroups);
     setSelectedGroupKey(recommended?.key || "");
   }, [selectedGroupKey, templateGroups]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    setStyleSelections(buildDefaultStyleSelections(selectedGroup));
+  }, [selectedGroup?.key]);
 
   async function refreshOutline() {
     setStatus("loading-outline");
@@ -218,6 +235,28 @@ function SolutionWritingPanel({
               <div className="solution-template-children">
                 {selectedGroup.childTemplates.map((item) => <span key={`${selectedGroup.key}-${item.index}`}>{item.title}</span>)}
               </div>
+              <div className="solution-style-map">
+                <div className="solution-style-map-title">
+                  <strong>样式匹配</strong>
+                  <span>插入时按这里套用 Word 样式</span>
+                </div>
+                {styleMappingRows.map((row) => (
+                  <label className="solution-style-row" key={row.key}>
+                    <span>
+                      <strong>{row.label}</strong>
+                      <em>{row.sample}</em>
+                    </span>
+                    <select
+                      value={styleSelections[row.key] || row.defaultStyle}
+                      onChange={(event) => setStyleSelections((current) => ({ ...current, [row.key]: event.target.value }))}
+                    >
+                      {SOLUTION_STYLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
             </>
           ) : null}
         </SolutionSection>
@@ -347,7 +386,7 @@ function SolutionWritingPanel({
                 <button
                   className="text-button"
                   type="button"
-                  onClick={() => insertGeneratedText(buildAllGeneratedModulesInsert(selectedGroup, generatedBlocks), "已插入全部写作规划")}
+                  onClick={() => insertGeneratedText(buildAllGeneratedModulesInsert(selectedGroup, generatedBlocks, styleSelections), "已插入全部写作规划")}
                   disabled={busy}
                 >
                   {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
@@ -363,14 +402,18 @@ function SolutionWritingPanel({
               {generatedBlocks.map((block, moduleIndex) => {
                 const moduleNumber = nextSiblingNumber(selectedGroup?.number, moduleIndex);
                 const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
+                const moduleStyleLabel = getStyleLabel(resolveParagraphStyle("module-heading", selectedGroup?.level, styleSelections));
                 return (
                   <article className="solution-generated-card" key={block.moduleId || `${block.moduleName}-${moduleIndex}`}>
                     <div className="solution-generated-head">
-                      <strong>{moduleTitle}</strong>
+                      <span className="solution-generated-title">
+                        <strong>{moduleTitle}</strong>
+                        <em className="solution-style-badge">{moduleStyleLabel}</em>
+                      </span>
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, moduleIndex), `已插入 ${block.moduleName} 写作规划`)}
+                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, moduleIndex, styleSelections), `已插入 ${block.moduleName} 写作规划`)}
                         disabled={busy}
                       >
                         {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
@@ -380,22 +423,31 @@ function SolutionWritingPanel({
                     <div className="solution-generated-sections">
                       {block.sections.map((section, sectionIndex) => {
                         const sectionNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
+                        const sectionLevel = Number(selectedGroup?.level || 0) + 1;
                         const sectionTitle = formatHeadingLine(sectionNumber, stripHeadingNumber(section.templateTitle));
+                        const sectionStyleLabel = getStyleLabel(resolveParagraphStyle("section-heading", sectionLevel, styleSelections));
+                        const bodyStyleLabel = getStyleLabel(resolveParagraphStyle("body", null, styleSelections));
                         return (
                           <section className="solution-generated-section" key={`${block.moduleId}-${section.templateTitle}-${sectionIndex}`}>
                             <div>
-                              <strong>{sectionTitle}</strong>
+                              <span className="solution-generated-title">
+                                <strong>{sectionTitle}</strong>
+                                <em className="solution-style-badge">{sectionStyleLabel}</em>
+                              </span>
                               <button
                                 className="text-button"
                                 type="button"
-                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1), `已插入 ${sectionTitle} 写作规划`)}
+                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1, styleSelections), `已插入 ${sectionTitle} 写作规划`)}
                                 disabled={busy}
                               >
                                 <Send size={13} />
                                 插入规划
                               </button>
                             </div>
-                            <p>{section.content || "需结合项目资料补充该标题的写作要点。"}</p>
+                            <p>
+                              <em className="solution-style-badge body">{bodyStyleLabel}</em>
+                              {section.content || "需结合项目资料补充该标题的写作要点。"}
+                            </p>
                           </section>
                         );
                       })}
@@ -518,8 +570,59 @@ function getRecommendedTemplateGroup(groups) {
     || groups[0];
 }
 
-function buildAllGeneratedModulesInsert(group, blocks) {
-  const items = (Array.isArray(blocks) ? blocks : []).map((block, index) => buildGeneratedModuleInsert(group, block, index));
+function buildStyleMappingRows(group) {
+  if (!group) return [];
+  const sectionLevels = [...new Set(group.childTemplates.map((item) => Number(item.level)).filter((level) => Number.isFinite(level)))];
+  return [
+    {
+      key: "module-heading",
+      label: "模块标题",
+      sample: group.title,
+      defaultStyle: getHeadingStyleValue(group.level),
+    },
+    ...sectionLevels.map((level) => {
+      const sample = group.childTemplates.find((item) => Number(item.level) === level)?.title || `子标题 ${level + 1}`;
+      return {
+        key: getSectionStyleKey(level),
+        label: "子标题",
+        sample,
+        defaultStyle: getHeadingStyleValue(level),
+      };
+    }),
+    {
+      key: "body",
+      label: "正文描述",
+      sample: "写作规划正文",
+      defaultStyle: "body",
+    },
+  ];
+}
+
+function buildDefaultStyleSelections(group) {
+  return Object.fromEntries(buildStyleMappingRows(group).map((row) => [row.key, row.defaultStyle]));
+}
+
+function getHeadingStyleValue(level) {
+  const nextLevel = Math.max(1, Math.min(6, Number(level) + 1 || 1));
+  return `heading-${nextLevel}`;
+}
+
+function getSectionStyleKey(level) {
+  return `section-heading-${Number.isFinite(Number(level)) ? Number(level) : "default"}`;
+}
+
+function resolveParagraphStyle(type, level, styleSelections = {}) {
+  if (type === "module-heading") return styleSelections["module-heading"] || getHeadingStyleValue(level);
+  if (type === "section-heading") return styleSelections[getSectionStyleKey(level)] || getHeadingStyleValue(level);
+  return styleSelections.body || "body";
+}
+
+function getStyleLabel(value) {
+  return SOLUTION_STYLE_OPTIONS.find((option) => option.value === value)?.label || "正文";
+}
+
+function buildAllGeneratedModulesInsert(group, blocks, styleSelections = {}) {
+  const items = (Array.isArray(blocks) ? blocks : []).map((block, index) => buildGeneratedModuleInsert(group, block, index, styleSelections));
   return {
     text: items.map((item) => item.text).filter(Boolean).join("\n\n"),
     paragraphs: items.flatMap((item, index) => (
@@ -528,27 +631,30 @@ function buildAllGeneratedModulesInsert(group, blocks) {
   };
 }
 
-function buildGeneratedModuleInsert(group, block, moduleIndex) {
+function buildGeneratedModuleInsert(group, block, moduleIndex, styleSelections = {}) {
   const moduleNumber = nextSiblingNumber(group?.number, moduleIndex);
   const moduleTitle = formatHeadingLine(moduleNumber, block.moduleName);
+  const moduleLevel = Number.isFinite(Number(group?.level)) ? Number(group.level) : 1;
   const paragraphs = [{
     type: "module-heading",
-    level: Number.isFinite(Number(group?.level)) ? Number(group.level) : 1,
+    level: moduleLevel,
+    style: resolveParagraphStyle("module-heading", moduleLevel, styleSelections),
     text: moduleTitle,
   }];
   block.sections.forEach((section, sectionIndex) => {
     const headingNumber = moduleNumber ? `${moduleNumber}.${sectionIndex + 1}` : "";
     const title = formatHeadingLine(headingNumber, stripHeadingNumber(section.templateTitle));
-    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1).paragraphs);
+    paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections).paragraphs);
   });
   return paragraphsToInsertPayload(paragraphs);
 }
 
-function buildGeneratedSectionInsert(title, content, level = 2) {
+function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}) {
+  const sectionLevel = Number.isFinite(Number(level)) ? Number(level) : 2;
   const bodyLines = splitBodyParagraphs(content || "需结合项目资料补充该标题的写作要点。");
   return paragraphsToInsertPayload([
-    { type: "section-heading", level: Number.isFinite(Number(level)) ? Number(level) : 2, text: title },
-    ...bodyLines.map((text) => ({ type: "body", text })),
+    { type: "section-heading", level: sectionLevel, style: resolveParagraphStyle("section-heading", sectionLevel, styleSelections), text: title },
+    ...bodyLines.map((text) => ({ type: "body", style: resolveParagraphStyle("body", null, styleSelections), text })),
   ]);
 }
 
@@ -557,6 +663,7 @@ function paragraphsToInsertPayload(paragraphs) {
     .map((paragraph) => ({
       type: paragraph.type || "body",
       level: Number.isFinite(Number(paragraph.level)) ? Number(paragraph.level) : null,
+      style: paragraph.style || "",
       text: String(paragraph.text || ""),
     }))
     .filter((paragraph) => paragraph.text || paragraph.type === "blank");
@@ -571,7 +678,7 @@ function normalizeInsertPayload(content) {
   const text = String(content || "").trim();
   return {
     text,
-    paragraphs: text.split(/\n+/).map((line) => ({ type: "body", text: line.trim() })).filter((line) => line.text),
+    paragraphs: text.split(/\n+/).map((line) => ({ type: "body", style: "body", text: line.trim() })).filter((line) => line.text),
   };
 }
 

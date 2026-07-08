@@ -177,6 +177,53 @@
   padding: 4px 8px;
 }
 
+.solution-style-map {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 9px;
+}
+
+.solution-style-map-title,
+.solution-style-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.solution-style-map-title strong,
+.solution-style-row strong {
+  color: #334155;
+  font-size: 12px;
+}
+
+.solution-style-map-title span,
+.solution-style-row em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.solution-style-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.solution-style-row em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solution-style-row select {
+  width: 92px;
+  flex: 0 0 auto;
+}
+
 .solution-knowledge-group {
   display: grid;
   gap: 6px;
@@ -414,6 +461,31 @@
   min-width: 0;
   color: #172033;
   font-size: 14px;
+}
+
+.solution-generated-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.solution-style-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1;
+  padding: 3px 6px;
+}
+
+.solution-style-badge.body {
+  display: inline-flex;
+  margin-right: 6px;
+  vertical-align: 1px;
 }
 
 .solution-generated-sections {

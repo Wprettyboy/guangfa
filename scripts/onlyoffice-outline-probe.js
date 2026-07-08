@@ -951,6 +951,7 @@
         return {
           type: String(row?.type || "body"),
           level: Number.isFinite(Number(row?.level)) ? Number(row.level) : null,
+          style: String(row?.style || ""),
           text: String(row?.text || ""),
         };
       })
@@ -984,17 +985,44 @@
           return false;
         }
 
-        function getFormat(item) {
-          if (item.type === "module-heading") {
-            return { font: "黑体", size: 16, bold: true, firstLine: 0, line: 28, before: 6, after: 4, outline: item.level };
+        function getStyleCandidates(style) {
+          var value = String(style || "").toLowerCase();
+          var headingMatch = value.match(/^heading-(\d)$/);
+          if (headingMatch) {
+            var level = headingMatch[1];
+            return ["Heading " + level, "标题 " + level, "标题" + level, "heading " + level];
           }
-          if (item.type === "section-heading") {
-            return { font: "楷体", size: 16, bold: true, firstLine: 0, line: 28, before: 4, after: 2, outline: item.level };
+          return ["正文", "Normal", "normal"];
+        }
+
+        function getFormat(item) {
+          var style = String(item.style || "");
+          var headingMatch = style.match(/^heading-(\d)$/);
+          if (headingMatch) {
+            var headingLevel = Math.max(1, Math.min(6, Number(headingMatch[1]) || 1));
+            if (headingLevel === 1) return { font: "小标宋", size: 22, bold: false, firstLine: 0, line: 32, before: 8, after: 6, outline: 0 };
+            if (headingLevel === 2) return { font: "黑体", size: 16, bold: true, firstLine: 0, line: 28, before: 6, after: 4, outline: 1 };
+            return { font: "楷体", size: 16, bold: true, firstLine: 0, line: 28, before: 4, after: 2, outline: headingLevel - 1 };
           }
           if (item.type === "blank") {
             return { font: "仿宋", size: 16, bold: false, firstLine: 0, line: 12, before: 0, after: 0 };
           }
           return { font: "仿宋", size: 16, bold: false, firstLine: 2, line: 28, before: 0, after: 0 };
+        }
+
+        function applyWordStyle(doc, paragraph, item) {
+          if (!doc || typeof doc.GetStyle !== "function" || !paragraph || typeof paragraph.SetStyle !== "function") return false;
+          var candidates = getStyleCandidates(item.style || "body");
+          for (var index = 0; index < candidates.length; index += 1) {
+            try {
+              var style = doc.GetStyle(candidates[index]);
+              if (style) {
+                paragraph.SetStyle(style);
+                return true;
+              }
+            } catch (error) {}
+          }
+          return false;
         }
 
         function applyParagraphFormat(paragraph, item) {
@@ -1026,7 +1054,7 @@
             var item = source[index] || {};
             var paragraph = Api.CreateParagraph();
             if (item.text && typeof paragraph.AddText === "function") paragraph.AddText(String(item.text));
-            applyParagraphFormat(paragraph, item);
+            if (!applyWordStyle(doc, paragraph, item)) applyParagraphFormat(paragraph, item);
             content.push(paragraph);
           }
           doc.InsertContent(content);
