@@ -152,6 +152,7 @@ import {
   MessageSquareText,
   Settings,
   ShieldCheck,
+  Sparkles,
   Table2,
 } from "lucide-react";
 
@@ -2134,10 +2135,16 @@ export default function App() {
                   </>
                 ) : null}
                 {solutionWritingPanelActive ? (
-                  <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeImagePickerOpen(true)}>
-                    <ImageIcon size={16} />
-                    方案配图
-                  </button>
+                  <>
+                    <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeImagePickerOpen(true)}>
+                      <ImageIcon size={16} />
+                      方案配图
+                    </button>
+                    <button className="tool-button workspace-table-button" type="button" title="AI 生图功能待接入">
+                      <Sparkles size={16} />
+                      AI生图
+                    </button>
+                  </>
                 ) : null}
                 <div className="workspace-tabs" role="tablist" aria-label="工作台切换">
                   <button
