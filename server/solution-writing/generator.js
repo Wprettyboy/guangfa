@@ -156,6 +156,7 @@ async function generateSolutionTaskPlan(payload = {}) {
   const categories = normalizeTaskPlanCategories(payload.categories);
   const userInstruction = cleanText(payload.userInstruction).slice(0, 2000);
   const knowledgeOptions = normalizeKnowledgeOptions(payload.knowledgeOptions);
+  const taskDensity = normalizeTaskDensity(payload.taskDensity);
   if (!categories.length) {
     const error = new Error("请先读取方案大纲并生成任务规划输入。");
     error.statusCode = 400;
@@ -170,6 +171,7 @@ async function generateSolutionTaskPlan(payload = {}) {
       category,
       userInstruction,
       knowledgeOptions,
+      taskDensity,
     });
     plannedCategories.push(planned);
     warnings.push(...planned.warnings);
@@ -180,7 +182,9 @@ async function generateSolutionTaskPlan(payload = {}) {
     stats: {
       categoryCount: plannedCategories.length,
       taskCount: plannedCategories.reduce((sum, category) => sum + category.tasks.length, 0),
+      taskDensity,
     },
+    taskDensity,
     warnings: normalizeStringList(warnings).slice(0, 12),
   };
 }
@@ -210,7 +214,7 @@ async function testSolutionTaskKnowledge(payload = {}) {
   };
 }
 
-async function generateTaskCategoryPlan(runtime, { outlineText, category, userInstruction, knowledgeOptions }) {
+async function generateTaskCategoryPlan(runtime, { outlineText, category, userInstruction, knowledgeOptions, taskDensity }) {
   const query = buildTaskKnowledgeQuery({ outlineText, categories: [category], userInstruction });
   const knowledgeSearch = await searchKnowledgeForAi(runtime, {
     rawQuery: query,
@@ -220,12 +224,14 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
   });
   const snippets = knowledgeSearch.snippets.slice(0, 8);
   const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, Math.min(maxKnowledgeChars, 12000));
+  const densityRule = getTaskDensityRule(taskDensity);
   const systemPrompt = [
     "你是政企方案落地执行的高级方案工程师和项目任务规划专家。",
     "任务：根据完整方案大纲、当前一级任务类别、每个标题及标题下原文，生成可执行任务规划。",
     "完整大纲只作为全局架构约束，不能改大纲，不能跨章节抢写其他标题内容。",
     "同一个一级类别内，任务必须按输入标题顺序规划，并承接前序规划产出以避免重复；进入新一级类别后前序上下文视为已重置。",
     "每个输入标题至少输出 1 个任务；原文不足时输出待确认/待补充任务，不要编造未体现的业务内容。",
+    "无论选择哪种模式，都禁止为了扩充篇幅新增本次建设范围外的功能、模块、接口、设备、流程、指标或承诺。",
     "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
   ].join("\n");
   const userPrompt = [
@@ -238,6 +244,8 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
     `【当前一级任务类别】${category.sourceHeading || category.title}`,
     `类别边界：${category.boundary?.include || ""}；${category.boundary?.exclude || ""}`,
     `类别上下文规则：${category.contextRule || "类别内传递，跨类别重置。"}`,
+    `规划模式：${densityRule.label}`,
+    `模式要求：${densityRule.prompt}`,
     `用户补充要求：${userInstruction || "无"}`,
     "",
     knowledgeText ? `【知识库补充资料】\n${knowledgeText}` : "【知识库补充资料】\n未召回到补充资料，任务规划只基于标题与原文。",
@@ -260,6 +268,7 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
     "5. exclusiveBoundary 必须明确写什么、不写什么；有下级标题时要说明哪些内容下沉给子标题。",
     "6. dependsOn 只能引用本类别前序任务；本类别第一个任务可为空数组。",
     "7. producesForNext 要写清楚给后续标题规划传递什么上下文。",
+    "8. 不能为了凑字数添加原文和知识库都没有体现的建设内容；需要扩展时只能扩展表达、验收、实施步骤、风险边界和交付要求。",
   ].join("\n");
   const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 8192, {
     debugFileName: `solution-writing-task-plan-${safeDebugName(category.title)}.json`,
@@ -268,6 +277,7 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
       sourceHeading: category.sourceHeading,
       taskCount: category.tasks.length,
       hasOutlineText: Boolean(outlineText),
+      taskDensity,
       knowledgeOptions,
       knowledgeSnippets: summarizeSnippetsForDebug(snippets),
     },
@@ -388,6 +398,45 @@ function normalizeTaskPlanCategories(categories) {
     }))
     .filter((category) => category.tasks.length)
     .slice(0, 20);
+}
+
+function normalizeTaskDensity(value) {
+  const density = cleanText(value).toLowerCase();
+  if (["moderate", "medium", "适中"].includes(density)) return "moderate";
+  if (["rich", "full", "丰富"].includes(density)) return "rich";
+  return "concise";
+}
+
+function getTaskDensityRule(density) {
+  if (density === "rich") {
+    return {
+      label: "丰富",
+      prompt: [
+        "用于需要更充实篇幅的方案编制。",
+        "每个标题至少 1 个任务；当原文或知识库中存在多个建设点、角色、流程、数据、接口、配置、验收要求时，可以拆成 2-4 个任务。",
+        "丰富只能细化本次建设范围内的设计、实现、配置、联调、测试、交付、培训、验收、风险边界，不得新增资料没有体现的功能或模块。",
+        "如果资料不足，不要硬扩功能，改为补充待确认事项、验收口径、实施边界和交付说明。",
+      ].join(""),
+    };
+  }
+  if (density === "moderate") {
+    return {
+      label: "适中",
+      prompt: [
+        "用于常规正式方案编制。",
+        "每个标题至少 1 个任务；当原文明确包含多个事项时，可拆成 1-2 个任务。",
+        "适度补充执行步骤、交付物、验收关注点和前置依赖，但不得扩展本次建设范围外功能。",
+      ].join(""),
+    };
+  }
+  return {
+    label: "简洁",
+    prompt: [
+      "用于简单方案编制。",
+      "原则上每个标题生成 1 个任务，只保留必要目标、关键动作和交付物。",
+      "除非原文明确分成多个独立事项，否则不要拆分出额外任务。",
+    ].join(""),
+  };
 }
 
 function buildTaskKnowledgeQuery({ outlineText, categories, userInstruction }) {

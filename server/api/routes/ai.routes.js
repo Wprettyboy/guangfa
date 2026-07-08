@@ -87,7 +87,7 @@ function registerAiRoutes() {
     tags: ["ai", "solution-writing"],
     summary: "方案编写生成执行任务规划",
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { outlineText: "string?", categories: "array?", userInstruction: "string?", knowledgeOptions: "object?" },
+    body: { outlineText: "string?", categories: "array?", userInstruction: "string?", knowledgeOptions: "object?", taskDensity: "string?" },
     responses: { 200: "object" },
     handler: ({ body }) => generateSolutionTaskPlan(body),
   });

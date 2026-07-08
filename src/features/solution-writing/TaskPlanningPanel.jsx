@@ -3,6 +3,12 @@ import { ChevronDown, ChevronRight, FileText, Loader2, RefreshCw, Send, Wand2 } 
 import { generateSolutionTaskPlan, testSolutionTaskKnowledge } from "./service.js";
 import { buildTaskPlanningPreview } from "./taskPlanning.js";
 
+const TASK_DENSITY_OPTIONS = [
+  { value: "concise", label: "简洁", description: "适合简单方案，任务保持必要颗粒度" },
+  { value: "moderate", label: "适中", description: "适度展开设计、执行、验收要求" },
+  { value: "rich", label: "丰富", description: "在资料范围内细化任务，支撑更充实正文" },
+];
+
 function TaskPlanningPanel({
   outlineItems = [],
   rawOutlineCount = 0,
@@ -13,6 +19,7 @@ function TaskPlanningPanel({
   onTaskPlanGenerated,
 }) {
   const [instruction, setInstruction] = useState("");
+  const [taskDensity, setTaskDensity] = useState("concise");
   const [preview, setPreview] = useState(() => ({ categories: [], stats: buildTaskPlanningPreview([]).stats }));
   const [generatedPlan, setGeneratedPlan] = useState(null);
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
@@ -45,13 +52,14 @@ function TaskPlanningPanel({
         categories: inputPreview.categories,
         userInstruction: instruction,
         knowledgeOptions,
+        taskDensity,
       });
       setGeneratedPlan(result);
       setPreview({ categories: result.categories || [], stats: inputPreview.stats, outlineText: inputPreview.outlineText });
       setCollapsedCategoryIds([]);
       setExpandedTaskIds([]);
       setTaskStatus("idle");
-      setTaskMessage(`已生成 ${result.stats?.taskCount || 0} 个任务规划`);
+      setTaskMessage(`已按${getTaskDensityLabel(taskDensity)}模式生成 ${result.stats?.taskCount || 0} 个任务规划`);
       onTaskPlanGenerated?.(result);
     } catch (error) {
       setTaskStatus("error");
@@ -133,6 +141,25 @@ function TaskPlanningPanel({
           <span>预计任务 {outlineStats.taskCount} 个</span>
           <span>最大层级 {outlineStats.maxDepth || 0}</span>
           <span>知识库 {selectedKbCount} 个</span>
+          <span>模式 {getTaskDensityLabel(taskDensity)}</span>
+        </div>
+
+        <div className="solution-task-density">
+          <span>规划模式</span>
+          <div role="group" aria-label="任务规划模式">
+            {TASK_DENSITY_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={taskDensity === option.value ? "active" : ""}
+                type="button"
+                onClick={() => setTaskDensity(option.value)}
+                title={option.description}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <em>{TASK_DENSITY_OPTIONS.find((option) => option.value === taskDensity)?.description}</em>
         </div>
 
         <div className={architectureOpen ? "solution-task-architecture open" : "solution-task-architecture"}>
@@ -231,6 +258,10 @@ function TaskPlanningPanel({
       )}
     </div>
   );
+}
+
+function getTaskDensityLabel(value) {
+  return TASK_DENSITY_OPTIONS.find((option) => option.value === value)?.label || "简洁";
 }
 
 function TaskCard({ task, expanded, onToggle }) {

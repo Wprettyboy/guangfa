@@ -756,6 +756,48 @@
   padding: 4px 8px;
 }
 
+.solution-task-density {
+  display: grid;
+  gap: 7px;
+}
+
+.solution-task-density > span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.solution-task-density > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.solution-task-density button {
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.solution-task-density button.active {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.solution-task-density em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
 .solution-task-knowledge-test {
   display: grid;
   gap: 6px;
