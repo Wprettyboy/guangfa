@@ -94,6 +94,60 @@
     }
   }
 
+  async function readDocumentStylesForPost() {
+    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
+      return readDocumentStyles();
+    }
+    try {
+      window.Asc.scope = window.Asc.scope || {};
+      window.Asc.scope.gfDocumentStylesResult = [];
+      await window.Asc.Editor.callCommand(function () {
+        function callStyle(style, names) {
+          for (var index = 0; index < names.length; index += 1) {
+            try {
+              if (style && typeof style[names[index]] === "function") return style[names[index]]();
+            } catch (error) {}
+          }
+          return "";
+        }
+        try {
+          var doc = Api.GetDocument();
+          if (!doc || typeof doc.GetAllStyles !== "function") {
+            Asc.scope.gfDocumentStylesResult = [];
+            return;
+          }
+          var rawStyles = doc.GetAllStyles();
+          var styles = Array.isArray(rawStyles)
+            ? rawStyles
+            : rawStyles && Number.isFinite(Number(rawStyles.length))
+              ? Array.prototype.slice.call(rawStyles)
+              : [];
+          Asc.scope.gfDocumentStylesResult = styles.map(function (style, index) {
+            var name = String(
+              style?.name
+              || style?.Name
+              || callStyle(style, ["GetName", "get_Name"])
+              || style
+              || "",
+            ).trim();
+            var id = String(
+              style?.id
+              || style?.Id
+              || callStyle(style, ["GetId", "get_Id"])
+              || name,
+            ).trim();
+            return name ? { id: id, name: name, index: index } : null;
+          }).filter(Boolean);
+        } catch (error) {
+          Asc.scope.gfDocumentStylesResult = [];
+        }
+      });
+      return Array.isArray(window.Asc.scope.gfDocumentStylesResult) ? window.Asc.scope.gfDocumentStylesResult : [];
+    } catch {
+      return readDocumentStyles();
+    }
+  }
+
   function extractOnlyOfficeOutline() {
     const manager = getOutlineManager();
     if (!manager) return { ok: false, source: "outline-manager", count: 0, items: [], error: "未获取到 zl办公 大纲管理器" };
@@ -1123,9 +1177,10 @@
             styleItem.style = styleRequest;
             var styled = applyWordStyle(doc, paragraph, styleItem);
             if (!styled) applyParagraphFormat(paragraph, item);
+            var runFormatApplied = false;
             if (item.text && typeof paragraph.AddText === "function") {
               var run = paragraph.AddText(String(item.text));
-              applyRunFormat(run, item);
+              if (!styled) runFormatApplied = applyRunFormat(run, item);
               textCount += 1;
             }
             if (!styled) applyParagraphFormat(paragraph, item);
@@ -1133,6 +1188,7 @@
               requested: styleRequest,
               fallback: item.styleFallback || "",
               styleApplied: Boolean(styled),
+              runFormatApplied: Boolean(runFormatApplied),
             });
             content.push(paragraph);
           }
@@ -1724,8 +1780,9 @@
     return setTrackRevisions(true);
   }
 
-  function postOutline(trigger, requestId) {
+  async function postOutline(trigger, requestId) {
     const payload = { ...extractOnlyOfficeOutline(), trigger, requestId: requestId || "" };
+    payload.documentStyles = await readDocumentStylesForPost();
     try {
       console.log("[guangfa-onlyoffice-outline]", payload);
       if (payload.items && console.table) console.table(payload.items);
