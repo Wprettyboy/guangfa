@@ -35,6 +35,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start-all-dev.ps1
 ```powershell
 npm run dev
 npm run office
+npm run plantuml
 npm run embedding:skip-install
 ```
 
@@ -130,7 +131,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/ai/model.js`：模型调用封装。
 - `server/ai/debug-log.js`：AI 填充调试日志。
 - `server/solution-writing/generator.js`：方案编写 AI 业务模块，复用现有知识库检索与 JSON 模型调用，提供功能模块识别和模块章节生成。
-- `server/solution-writing/plantuml-image.js`：方案 AI 生图业务模块，只使用当前文档大纲/全文文本，调用本地 PlantUML 服务渲染 PNG，并生成可被 OnlyOffice 插入的 DOCX 图片片段。
+- `server/solution-writing/plantuml-image.js`：方案 AI 生图业务模块，只使用当前文档大纲/全文文本，调用本地 PlantUML 服务渲染 PNG，并生成可被 OnlyOffice 插入的 DOCX 图片片段；默认字体使用 `SimHei`，由 `scripts/start-plantuml.ps1` 把 Windows 黑体/微软雅黑等字体复制到 PlantUML 容器。
 - `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
 - `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
 - `server/knowledge/tables.js`：从知识库原 DOCX 文件抽取表格结构，按知识库范围检索可插入表格。

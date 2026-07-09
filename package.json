@@ -2,6 +2,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "office": "powershell -ExecutionPolicy Bypass -File scripts/start-onlyoffice.ps1",
+    "plantuml": "powershell -ExecutionPolicy Bypass -File scripts/start-plantuml.ps1",
     "embedding": "powershell -ExecutionPolicy Bypass -File scripts/start-local-embedding.ps1",
     "embedding:skip-install": "powershell -ExecutionPolicy Bypass -File scripts/start-local-embedding.ps1 -SkipInstall",
     "build": "vite build",

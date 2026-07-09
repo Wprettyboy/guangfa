@@ -110,7 +110,7 @@ function buildPlantumlSystemPrompt() {
     "任务：根据当前文档标题、该标题下正文、全文大纲上下文和用户生图要求，输出一张可渲染的 PlantUML 配图。",
     "当前标题下正文是最重要依据；全文大纲只用于避免遗漏上下文和命名不一致。",
     "禁止引入正文和全文上下文之外的新系统、设备、流程或承诺。",
-    "统一视觉标准：必须使用黑体，默认字体大小不小于 20pt。",
+    "统一视觉标准：必须使用 SimHei（Windows 黑体），默认字体大小不小于 20pt。",
     "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
   ].join("\n");
 }
@@ -132,7 +132,7 @@ function buildPlantumlUserPrompt({ prompt, selectedTitle, selectedBodyText, outl
     "",
     "PlantUML 规则：",
     "1. 必须返回完整 @startuml 到 @enduml。",
-    "2. 必须包含：skinparam defaultFontName 黑体。",
+    "2. 必须包含：skinparam defaultFontName SimHei。",
     "3. 必须包含：skinparam defaultFontSize 20 或更大字号。",
     "4. 优先使用 component、rectangle、database、cloud、queue、node、package、箭头和简短中文标签，避免过长句子塞进节点。",
     "5. 中文节点名用引号或 as 别名，避免 PlantUML 语法歧义。",
@@ -300,7 +300,12 @@ function normalizePlantumlSource(value) {
   const lines = text.split(/\r?\n/);
   const startIndex = lines.findIndex((line) => /@startuml/i.test(line));
   const insertAt = startIndex >= 0 ? startIndex + 1 : 1;
-  if (!/skinparam\s+defaultFontName/i.test(text)) lines.splice(insertAt, 0, "skinparam defaultFontName 黑体");
+  const fontLineIndex = lines.findIndex((line) => /skinparam\s+defaultFontName/i.test(line));
+  if (fontLineIndex >= 0) {
+    lines[fontLineIndex] = "skinparam defaultFontName SimHei";
+  } else {
+    lines.splice(insertAt, 0, "skinparam defaultFontName SimHei");
+  }
   if (!/skinparam\s+defaultFontSize/i.test(lines.join("\n"))) lines.splice(insertAt + 1, 0, "skinparam defaultFontSize 20");
   return lines.join("\n");
 }
