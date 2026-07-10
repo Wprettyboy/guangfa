@@ -179,7 +179,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 普通字段清空只使用精确 `GF_FIELD_` 范围；文档已变更但书签修复失败时，前端以 `partial/cleared` 回执同步真实文档状态。自动字段写入成功后也会进入 DOCX 下载回传保存。
 - OnlyOffice 消息重投会在请求收束后取消；排版 analyze/apply 按 `requestId` 去重。Connector 只有明确返回 `skipped: true`、确认命令未提交时才允许降级，超时、执行失败或部分成功禁止自动 fallback。
 - 方案定向替换使用权威大纲段落对象映射、精确标题和正文段落计数，批量写入按段落索引倒序执行；排版应用成功后旧体检与修复计划立即失效，必须重新分析。
-- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下的回归测试、生产构建及服务端/注入脚本语法。Docker 当前未运行，未做真实 OnlyOffice 容器回归；浏览器 QA 仍需先获得用户明确允许。
+- `createOfficeDocument()` 统一从 `getOnlyOfficeServerUrl()` 取得返回地址，并有真实配置生成回归测试；填充工作台的 `onOfficeDocumentReady` 回调使用稳定引用，避免文档 ID 回执触发运行时重复重载。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下 5 项回归测试、生产构建及服务端/注入脚本语法。真实 Docker/OnlyOffice 回归已通过：容器服务正常、端口仅绑定 `127.0.0.1:8080`、宿主/容器/gzip 脚本一致，浏览器中现有草稿可在标注和填充工作台稳定打开，定制组件与 `gf=117/31/5` 实际加载正常，控制台无新增错误。
 
 ### 前端运行时继续瘦身
 

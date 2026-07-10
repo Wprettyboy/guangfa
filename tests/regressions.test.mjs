@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
 import test from "node:test";
 import { assertFillModelResult } from "../server/ai/fill.js";
 import { parseModelJson } from "../server/ai/model.js";
-import { assertOfficeDocumentId, validateOnlyOfficeDocumentUrl } from "../server/office.js";
+import { assertOfficeDocumentId, createOfficeDocument, validateOnlyOfficeDocumentUrl } from "../server/office.js";
 import { API_KEY_UNCHANGED, redactModelConfig, resolveApiKeyUpdate } from "../server/settings.js";
 import { isAllowedApiOrigin } from "../vite.config.js";
 
@@ -43,6 +47,24 @@ test("Office document identifiers and download origins fail closed", () => {
   assert.equal(validateOnlyOfficeDocumentUrl(`${configured.protocol}//localhost${allowedPort}/cache/files/document.docx`).port || configuredPort, configuredPort);
   assert.throws(() => validateOnlyOfficeDocumentUrl(`${configured.protocol}//localhost:${blockedPort}/v1/models`), /不允许下载/);
   assert.throws(() => validateOnlyOfficeDocumentUrl("https://example.com/document.docx"), /不允许下载/);
+});
+
+test("Office document creation returns a usable local editor config", async () => {
+  const request = Readable.from([Buffer.from("office-config-regression")]);
+  const result = await createOfficeDocument(
+    request,
+    new URLSearchParams({ title: "regression.docx", previewId: "regression" }),
+  );
+
+  try {
+    assert.doesNotThrow(() => assertOfficeDocumentId(result.id));
+    assert.equal(result.serverUrl, process.env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080");
+    assert.equal(result.config.document.title, "regression.docx");
+    assert.match(result.config.document.url, new RegExp(`/api/office/documents/${result.id}/file`));
+    assert.equal(typeof result.available, "boolean");
+  } finally {
+    await unlink(path.join(tmpdir(), "guangfa-office-documents", `${result.id}.docx`));
+  }
 });
 
 test("invalid model JSON and incomplete fill contracts are rejected", () => {

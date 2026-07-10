@@ -17,13 +17,14 @@ const onlyOfficeCallbackStatuses = new Set([1, 2, 3, 4, 6, 7]);
 async function getOfficeHealth() {
   const onlyOfficeServerUrl = getOnlyOfficeServerUrl();
   return {
-    serverUrl: getOnlyOfficeServerUrl(),
+    serverUrl: onlyOfficeServerUrl,
     publicBaseUrl,
     available: await isOnlyOfficeAvailable(),
   };
 }
 
 async function createOfficeDocument(request, query) {
+  const onlyOfficeServerUrl = getOnlyOfficeServerUrl();
   await mkdir(officeDocsDir, { recursive: true });
   const id = randomUUID();
   const title = sanitizeFileName(query.get("title") || "document.docx");

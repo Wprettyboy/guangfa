@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import "react-pdf-highlighter/dist/style.css";
@@ -246,11 +246,11 @@ export default function App() {
   );
   const fillPreviewFile = filledTemplateFile || templateFile;
 
-  function updateFillOfficeDocumentId(documentId) {
+  const updateFillOfficeDocumentId = useCallback((documentId) => {
     const nextDocumentId = documentId || "";
     fillOfficeDocIdRef.current = nextDocumentId;
     setFillOfficeDocId(nextDocumentId);
-  }
+  }, []);
 
   function captureFillDocumentIdentity() {
     return {
