@@ -14,9 +14,13 @@ function LayoutWorkspace() {
   const [report, setReport] = useState(() => buildPendingLayoutReport(gbt9704Standard));
   const [selectedFindingIds, setSelectedFindingIds] = useState(() => []);
   const [busy, setBusy] = useState(false);
+  const [analysisReady, setAnalysisReady] = useState(false);
   const [status, setStatus] = useState("");
   const [result, setResult] = useState(null);
-  const plan = useMemo(() => buildLayoutRepairPlan(gbt9704Standard, report, selectedFindingIds), [report, selectedFindingIds]);
+  const plan = useMemo(
+    () => buildLayoutRepairPlan(gbt9704Standard, report, analysisReady ? selectedFindingIds : []),
+    [analysisReady, report, selectedFindingIds],
+  );
 
   async function handleFileChange(event) {
     const file = event.target.files?.[0];
@@ -39,15 +43,18 @@ function LayoutWorkspace() {
     const pendingReport = buildPendingLayoutReport(gbt9704Standard);
     setReport(pendingReport);
     setSelectedFindingIds([]);
+    setAnalysisReady(false);
     setStatus("文档已加载，等待格式体检");
     setResult(null);
   }
 
   function toggleFinding(findingId) {
+    if (!analysisReady) return;
     setSelectedFindingIds((ids) => (ids.includes(findingId) ? ids.filter((id) => id !== findingId) : [...ids, findingId]));
   }
 
   function toggleSelectFixable() {
+    if (!analysisReady) return;
     const defaultIds = getDefaultSelectedFindingIds(report);
     setSelectedFindingIds((ids) => (ids.length === defaultIds.length ? [] : defaultIds));
   }
@@ -55,22 +62,35 @@ function LayoutWorkspace() {
   async function analyzeLayout() {
     if (!previewFile?.buffer || busy) return;
     setBusy(true);
+    setAnalysisReady(false);
+    setReport(buildPendingLayoutReport(gbt9704Standard));
+    setSelectedFindingIds([]);
     setStatus("OnlyOffice 正在读取文档结构");
     setResult(null);
     try {
       const response = await requestOnlyOfficeAnalyzeLayoutFormat(gbt9704Standard);
+      if (response?.ok !== true) {
+        const message = response?.summary || response?.error || "格式体检失败";
+        setResult({ ok: false, summary: message, items: [] });
+        setStatus(message);
+        return;
+      }
       const nextReport = normalizeLayoutReport(response, gbt9704Standard);
       setReport(nextReport);
       setSelectedFindingIds(getDefaultSelectedFindingIds(nextReport));
+      setAnalysisReady(true);
       setStatus("格式体检已完成");
     } catch (error) {
-      setStatus(error?.message || "格式体检失败");
+      const message = error?.message || "格式体检失败";
+      setResult({ ok: false, summary: message, items: [] });
+      setStatus(message);
     } finally {
       setBusy(false);
     }
   }
 
   function previewPlan() {
+    if (!analysisReady) return;
     setResult({
       summary: plan.summary,
       items: [
@@ -82,14 +102,21 @@ function LayoutWorkspace() {
   }
 
   async function applyLayout() {
-    if (!previewFile?.buffer || busy) return;
+    if (!previewFile?.buffer || busy || !analysisReady) return;
     setBusy(true);
     setStatus("OnlyOffice 正在应用排版");
     setResult(null);
     try {
       const response = await requestOnlyOfficeApplyLayoutFormat(plan);
       setResult(response);
-      setStatus(response?.ok ? "排版已应用" : "排版未完全完成");
+      if (response?.ok) {
+        setAnalysisReady(false);
+        setReport(buildPendingLayoutReport(gbt9704Standard));
+        setSelectedFindingIds([]);
+        setStatus("排版已应用，请重新执行格式体检");
+      } else {
+        setStatus("排版未完全完成");
+      }
     } catch (error) {
       setResult({ ok: false, summary: error?.message || "排版执行失败", items: [] });
       setStatus("排版执行失败");
@@ -138,6 +165,7 @@ function LayoutWorkspace() {
         standard={gbt9704Standard}
         report={report}
         plan={plan}
+        analysisReady={analysisReady}
         selectedFindingIds={selectedFindingIds}
         busy={busy}
         hasDocument={Boolean(previewFile?.buffer && officeDocId)}

@@ -146,6 +146,7 @@ async function fillField(payload) {
     debugFileName: "ai-fill-last.json",
     debugContext,
   });
+  assertFillModelResult(parsed, fillMode);
   const rawValue = typeof parsed.value === "string" ? parsed.value.trim() : "";
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";
   const source = typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : "AI 基于上传资料与知识库生成";
@@ -344,4 +345,45 @@ function clampConfidence(value) {
   return Math.min(100, Math.max(0, Math.round(number)));
 }
 
-export { fillField };
+function assertFillModelResult(value, fillMode) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw createFillModelError("AI 填充结果不是 JSON 对象");
+  }
+  const requiredFields = ["value", "status", "confidence", "source", "evidence"];
+  if (fillMode === "amount-choice") requiredFields.push("amountValue", "choiceValue");
+  const missingFields = requiredFields.filter((field) => !Object.prototype.hasOwnProperty.call(value, field));
+  if (missingFields.length) {
+    throw createFillModelError(`AI 填充结果缺少字段：${missingFields.join(", ")}`);
+  }
+  for (const field of ["value", "status", "source", "evidence"]) {
+    if (typeof value[field] !== "string") throw createFillModelError(`AI 填充结果字段类型无效：${field}`);
+  }
+  if (!["待确认", "需补充资料"].includes(value.status)) {
+    throw createFillModelError(`AI 填充结果状态无效：${value.status || "空"}`);
+  }
+  const confidence = value.confidence;
+  if (typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 100) {
+    throw createFillModelError("AI 填充结果置信度无效");
+  }
+  if (!value.source.trim() || !value.evidence.trim()) {
+    throw createFillModelError("AI 填充结果缺少来源或证据");
+  }
+  if (fillMode === "amount-choice") {
+    if (typeof value.amountValue !== "string" || typeof value.choiceValue !== "string") {
+      throw createFillModelError("AI 金额选择结果字段类型无效");
+    }
+    if (value.status === "待确认" && (!value.amountValue.trim() || !value.choiceValue.trim())) {
+      throw createFillModelError("AI 金额选择结果缺少金额或选项");
+    }
+  } else if (value.status === "待确认" && !value.value.trim()) {
+    throw createFillModelError("AI 填充结果为空但状态为待确认");
+  }
+}
+
+function createFillModelError(message) {
+  const error = new Error(message);
+  error.statusCode = 502;
+  return error;
+}
+
+export { assertFillModelResult, fillField };

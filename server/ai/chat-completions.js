@@ -6,6 +6,7 @@ async function requestChatCompletion(runtime, payload) {
   const model = String(runtime?.model || "").trim();
   const isLocal = isLocalEndpoint(baseUrl);
   const apiKeys = splitApiKeys(runtime?.apiKey);
+  const timeoutMs = isLocal ? 10 * 60 * 1000 : 2 * 60 * 1000;
 
   if (!apiKeys.length && !isLocal) {
     const error = new Error("缺少 AI API Key，请在系统设置中配置当前模型的 API Key。");
@@ -28,14 +29,26 @@ async function requestChatCompletion(runtime, payload) {
           ...(keys[index] ? { Authorization: `Bearer ${keys[index]}` } : {}),
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
       });
-    } catch {
-      const error = new Error(`AI 服务连接失败：${baseUrl}。请先启动本地模型服务，或在系统设置切换到可用云端模型。`);
+    } catch (cause) {
+      const timedOut = cause?.name === "TimeoutError" || cause?.name === "AbortError";
+      const error = new Error(timedOut
+        ? `AI 服务请求超时：${baseUrl}。请检查模型负载或切换到可用模型。`
+        : `AI 服务连接失败：${baseUrl}。请先启动本地模型服务，或在系统设置切换到可用云端模型。`);
       error.statusCode = 502;
       throw error;
     }
 
-    if (response.ok) return response.json();
+    if (response.ok) {
+      try {
+        return await response.json();
+      } catch {
+        const error = new Error(`AI 接口返回的响应不是有效 JSON：${response.status}`);
+        error.statusCode = 502;
+        throw error;
+      }
+    }
 
     lastStatus = response.status;
     lastErrorText = await response.text();

@@ -1,10 +1,12 @@
 {
+  "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "office": "powershell -ExecutionPolicy Bypass -File scripts/start-onlyoffice.ps1",
     "plantuml": "powershell -ExecutionPolicy Bypass -File scripts/start-plantuml.ps1",
     "embedding": "powershell -ExecutionPolicy Bypass -File scripts/start-local-embedding.ps1",
     "embedding:skip-install": "powershell -ExecutionPolicy Bypass -File scripts/start-local-embedding.ps1 -SkipInstall",
+    "test": "node --test tests/*.test.mjs",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

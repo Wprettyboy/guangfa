@@ -6,14 +6,18 @@ import path from "node:path";
 
 const officeDocsDir = path.join(tmpdir(), "guangfa-office-documents");
 const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
-const onlyOfficeServerUrl = process.env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080";
 const localAiBaseUrl = toOnlyOfficeReachableUrl(process.env.LOCAL_LLM_BASE_URL || "http://127.0.0.1:8129/v1");
 const localAiModel = process.env.LOCAL_LLM_MODEL || "qwen3.6-35b-a3b";
 const localAiApiKey = process.env.LOCAL_LLM_API_KEY || "sk-local";
+const maxOfficeDocumentBytes = 120 * 1024 * 1024;
+const onlyOfficeFetchTimeoutMs = 20000;
+const onlyOfficeLocalHosts = new Set(["127.0.0.1", "localhost", "::1", "host.docker.internal"]);
+const onlyOfficeCallbackStatuses = new Set([1, 2, 3, 4, 6, 7]);
 
 async function getOfficeHealth() {
+  const onlyOfficeServerUrl = getOnlyOfficeServerUrl();
   return {
-    serverUrl: onlyOfficeServerUrl,
+    serverUrl: getOnlyOfficeServerUrl(),
     publicBaseUrl,
     available: await isOnlyOfficeAvailable(),
   };
@@ -38,22 +42,10 @@ async function createOfficeDocument(request, query) {
 }
 
 async function downloadOfficeUrl(body) {
-  const downloadUrl = String(body?.url || "");
-  const target = new URL(downloadUrl);
-  if (!["127.0.0.1", "localhost", "host.docker.internal"].includes(target.hostname)) {
-    const error = new Error("不允许下载该地址");
-    error.statusCode = 400;
-    throw error;
-  }
-  const result = await fetch(downloadUrl, { signal: AbortSignal.timeout(20000) });
-  if (!result.ok) {
-    const error = new Error("zl办公 导出文件下载失败");
-    error.statusCode = 502;
-    throw error;
-  }
+  const buffer = await fetchOnlyOfficeDocument(body?.url);
   return {
     kind: "buffer",
-    buffer: Buffer.from(await result.arrayBuffer()),
+    buffer,
     contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     headers: { "Cache-Control": "no-store" },
   };
@@ -69,12 +61,17 @@ async function readOfficeDocumentFile(id) {
 }
 
 async function handleOfficeCallback(id, body) {
-  if ((body.status === 2 || body.status === 6) && body.url) {
-    const updated = await fetch(body.url).then((result) => result.arrayBuffer());
-    const buffer = Buffer.from(updated);
+  assertOfficeDocumentId(id);
+  const status = body?.status;
+  if (!Number.isInteger(status) || !onlyOfficeCallbackStatuses.has(status)) {
+    throw createHttpError("OnlyOffice callback status 无效", 400);
+  }
+  if (status === 2 || status === 6) {
+    if (!body?.url) throw createHttpError("OnlyOffice callback 缺少文档地址", 400);
+    const buffer = await fetchOnlyOfficeDocument(body.url);
     await writeFile(getOfficeDocPath(id), buffer);
     const sha = createHash("sha256").update(buffer).digest("hex").slice(0, 12);
-    console.log(`[office-doc] callback id=${id} status=${body.status} bytes=${buffer.byteLength} sha=${sha}`);
+    console.log(`[office-doc] callback id=${id} status=${status} bytes=${buffer.byteLength} sha=${sha}`);
   }
   return { error: 0 };
 }
@@ -169,6 +166,7 @@ function toOnlyOfficeReachableUrl(url) {
 
 async function isOnlyOfficeAvailable() {
   try {
+    const onlyOfficeServerUrl = getOnlyOfficeServerUrl();
     const response = await fetch(`${onlyOfficeServerUrl.replace(/\/$/, "")}/healthcheck`, { signal: AbortSignal.timeout(2500) });
     return response.ok;
   } catch {
@@ -176,8 +174,98 @@ async function isOnlyOfficeAvailable() {
   }
 }
 
+function getOnlyOfficeServerUrl() {
+  return process.env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080";
+}
+
 function getOfficeDocPath(id) {
+  assertOfficeDocumentId(id);
   return path.join(officeDocsDir, `${id}.docx`);
+}
+
+function assertOfficeDocumentId(id) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id || ""))) {
+    throw createHttpError("Office 文档 ID 无效", 400);
+  }
+}
+
+async function fetchOnlyOfficeDocument(value) {
+  const target = validateOnlyOfficeDocumentUrl(value);
+  try {
+    const response = await fetch(target, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(onlyOfficeFetchTimeoutMs),
+    });
+    if (!response.ok) {
+      throw createHttpError(`OnlyOffice 文档下载失败：HTTP ${response.status}`, 502);
+    }
+    const buffer = await readLimitedResponseBody(response, maxOfficeDocumentBytes);
+    if (!buffer.length) throw createHttpError("OnlyOffice 返回了空文档", 502);
+    return buffer;
+  } catch (error) {
+    if (error?.statusCode) throw error;
+    const suffix = ["AbortError", "TimeoutError"].includes(error?.name) ? "请求超时" : "连接失败";
+    throw createHttpError(`OnlyOffice 文档下载${suffix}`, 502);
+  }
+}
+
+function validateOnlyOfficeDocumentUrl(value) {
+  const target = parseHttpUrl(value, "OnlyOffice 文档地址无效", 400);
+  const configured = parseHttpUrl(getOnlyOfficeServerUrl(), "OnlyOffice 服务地址配置无效", 500);
+  if (!onlyOfficeLocalHosts.has(normalizeHostname(configured.hostname))) {
+    throw createHttpError("OnlyOffice 服务地址必须使用本地地址", 500);
+  }
+  if (
+    !onlyOfficeLocalHosts.has(normalizeHostname(target.hostname))
+    || target.protocol !== configured.protocol
+    || getEffectivePort(target) !== getEffectivePort(configured)
+    || target.hash
+  ) {
+    throw createHttpError("不允许下载该地址", 400);
+  }
+  return target;
+}
+
+function parseHttpUrl(value, message, statusCode) {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
+    return url;
+  } catch {
+    throw createHttpError(message, statusCode);
+  }
+}
+
+function normalizeHostname(value) {
+  return String(value || "").replace(/^\[|\]$/g, "").toLowerCase();
+}
+
+function getEffectivePort(url) {
+  return url.port || (url.protocol === "https:" ? "443" : "80");
+}
+
+async function readLimitedResponseBody(response, maxBytes) {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw createHttpError("OnlyOffice 返回的文档过大", 502);
+  }
+  if (!response.body) return Buffer.alloc(0);
+
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    const buffer = Buffer.from(chunk);
+    size += buffer.length;
+    if (size > maxBytes) throw createHttpError("OnlyOffice 返回的文档过大", 502);
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+function createHttpError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
 }
 
 function sanitizeFileName(value) {
@@ -191,7 +279,7 @@ function writeRequestBody(request, filePath) {
     const stream = createWriteStream(filePath);
     request.on("data", (chunk) => {
       size += chunk.length;
-      if (size > 120 * 1024 * 1024) {
+      if (size > maxOfficeDocumentBytes) {
         const error = new Error("DOCX 文件过大");
         error.statusCode = 413;
         reject(error);
@@ -206,9 +294,11 @@ function writeRequestBody(request, filePath) {
 }
 
 export {
+  assertOfficeDocumentId,
   createOfficeDocument,
   downloadOfficeUrl,
   getOfficeHealth,
   handleOfficeCallback,
   readOfficeDocumentFile,
+  validateOnlyOfficeDocumentUrl,
 };

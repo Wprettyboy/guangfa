@@ -239,11 +239,31 @@ export default function App() {
   const placeholderFillCardsRef = useRef(placeholderFillCards);
   const complexFillCardsRef = useRef(complexFillCards);
   const enrichedFillFieldsRef = useRef(enrichedFillFields);
+  const fillOfficeDocIdRef = useRef(fillOfficeDocId);
   const fillValueSignature = useMemo(
     () => enrichedFillFields.map((field) => `${field.id}:${field.value || ""}:${field.amountValue || ""}:${field.choiceValue || ""}:${field.source || ""}`).join("|"),
     [enrichedFillFields],
   );
   const fillPreviewFile = filledTemplateFile || templateFile;
+
+  function updateFillOfficeDocumentId(documentId) {
+    const nextDocumentId = documentId || "";
+    fillOfficeDocIdRef.current = nextDocumentId;
+    setFillOfficeDocId(nextDocumentId);
+  }
+
+  function captureFillDocumentIdentity() {
+    return {
+      previewId: templateFileRef.current?.previewId || "",
+      officeDocId: fillOfficeDocIdRef.current,
+    };
+  }
+
+  function isCurrentFillDocumentIdentity(identity) {
+    return Boolean(identity?.previewId && identity.officeDocId)
+      && identity.previewId === (templateFileRef.current?.previewId || "")
+      && identity.officeDocId === fillOfficeDocIdRef.current;
+  }
 
   useEffect(() => {
     setFillFieldPageMap({});
@@ -553,6 +573,8 @@ export default function App() {
   }
 
   function clearFilledTemplateDraft() {
+    window.clearTimeout(fillSyncTimerRef.current);
+    fillSyncTimerRef.current = 0;
     filledTemplateBufferRef.current = null;
     filledTemplateDraftFileRef.current = null;
     setFilledTemplateFile(null);
@@ -616,28 +638,44 @@ export default function App() {
     }, 600);
   }
 
-  function queueFilledOfficeDocumentSync(fieldsSnapshot = enrichedFillFieldsRef.current) {
-    if (!templateFile?.buffer) return;
+  function queueFilledOfficeDocumentSync(
+    fieldsSnapshot = enrichedFillFieldsRef.current,
+    fillIdentity = captureFillDocumentIdentity(),
+  ) {
+    const sourceTemplateFile = templateFileRef.current;
+    if (!sourceTemplateFile?.buffer || !isCurrentFillDocumentIdentity(fillIdentity)) return;
+    const sourceOfficeDocId = fillIdentity.officeDocId;
     window.clearTimeout(fillSyncTimerRef.current);
     fillSyncTimerRef.current = window.setTimeout(async () => {
       try {
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
         let buffer = await requestOnlyOfficeDocumentDownloadAs("docx", 15000);
-        if (!buffer && fillOfficeDocId) {
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
+        if (!buffer && sourceOfficeDocId) {
           requestOnlyOfficeDocumentSave("fill-sync");
-          buffer =
-            (await waitForChangedOfficeDocumentBuffer(fillOfficeDocId, filledTemplateBufferRef.current || templateFile.buffer, {
+          buffer = await waitForChangedOfficeDocumentBuffer(
+            sourceOfficeDocId,
+            filledTemplateBufferRef.current || sourceTemplateFile.buffer,
+            {
               timeoutMs: 9000,
               intervalMs: 600,
               initialDelayMs: 600,
-            })) || (await fetchOfficeDocumentBuffer(fillOfficeDocId));
+            },
+          );
+          if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
+          if (!buffer) {
+            buffer = await fetchOfficeDocumentBuffer(sourceOfficeDocId);
+            if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
+          }
         }
         if (!buffer) return;
-        const baseFile = filledTemplateDraftFileRef.current || filledTemplateFile || templateFile;
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
+        const baseFile = filledTemplateDraftFileRef.current || sourceTemplateFile;
         const filledFile = {
           ...baseFile,
           previewId: baseFile.previewId || createPreviewId("filled"),
-          name: baseFile.name || templateFile.name,
-          uploadedAt: baseFile.uploadedAt || templateFile.uploadedAt,
+          name: baseFile.name || sourceTemplateFile.name,
+          uploadedAt: baseFile.uploadedAt || sourceTemplateFile.uploadedAt,
           supported: true,
           buffer: buffer.slice(0),
           size: formatFileSize(buffer.byteLength),
@@ -705,7 +743,7 @@ export default function App() {
     setFillFields([]);
     setMaterialFiles([]);
     clearFilledTemplateDraft();
-    setFillOfficeDocId("");
+    updateFillOfficeDocumentId("");
     setFillFieldPageMap({});
     setSelectedFieldId("");
     setCitationFieldId("");
@@ -842,6 +880,13 @@ export default function App() {
     setAnnotatePreviewPage(1);
     setBrushActive(true);
     setSaveState(isDocx ? "uploaded" : "unsupported");
+    setFillFields([]);
+    enrichedFillFieldsRef.current = [];
+    updateFillOfficeDocumentId("");
+    setFillFieldPageMap({});
+    setSelectedFieldId("");
+    setCitationFieldId("");
+    setFillPreviewPage(1);
   }
 
   function markSlot(target = {}) {
@@ -1313,6 +1358,21 @@ export default function App() {
       return;
     }
 
+    const reuseCurrentFillState = Boolean(sourceTemplateId && sourceTemplateId === savedTemplate.id);
+    const nextFillFields = createFillFieldsFromTemplate(
+      normalizedTemplateFields,
+      reuseCurrentFillState ? fillFields : [],
+    );
+    const nextSelectedTemplateFieldId = normalizedTemplateFields.some((field) => field.id === selectedTemplateFieldId)
+      ? selectedTemplateFieldId
+      : normalizedTemplateFields[0]?.id ?? "";
+    const nextSelectedFieldId = nextFillFields.some((field) => field.id === selectedFieldId)
+      ? selectedFieldId
+      : nextFillFields[0]?.id ?? "";
+    const nextCitationFieldId = nextFillFields.some((field) => field.id === citationFieldId)
+      ? citationFieldId
+      : nextFillFields[0]?.id ?? "";
+
     setTemplateFields(normalizedTemplateFields);
     setPlaceholderVariables(latestPlaceholderVariables);
     setPlaceholderAnchors(latestPlaceholderAnchors);
@@ -1332,9 +1392,11 @@ export default function App() {
     setComplexFillAnchors(normalizedComplexFillAnchors);
     complexFillFieldsRef.current = normalizedComplexFillFields;
     complexFillAnchorsRef.current = normalizedComplexFillAnchors;
-    setFillFields(createFillFieldsFromTemplate(normalizedTemplateFields, fillFields));
-    setSelectedFieldId(normalizedTemplateFields[0]?.id ?? "");
-    setCitationFieldId(normalizedTemplateFields[0]?.id ?? "");
+    setFillFields(nextFillFields);
+    enrichedFillFieldsRef.current = nextFillFields;
+    setSelectedTemplateFieldId(nextSelectedTemplateFieldId);
+    setSelectedFieldId(nextSelectedFieldId);
+    setCitationFieldId(nextCitationFieldId);
     await saveDraftState(normalizeDraftFillState({
       activeModule,
       activeWorkspace: "annotate",
@@ -1347,11 +1409,11 @@ export default function App() {
       complexFillAnchors: normalizedComplexFillAnchors,
       placeholderFills,
       complexFillFills,
-      fillFields,
+      fillFields: nextFillFields,
       materialFiles,
-      selectedTemplateFieldId,
-      selectedFieldId,
-      citationFieldId,
+      selectedTemplateFieldId: nextSelectedTemplateFieldId,
+      selectedFieldId: nextSelectedFieldId,
+      citationFieldId: nextCitationFieldId,
       annotatePreviewPage,
       fillPreviewPage,
       selectedProjectKnowledgeBaseIds,
@@ -1374,6 +1436,7 @@ export default function App() {
     }
     const mappedFields = createFillFieldsFromTemplate(templateFieldsToUse);
     setTemplateFields(templateFieldsToUse);
+    setSelectedTemplateFieldId(templateFieldsToUse[0]?.id ?? "");
     setPlaceholderVariables(normalizePlaceholderVariables(templateToUse.placeholderVariables));
     setPlaceholderAnchors(applyPlaceholderAnchors([], templateToUse.placeholderAnchors || []));
     setComplexFillFields(complexFillState.fields);
@@ -1381,6 +1444,8 @@ export default function App() {
     setPlaceholderFills({});
     setComplexFillFills({});
     clearFilledTemplateDraft();
+    setTemplateOfficeDocId("");
+    updateFillOfficeDocumentId("");
     if (templateToUse.fileBuffer) {
       annotatedTemplateBufferRef.current = null;
       setTemplateFile({
@@ -1392,7 +1457,6 @@ export default function App() {
         buffer: templateToUse.fileBuffer.slice(0),
         supported: templateToUse.supported !== false,
       });
-      setTemplateOfficeDocId("");
       setAnnotatePreviewPage(1);
     } else {
       setTemplateFile(null);
@@ -1405,6 +1469,7 @@ export default function App() {
       setSaveState("no-file");
     }
     setFillFields(mappedFields);
+    enrichedFillFieldsRef.current = mappedFields;
     setFillFieldPageMap({});
     setSelectedFieldId(mappedFields[0]?.id ?? "");
     setCitationFieldId(mappedFields[0]?.id ?? "");
@@ -1419,6 +1484,7 @@ export default function App() {
     const storedTemplate = await readStoredTemplate(template.id);
     const templateToEdit = storedTemplate ?? template;
     const fields = (templateToEdit.fields || []).map(normalizeTemplateFieldForRuntime);
+    const mappedFields = createFillFieldsFromTemplate(fields);
     const complexFillState = buildComplexFillStateFromTemplate(templateToEdit);
     let complexFillAnchorsToEdit = complexFillState.anchors;
     if (templateToEdit.fileBuffer && complexFillAnchorsToEdit.length > 0) {
@@ -1433,7 +1499,14 @@ export default function App() {
     setPlaceholderFills({});
     setComplexFillFills({});
     clearFilledTemplateDraft();
+    setTemplateOfficeDocId("");
+    updateFillOfficeDocumentId("");
     setFillFieldPageMap({});
+    setFillFields(mappedFields);
+    enrichedFillFieldsRef.current = mappedFields;
+    setSelectedFieldId(mappedFields[0]?.id ?? "");
+    setCitationFieldId(mappedFields[0]?.id ?? "");
+    setFillPreviewPage(mappedFields[0]?.page || 1);
     if (templateToEdit.fileBuffer) {
       annotatedTemplateBufferRef.current = null;
       setTemplateFile({
@@ -1445,7 +1518,6 @@ export default function App() {
         buffer: templateToEdit.fileBuffer.slice(0),
         supported: templateToEdit.supported !== false,
       });
-      setTemplateOfficeDocId("");
       setSaveState("saved");
     } else {
       setTemplateFile(null);
@@ -1579,7 +1651,15 @@ export default function App() {
   }
 
   function isOnlyOfficeFillFailure(writeResult) {
-    return writeResult && writeResult.ok === false && !writeResult.skipped && !writeResult.timeout;
+    return writeResult?.ok !== true;
+  }
+
+  function hasOnlyOfficeFillValue(field) {
+    return Boolean(
+      String(field?.value || "").trim()
+      || String(field?.amountValue || "").trim()
+      || String(field?.choiceValue || "").trim(),
+    );
   }
 
   function markOnlyOfficeFillFailure(field, writeResult) {
@@ -1590,6 +1670,22 @@ export default function App() {
       source: "OnlyOffice 写入失败",
       evidence: writeResult?.error || "未收到 OnlyOffice 写入回执，请确认填充预览已打开并重新尝试。",
       sourceSnippetText: field.sourceSnippetText || "",
+    };
+  }
+
+  function markOnlyOfficeDocumentCleared(field, writeResult, clearing = false) {
+    return {
+      ...field,
+      value: "",
+      amountValue: "",
+      choiceValue: "",
+      status: "需补充资料",
+      confidence: 0,
+      source: clearing ? "OnlyOffice 清空部分成功" : "OnlyOffice 写入部分失败",
+      evidence: clearing
+        ? `${writeResult?.error || "字段内容已清空，但书签修复失败。"} 文档内容已清空，请重新标注该字段。`
+        : `${writeResult?.error || "字段旧内容已清除，但新内容写入失败。"} 文档中的原字段内容已清除，请检查字段书签后重试。`,
+      sourceSnippetText: "",
     };
   }
 
@@ -1607,7 +1703,9 @@ export default function App() {
     });
   }
 
-  async function fillPlaceholderWithAI(variableId) {
+  async function fillPlaceholderWithAI(variableId, options = {}) {
+    const fillIdentity = options.fillIdentity || captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
     const card = placeholderFillCardsRef.current.find((item) => item.id === variableId);
     if (!card) return;
     setPlaceholderFill(variableId, { status: "生成中" });
@@ -1616,33 +1714,50 @@ export default function App() {
         materials: materialFiles,
         knowledgeOptions: fillKnowledgeOptions,
       });
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
       let nextFill = appliedFill;
+      let writeSucceeded = false;
       if (appliedFill.value.trim()) {
         const writeResult = await requestOnlyOfficeFillPlaceholderVariable({
           ...card,
           value: appliedFill.value,
         });
-        if (writeResult?.ok === false) nextFill = markPlaceholderFillFailure(appliedFill, writeResult);
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
+        writeSucceeded = writeResult?.ok === true;
+        if (!writeSucceeded) nextFill = markPlaceholderFillFailure(appliedFill, writeResult);
       }
       setPlaceholderFill(variableId, nextFill);
+      if (writeSucceeded && options.syncDocument !== false) {
+        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
+      }
+      return nextFill;
     } catch (error) {
-      setPlaceholderFill(variableId, createPlaceholderFillError(error, placeholderFillsRef.current[variableId]?.value || ""));
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
+      const errorFill = createPlaceholderFillError(error, placeholderFillsRef.current[variableId]?.value || "");
+      setPlaceholderFill(variableId, errorFill);
+      return errorFill;
     }
   }
 
   async function applyPlaceholderFillValue(variableId) {
+    const fillIdentity = captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     const card = placeholderFillCardsRef.current.find((item) => item.id === variableId);
     const currentFill = placeholderFillsRef.current[variableId] || {};
     const value = String(currentFill.value || "").trim();
     if (!card || !value) return;
     setPlaceholderFill(variableId, { status: "生成中" });
     const writeResult = await requestOnlyOfficeFillPlaceholderVariable({ ...card, value });
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     setPlaceholderFill(
       variableId,
-      writeResult?.ok === false
+      writeResult?.ok !== true
         ? markPlaceholderFillFailure({ ...currentFill, value }, writeResult)
         : createManualPlaceholderFill(value, currentFill),
     );
+    if (writeResult?.ok === true) {
+      queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
+    }
   }
 
   function updatePlaceholderFillValue(variableId, value) {
@@ -1650,14 +1765,21 @@ export default function App() {
   }
 
   async function generateAllPlaceholderFills() {
+    const fillIdentity = captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     const pendingCards = placeholderFillCardsRef.current.filter((card) => card.status !== "已确认" && card.status !== "生成中");
     if (pendingCards.length === 0 || generatingAll) return;
     setGeneratingAll(true);
     setBulkFillProgress({ current: 0, total: pendingCards.length });
     try {
       for (let index = 0; index < pendingCards.length; index += 1) {
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
         setBulkFillProgress({ current: index + 1, total: pendingCards.length });
-        await fillPlaceholderWithAI(pendingCards[index].id);
+        await fillPlaceholderWithAI(pendingCards[index].id, { fillIdentity, syncDocument: false });
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
+      }
+      if (isCurrentFillDocumentIdentity(fillIdentity)) {
+        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
       }
     } finally {
       setGeneratingAll(false);
@@ -1696,6 +1818,8 @@ export default function App() {
   }
 
   async function fillComplexFillWithAI(fieldId, options = {}) {
+    const fillIdentity = options.fillIdentity || captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
     const card = complexFillCardsRef.current.find((item) => item.id === fieldId);
     if (!card) return null;
     setComplexFillFill(fieldId, { status: "生成中" });
@@ -1704,6 +1828,7 @@ export default function App() {
         materials: materialFiles,
         knowledgeOptions: fillKnowledgeOptions,
       });
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
       let nextFill = appliedFill;
       let writeSucceeded = false;
       if (appliedFill.value.trim()) {
@@ -1711,13 +1836,17 @@ export default function App() {
           ...card,
           value: appliedFill.value,
         });
-        writeSucceeded = writeResult?.ok !== false;
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
+        writeSucceeded = writeResult?.ok === true;
         if (!writeSucceeded) nextFill = markComplexFillFailure(appliedFill, writeResult);
       }
       setComplexFillFill(fieldId, nextFill);
-      if (writeSucceeded && options.syncDocument !== false) queueFilledOfficeDocumentSync();
+      if (writeSucceeded && options.syncDocument !== false) {
+        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
+      }
       return nextFill;
     } catch (error) {
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
       const errorFill = createComplexFillError(error, complexFillFillsRef.current[fieldId]?.value || "");
       setComplexFillFill(fieldId, errorFill);
       return errorFill;
@@ -1725,19 +1854,24 @@ export default function App() {
   }
 
   async function applyComplexFillValue(fieldId) {
+    const fillIdentity = captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     const card = complexFillCardsRef.current.find((item) => item.id === fieldId);
     const currentFill = complexFillFillsRef.current[fieldId] || {};
     const value = String(currentFill.value || "").trim();
     if (!card || !value) return;
     setComplexFillFill(fieldId, { status: "生成中" });
     const writeResult = await requestOnlyOfficeFillComplexFillField({ ...card, value });
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     setComplexFillFill(
       fieldId,
-      writeResult?.ok === false
+      writeResult?.ok !== true
         ? markComplexFillFailure({ ...currentFill, value }, writeResult)
         : createManualComplexFill(value, currentFill),
     );
-    if (writeResult?.ok !== false) queueFilledOfficeDocumentSync();
+    if (writeResult?.ok === true) {
+      queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
+    }
   }
 
   function updateComplexFillValue(fieldId, value) {
@@ -1745,16 +1879,22 @@ export default function App() {
   }
 
   async function generateAllComplexFills() {
+    const fillIdentity = captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     const pendingCards = complexFillCardsRef.current.filter((card) => card.status !== "已确认" && card.status !== "生成中");
     if (pendingCards.length === 0 || generatingAll) return;
     setGeneratingAll(true);
     setBulkFillProgress({ current: 0, total: pendingCards.length });
     try {
       for (let index = 0; index < pendingCards.length; index += 1) {
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
         setBulkFillProgress({ current: index + 1, total: pendingCards.length });
-        await fillComplexFillWithAI(pendingCards[index].id, { syncDocument: false });
+        await fillComplexFillWithAI(pendingCards[index].id, { fillIdentity, syncDocument: false });
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
       }
-      queueFilledOfficeDocumentSync();
+      if (isCurrentFillDocumentIdentity(fillIdentity)) {
+        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
+      }
     } finally {
       setGeneratingAll(false);
       setBulkFillProgress({ current: 0, total: 0 });
@@ -1777,6 +1917,8 @@ export default function App() {
   }
 
   async function fillFieldWithAI(fieldId, fieldsSnapshot = enrichedFillFields, options = {}) {
+    const fillIdentity = options.fillIdentity || captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
     const syncDocument = options.syncDocument !== false;
     const targetField = fieldsSnapshot.find((field) => field.id === fieldId);
     const templateField = templateFields.find((field) => field.id === fieldId);
@@ -1847,7 +1989,9 @@ export default function App() {
           knowledgeOptions: fillKnowledgeOptions,
         }),
       });
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
       const result = await response.json();
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
       if (!response.ok) {
         throw new Error(result?.error || "AI 填充失败");
       }
@@ -1862,26 +2006,35 @@ export default function App() {
         evidence: result.evidence || "AI 未返回明确证据。",
         sourceSnippetText: result.sourceSnippetText || "",
       };
-      const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? appliedField : field));
-      enrichedFillFieldsRef.current = nextFieldsSnapshot;
-      setFillFields((fields) =>
-        fields.map((field) =>
-          field.id === fieldId
-            ? appliedField
-            : field,
-        ),
-      );
-      const writeResult = await requestOnlyOfficeFillField(appliedField, { suppressPageSync: Boolean(options.suppressPageSync) });
-      if (isOnlyOfficeFillFailure(writeResult)) {
-        const failedField = markOnlyOfficeFillFailure(appliedField, writeResult);
-        const failedFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? failedField : field));
-        enrichedFillFieldsRef.current = failedFieldsSnapshot;
-        setFillFields((fields) => fields.map((field) => (field.id === fieldId ? failedField : field)));
-        return failedFieldsSnapshot;
+      let nextField = appliedField;
+      let writeResult = null;
+      if (hasOnlyOfficeFillValue(appliedField)) {
+        writeResult = await requestOnlyOfficeFillField(appliedField, { suppressPageSync: Boolean(options.suppressPageSync) });
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
+        if (isOnlyOfficeFillFailure(writeResult)) {
+          nextField = writeResult?.cleared === true
+            ? markOnlyOfficeDocumentCleared(appliedField, writeResult)
+            : markOnlyOfficeFillFailure(targetField, writeResult);
+        }
+      } else if (hasOnlyOfficeFillValue(targetField)) {
+        nextField = {
+          ...targetField,
+          status: appliedField.status,
+          confidence: appliedField.confidence,
+          source: appliedField.source,
+          evidence: `${appliedField.evidence} 未生成可写入内容，文档保留原填充值。`,
+          sourceSnippetText: appliedField.sourceSnippetText,
+        };
       }
-      if (syncDocument) queueFilledOfficeDocumentSync(nextFieldsSnapshot);
+      const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? nextField : field));
+      enrichedFillFieldsRef.current = nextFieldsSnapshot;
+      setFillFields((fields) => fields.map((field) => (field.id === fieldId ? nextField : field)));
+      if ((writeResult?.ok === true || writeResult?.cleared === true) && syncDocument) {
+        queueFilledOfficeDocumentSync(nextFieldsSnapshot, fillIdentity);
+      }
       return nextFieldsSnapshot;
     } catch (error) {
+      if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
       const errorField = {
         ...targetField,
         status: "需补充资料",
@@ -1909,6 +2062,8 @@ export default function App() {
   }
 
   async function generateAllFields() {
+    const fillIdentity = captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     const pendingFields = sortFieldsByDocumentOrder(enrichedFillFields.filter((field) => field.status !== "已确认" && field.status !== "生成中"));
     if (pendingFields.length === 0 || generatingAll) return;
     const preservedFillPreviewPage = fillPreviewPage;
@@ -1947,18 +2102,33 @@ export default function App() {
     }
     try {
       for (let index = 0; index < runnableFields.length; index += 1) {
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
         const field = runnableFields[index];
         setBulkFillProgress({ current: index + 1, total: runnableFields.length });
-        fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, { syncDocument: false, suppressPageSync: true }) || fieldsSnapshot;
+        fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, {
+          fillIdentity,
+          syncDocument: false,
+          suppressPageSync: true,
+        }) || fieldsSnapshot;
+        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
       }
-      queueFilledOfficeDocumentSync(fieldsSnapshot);
+      if (isCurrentFillDocumentIdentity(fillIdentity)) {
+        queueFilledOfficeDocumentSync(fieldsSnapshot, fillIdentity);
+      }
     } finally {
-      setFillPreviewPage(preservedFillPreviewPage);
-      window.setTimeout(() => {
-        if (fillPreviewPageLockRef.current === preservedFillPreviewPage) {
-          fillPreviewPageLockRef.current = null;
-        }
-      }, 2200);
+      if (isCurrentFillDocumentIdentity(fillIdentity)) {
+        setFillPreviewPage(preservedFillPreviewPage);
+        window.setTimeout(() => {
+          if (
+            isCurrentFillDocumentIdentity(fillIdentity)
+            && fillPreviewPageLockRef.current === preservedFillPreviewPage
+          ) {
+            fillPreviewPageLockRef.current = null;
+          }
+        }, 2200);
+      } else if (fillPreviewPageLockRef.current === preservedFillPreviewPage) {
+        fillPreviewPageLockRef.current = null;
+      }
       setGeneratingAll(false);
       setBulkFillProgress({ current: 0, total: 0 });
     }
@@ -1975,42 +2145,47 @@ export default function App() {
   }
 
   async function updateFillFieldValue(fieldId, value) {
+    const fillIdentity = captureFillDocumentIdentity();
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
     const targetField = enrichedFillFieldsRef.current.find((field) => field.id === fieldId);
-    const appliedField = targetField
-      ? {
-          ...targetField,
-          value,
-          status: value.trim() ? "待确认" : "未填充",
-          confidence: targetField.confidence || 100,
-          source: "人工修改",
-          evidence: value.trim() ? "用户对 AI 填充内容进行了人工修改。" : "用户清空了填充内容。",
-          sourceSnippetText: "",
-        }
-      : null;
-    let nextField = appliedField;
-    if (appliedField && value.trim()) {
-      const writeResult = await requestOnlyOfficeFillField(appliedField);
-      nextField = isOnlyOfficeFillFailure(writeResult) ? markOnlyOfficeFillFailure(appliedField, writeResult) : appliedField;
-      enrichedFillFieldsRef.current = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? nextField : field));
-      if (!isOnlyOfficeFillFailure(writeResult)) {
-        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current);
-      }
+    if (!targetField) return;
+    const clear = !value.trim();
+    const appliedField = {
+      ...targetField,
+      value,
+      amountValue: clear ? "" : targetField.amountValue || "",
+      choiceValue: clear ? "" : targetField.choiceValue || "",
+      status: clear ? "未填充" : "待确认",
+      confidence: clear ? 0 : targetField.confidence || 100,
+      source: "人工修改",
+      evidence: clear ? "用户清空了填充内容。" : "用户对 AI 填充内容进行了人工修改。",
+      sourceSnippetText: "",
+    };
+    if (clear && !hasOnlyOfficeFillValue(targetField)) {
+      enrichedFillFieldsRef.current = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? appliedField : field));
+      setFillFields((fields) => fields.map((field) => (field.id === fieldId ? appliedField : field)));
+      return;
     }
-    setFillFields((fields) =>
-      fields.map((field) =>
-        field.id === fieldId
-          ? (nextField || {
-              ...field,
-              value,
-              status: value.trim() ? "待确认" : "未填充",
-              confidence: field.confidence || 100,
-              source: "人工修改",
-              evidence: value.trim() ? "用户对 AI 填充内容进行了人工修改。" : "用户清空了填充内容。",
-              sourceSnippetText: "",
-            })
-          : field,
-      ),
-    );
+
+    const writeResult = await requestOnlyOfficeFillField(appliedField, { clear });
+    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
+    const writeFailed = isOnlyOfficeFillFailure(writeResult);
+    const documentCleared = writeResult?.cleared === true;
+    const nextField = writeFailed && documentCleared
+      ? markOnlyOfficeDocumentCleared(appliedField, writeResult, clear)
+      : writeFailed ? markOnlyOfficeFillFailure(targetField, writeResult) : appliedField;
+    enrichedFillFieldsRef.current = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? nextField : field));
+    setFillFields((fields) => fields.map((field) => (field.id === fieldId ? nextField : field)));
+    if (writeResult?.ok === true || documentCleared) {
+      queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
+    }
+    if (writeFailed && documentCleared) {
+      window.alert(writeResult?.error || (clear
+        ? "字段内容已清空，但书签修复失败，请重新标注该字段。"
+        : "字段旧内容已清除，但新内容写入失败，请检查字段书签后重试。"));
+    } else if (writeFailed && clear) {
+      window.alert(writeResult?.error || "当前字段没有可安全清空的精确范围，文档已保留原内容。");
+    }
   }
 
   function openCitation(fieldId) {
@@ -2286,7 +2461,7 @@ export default function App() {
                 onSelectField={setSelectedFieldId}
                 onUploadMaterials={uploadMaterials}
                 onRemoveMaterial={removeMaterial}
-                onOfficeDocumentReady={setFillOfficeDocId}
+                onOfficeDocumentReady={updateFillOfficeDocumentId}
                 onGenerate={generateField}
                 onGenerateAll={generateAllFields}
                 onGeneratePlaceholder={fillPlaceholderWithAI}

@@ -175,6 +175,7 @@ function DocumentFrame({
   useEffect(() => {
     if (!isOfficeMode) return;
 
+    onOfficeDocumentReady?.("");
     if (pdfUrlRef.current) {
       releasePdfUrlLater(pdfUrlRef.current);
       pdfUrlRef.current = "";
@@ -193,7 +194,6 @@ function DocumentFrame({
 
     if (!templateFile?.buffer) {
       setRenderState(templateFile && templateFile.supported === false ? "unsupported" : "empty");
-      onOfficeDocumentReady?.("");
       return;
     }
 
@@ -236,6 +236,7 @@ function DocumentFrame({
 
     return () => {
       cancelled = true;
+      onOfficeDocumentReady?.("");
       if (pdfUrlRef.current) {
         releasePdfUrlLater(pdfUrlRef.current);
         pdfUrlRef.current = "";

@@ -666,7 +666,7 @@ function normalizeOutlineItems(items) {
       bodyStyleSource: String(item.bodyStyleSource || "").trim(),
       bodyStyleRef: normalizeStyleRef(item.bodyStyleRef),
       bodyText: String(item.bodyText || "").trim(),
-      bodyParagraphCount: Number.isFinite(Number(item.bodyParagraphCount)) ? Number(item.bodyParagraphCount) : 0,
+      bodyParagraphCount: normalizeBodyParagraphCount(item.bodyParagraphCount),
     }))
     .filter((item) => item.title && !item.isEmptyItem);
 }
@@ -684,6 +684,12 @@ function normalizeDocumentStyles(styles) {
       seen.add(key);
       return true;
     });
+}
+
+function normalizeBodyParagraphCount(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? count : null;
 }
 
 function buildTemplateGroups(items) {

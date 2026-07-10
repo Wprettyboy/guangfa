@@ -1,4 +1,10 @@
-import { getModelConfig, normalizeConfig, saveModelConfig, testModelConfig } from "../../settings.js";
+import {
+  getModelConfig,
+  redactModelConfig,
+  resolveModelConfigUpdate,
+  saveModelConfig,
+  testModelConfig,
+} from "../../settings.js";
 import { defineRoute } from "../registry.js";
 
 function registerSettingsRoutes() {
@@ -9,7 +15,7 @@ function registerSettingsRoutes() {
     tags: ["settings"],
     summary: "读取模型配置",
     responses: { 200: "object" },
-    handler: () => getModelConfig(),
+    handler: async () => redactModelConfig(await getModelConfig()),
   });
 
   defineRoute({
@@ -22,9 +28,9 @@ function registerSettingsRoutes() {
     body: { provider: "string?", local: "object?", cloud: "object?", embedding: "object?" },
     responses: { 200: "object" },
     handler: async ({ body }) => {
-      const config = normalizeConfig(body || {});
+      const config = await resolveModelConfigUpdate(body || {});
       await saveModelConfig(config);
-      return { ok: true, config };
+      return { ok: true, config: redactModelConfig(config) };
     },
   });
 

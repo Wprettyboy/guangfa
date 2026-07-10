@@ -52,9 +52,20 @@ docker pull $image
 
 $existing = docker ps -a --filter "name=^/$name$" --format "{{.Names}}"
 if ($existing -eq $name) {
+  $inspection = docker inspect $name | ConvertFrom-Json
+  $bindings = @($inspection[0].NetworkSettings.Ports.'80/tcp')
+  $bindingIsLocal = $bindings.Count -eq 1 `
+    -and $bindings[0].HostIp -in @("127.0.0.1", "::1") `
+    -and $bindings[0].HostPort -eq "8080"
+  if (!$bindingIsLocal) {
+    docker rm -f $name | Out-Null
+    $existing = ""
+  }
+}
+if ($existing -eq $name) {
   docker start $name | Out-Null
 } else {
-  docker run -d --name $name -p 8080:80 -e JWT_ENABLED=false --restart unless-stopped $image | Out-Null
+  docker run -d --name $name -p 127.0.0.1:8080:80 -e JWT_ENABLED=false --restart unless-stopped $image | Out-Null
 }
 
 $fontDir = "/usr/share/fonts/truetype/guangfa"

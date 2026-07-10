@@ -71,6 +71,7 @@ function FillWorkspace({
     0,
   );
   const activeTemplateName = baseTemplateFile?.name ?? "未选择模板";
+  const editorReady = Boolean(officeDocId);
   const fillableCount = fields.filter((field) => field.status !== "已确认" && field.status !== "生成中").length;
   const placeholderFillableCount = placeholderCards.filter((card) => card.status !== "已确认" && card.status !== "生成中").length;
   const complexFillableCount = complexFillCards.filter((card) => card.status !== "已确认" && card.status !== "生成中").length;
@@ -203,7 +204,7 @@ function FillWorkspace({
             onOpenMaterialPicker={openMaterialPicker}
             onRemoveMaterial={onRemoveMaterial}
             onGenerateAll={generateAllCurrentType}
-            generateAllDisabled={generatingAll || activeFillableCount === 0}
+            generateAllDisabled={!editorReady || generatingAll || activeFillableCount === 0}
             generateAllLabel={generateAllLabel}
             generatingAll={generatingAll}
             bulkProgressText={bulkProgressText}
@@ -240,7 +241,7 @@ function FillWorkspace({
               <PlaceholderFillCards
                 cards={placeholderCards}
                 currentPage={currentPage}
-                generatingAll={generatingAll}
+                generatingAll={generatingAll || !editorReady}
                 onGenerate={onGeneratePlaceholder}
                 onUpdateValue={onUpdatePlaceholderValue}
                 onApplyValue={onApplyPlaceholderValue}
@@ -250,7 +251,7 @@ function FillWorkspace({
               <ComplexFillCards
                 cards={complexFillCards}
                 currentPage={currentPage}
-                generatingAll={generatingAll}
+                generatingAll={generatingAll || !editorReady}
                 onGenerate={onGenerateComplexFill}
                 onUpdateValue={onUpdateComplexFillValue}
                 onApplyValue={onApplyComplexFillValue}
@@ -264,7 +265,7 @@ function FillWorkspace({
                 selectedFieldId={selectedFieldId}
                 onSelectField={onSelectField}
                 onGenerate={onGenerate}
-                generateDisabled={generatingAll}
+                generateDisabled={generatingAll || !editorReady}
                 onUpdateValue={onUpdateValue}
                 onConfirm={onConfirm}
               />

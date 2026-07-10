@@ -1,6 +1,7 @@
 (function () {
   const twipsPerMm = 56.692913;
   const twipsPerPt = 20;
+  const handledLayoutResults = new Map();
 
   function safeCall(target, name, fallback, ...args) {
     try {
@@ -355,7 +356,18 @@
 
   window.guangfaApplyLayoutFormat = applyLayoutPlan;
   window.guangfaLayoutFormatReady = true;
-  try { console.log("[guangfa-layout-format-ready]", { version: 4 }); } catch {}
+  try { console.log("[guangfa-layout-format-ready]", { version: 5 }); } catch {}
+
+  function getHandledLayoutResult(action, requestId) {
+    return requestId ? handledLayoutResults.get(`${action}:${requestId}`) || null : null;
+  }
+
+  function rememberLayoutResult(action, requestId, result) {
+    if (!requestId) return;
+    const key = `${action}:${requestId}`;
+    handledLayoutResults.set(key, result);
+    window.setTimeout(() => handledLayoutResults.delete(key), 30000);
+  }
 
   function postLayoutResult(result) {
     const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-applied", result };
@@ -368,13 +380,22 @@
     const data = event.data || {};
     if (data.source === "guangfa-parent" && data.action === "analyze-layout-format") {
       const requestId = data.requestId || "";
+      const cached = getHandledLayoutResult(data.action, requestId);
+      if (cached) {
+        const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-analyzed", result: cached };
+        try { window.parent?.postMessage(message, "*"); } catch {}
+        try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
+        return;
+      }
       let result;
       try {
         result = analyzeLayoutDocument(data.standard || {});
       } catch (error) {
         result = { ok: false, summary: error?.message || "OnlyOffice 格式体检失败。", findings: [] };
       }
-      const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-analyzed", result: { ...result, requestId } };
+      const response = { ...result, requestId };
+      rememberLayoutResult(data.action, requestId, response);
+      const message = { source: "guangfa-onlyoffice-custom", action: "layout-format-analyzed", result: response };
       try { console.log("[guangfa-layout-format-analyzed]", message.result); } catch {}
       try { window.parent?.postMessage(message, "*"); } catch {}
       try { if (window.top && window.top !== window.parent) window.top.postMessage(message, "*"); } catch {}
@@ -382,12 +403,19 @@
     }
     if (data.source !== "guangfa-parent" || data.action !== "apply-layout-format") return;
     const requestId = data.requestId || "";
+    const cached = getHandledLayoutResult(data.action, requestId);
+    if (cached) {
+      postLayoutResult(cached);
+      return;
+    }
     let result;
     try {
       result = applyLayoutPlan(data.plan || {});
     } catch (error) {
       result = { ok: false, summary: error?.message || "OnlyOffice 排版执行失败。", items: [] };
     }
-    postLayoutResult({ ...result, requestId });
+    const response = { ...result, requestId };
+    rememberLayoutResult(data.action, requestId, response);
+    postLayoutResult(response);
   });
 })();

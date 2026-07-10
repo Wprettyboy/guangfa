@@ -235,6 +235,7 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
             <>
               <button
                 className="mini-button blue"
+                disabled={generateDisabled}
                 onClick={() => {
                   onUpdateValue(draftValue);
                   setEditing(false);
@@ -271,7 +272,7 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
                   setDraftValue(field.value || "");
                   setEditing(true);
                 }}
-                disabled={field.status === "生成中"}
+                disabled={generateDisabled || field.status === "生成中"}
               >
                 <PenLine size={15} />
                 编辑

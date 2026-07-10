@@ -6,6 +6,7 @@ function FormatControls({
   standard,
   report,
   plan,
+  analysisReady,
   selectedFindingIds,
   busy,
   hasDocument,
@@ -20,7 +21,9 @@ function FormatControls({
 }) {
   const grouped = groupFindingsByDomain(report.findings, standard.domains);
   const selectedCount = selectedFindingIds.length;
-  const fixableCount = report.findings.filter((item) => item.fixable && item.status !== "blocked").length;
+  const fixableCount = analysisReady
+    ? report.findings.filter((item) => item.fixable && item.status !== "blocked").length
+    : 0;
   return (
     <aside className="right-panel field-panel layout-panel">
       <div className="panel-section grow-section">
@@ -36,15 +39,15 @@ function FormatControls({
             {busy ? <Loader2 size={16} className="spin" /> : <ClipboardCheck size={16} />}
             格式体检
           </button>
-          <button className="tool-button" type="button" onClick={onSelectFixable} disabled={!hasDocument || busy || fixableCount === 0}>
+          <button className="tool-button" type="button" onClick={onSelectFixable} disabled={!hasDocument || busy || !analysisReady || fixableCount === 0}>
             <Check size={16} />
             {selectedCount === fixableCount && fixableCount > 0 ? "取消修复项" : "选择可修复"}
           </button>
-          <button className="tool-button" type="button" onClick={onPreviewPlan} disabled={!hasDocument || busy || selectedCount === 0}>
+          <button className="tool-button" type="button" onClick={onPreviewPlan} disabled={!hasDocument || busy || !analysisReady || selectedCount === 0}>
             <FileText size={16} />
             生成计划
           </button>
-          <button className="tool-button primary" type="button" onClick={onApply} disabled={!hasDocument || busy || plan.actions.length === 0}>
+          <button className="tool-button primary" type="button" onClick={onApply} disabled={!hasDocument || busy || !analysisReady || plan.actions.length === 0}>
             {busy ? <Loader2 size={16} className="spin" /> : <Wand2 size={16} />}
             执行修复
           </button>
@@ -70,7 +73,7 @@ function FormatControls({
                     type="checkbox"
                     checked={selectedFindingIds.includes(finding.id)}
                     onChange={() => onToggleFinding(finding.id)}
-                    disabled={busy || !finding.fixable || finding.status === "blocked"}
+                    disabled={busy || !analysisReady || !finding.fixable || finding.status === "blocked"}
                   />
                   <span>
                     <strong>{finding.title}</strong>

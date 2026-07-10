@@ -5,6 +5,7 @@ import { requestChatCompletion, splitApiKeys } from "./ai/chat-completions.js";
 const settingsDir = path.resolve(process.cwd(), "data", "settings");
 const settingsFile = path.join(settingsDir, "model-config.json");
 const envFile = path.resolve(process.cwd(), ".env.local");
+const API_KEY_UNCHANGED = "********";
 
 const envKeys = [
   "AI_PROVIDER",
@@ -53,7 +54,9 @@ async function saveModelConfig(config) {
 }
 
 async function testModelConfig(payload) {
-  const config = normalizeConfig(payload.config || (await getModelConfig()));
+  const config = payload.config
+    ? await resolveModelConfigUpdate(payload.config)
+    : await getModelConfig();
   const target = payload.target === "embedding" ? "embedding" : "llm";
   if (target === "embedding") return testEmbedding(config.embedding);
   return testLlm(config.provider === "cloud" ? config.cloud : config.local);
@@ -113,7 +116,7 @@ async function testEmbedding(embedding) {
   return { ok: true, message: `Embedding 连接正常，返回维度 ${dimension}` };
 }
 
-function normalizeConfig(value) {
+function normalizeConfig(value = {}) {
   return {
     provider: value.provider === "cloud" ? "cloud" : "local",
     local: normalizeRuntime(value.local),
@@ -126,6 +129,43 @@ function normalizeConfig(value) {
       timeoutMs: String(value.embedding?.timeoutMs || "60000").trim(),
     },
   };
+}
+
+async function resolveModelConfigUpdate(value = {}) {
+  const current = await getModelConfig();
+  const config = normalizeConfig({
+    provider: Object.prototype.hasOwnProperty.call(value, "provider") ? value.provider : current.provider,
+    local: { ...current.local, ...(value.local || {}) },
+    cloud: { ...current.cloud, ...(value.cloud || {}) },
+    embedding: { ...current.embedding, ...(value.embedding || {}) },
+  });
+  for (const section of ["local", "cloud", "embedding"]) {
+    const incoming = value?.[section];
+    if (!incoming || !Object.prototype.hasOwnProperty.call(incoming, "apiKey")) {
+      config[section].apiKey = current[section].apiKey;
+    } else {
+      config[section].apiKey = resolveApiKeyUpdate(incoming.apiKey, current[section].apiKey);
+    }
+  }
+  return config;
+}
+
+function resolveApiKeyUpdate(value, currentValue = "") {
+  const text = String(value ?? "");
+  if (text === API_KEY_UNCHANGED) return currentValue;
+  return text
+    .split(/\r?\n|\\n|[,;]+/)
+    .map((item) => item.trim())
+    .filter((item) => item && item !== API_KEY_UNCHANGED)
+    .join("\n");
+}
+
+function redactModelConfig(value) {
+  const config = normalizeConfig(value);
+  for (const section of ["local", "cloud", "embedding"]) {
+    config[section].apiKey = config[section].apiKey ? API_KEY_UNCHANGED : "";
+  }
+  return config;
 }
 
 function normalizeRuntime(runtime = {}) {
@@ -218,4 +258,12 @@ function escapeEnvValue(value) {
   return /[\s#"'`]/.test(text) ? JSON.stringify(text) : text;
 }
 
-export { normalizeConfig, saveModelConfig, testModelConfig };
+export {
+  API_KEY_UNCHANGED,
+  normalizeConfig,
+  redactModelConfig,
+  resolveApiKeyUpdate,
+  resolveModelConfigUpdate,
+  saveModelConfig,
+  testModelConfig,
+};

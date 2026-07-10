@@ -13,11 +13,26 @@ export async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens
       { role: "user", content: userPrompt },
     ],
   });
-  const content = stripThinking(data?.choices?.[0]?.message?.content || "{}");
-  const parsed = parseModelJson(content);
+  const content = stripThinking(data?.choices?.[0]?.message?.content || "");
+  if (!content) throw createModelResponseError("AI 模型返回了空内容");
+
+  let parsed;
+  try {
+    parsed = parseModelJson(content);
+  } catch (error) {
+    const partialItems = options.partialArrayKey ? parsePartialJsonObjects(content) : [];
+    if (!partialItems.length) throw error;
+    parsed = { [options.partialArrayKey]: partialItems };
+  }
   if (options.partialArrayKey && !Array.isArray(parsed?.[options.partialArrayKey])) {
     const partialItems = parsePartialJsonObjects(content);
-    if (partialItems.length > 0) parsed[options.partialArrayKey] = partialItems;
+    if (partialItems.length > 0) {
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) parsed = {};
+      parsed[options.partialArrayKey] = partialItems;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw createModelResponseError("AI 模型返回的 JSON 不是对象");
   }
   if (options.debugFileName) {
     await writeAiDebugLog(options.debugFileName, {
@@ -75,13 +90,19 @@ function parseModelJson(content) {
     return JSON.parse(content);
   } catch {
     const match = content.match(/\{[\s\S]*\}/);
-    if (!match) return {};
+    if (!match) throw createModelResponseError("AI 模型未返回有效 JSON");
     try {
       return JSON.parse(match[0]);
     } catch {
-      return {};
+      throw createModelResponseError("AI 模型未返回有效 JSON");
     }
   }
+}
+
+function createModelResponseError(message) {
+  const error = new Error(message);
+  error.statusCode = 502;
+  return error;
 }
 
 function parsePartialJsonObjects(content) {
@@ -125,4 +146,6 @@ function parsePartialJsonObjects(content) {
 
   return items;
 }
+
+export { parseModelJson };
 

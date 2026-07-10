@@ -45,34 +45,37 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
   useEffect(() => {
     fillFieldPayloadRef.current = buildOnlyOfficeFillFieldPayload(fillFields);
     if (mode === "fill") {
-      postOnlyOfficeCommand(containerRef.current, {
+      return postOnlyOfficeCommand(containerRef.current, {
         source: "guangfa-parent",
         action: "sync-fill-fields",
         fields: fillFieldPayloadRef.current,
       }, 2);
     }
+    return undefined;
   }, [fillFields, mode]);
 
   useEffect(() => {
     aiKnowledgeContextRef.current = aiKnowledgeContext;
     if (mode === "fill") {
-      postOnlyOfficeCommand(containerRef.current, {
+      return postOnlyOfficeCommand(containerRef.current, {
         source: "guangfa-parent",
         action: "sync-ai-knowledge-context",
         context: aiKnowledgeContext,
       }, 2);
     }
+    return undefined;
   }, [aiKnowledgeContext, mode]);
 
   useEffect(() => {
     trackRevisionsEnabledRef.current = trackRevisionsEnabled;
     if (mode === "fill") {
-      postOnlyOfficeCommand(containerRef.current, {
+      return postOnlyOfficeCommand(containerRef.current, {
         source: "guangfa-parent",
         action: "set-track-revisions",
         enabled: trackRevisionsEnabled,
       }, 2);
     }
+    return undefined;
   }, [mode, trackRevisionsEnabled]);
 
   useEffect(() => {
@@ -160,15 +163,14 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
 }
 
 function postOnlyOfficeCommand(container, message, attempts = 8) {
-  const frames = [...(container?.querySelectorAll?.("iframe") || [])];
-  frames.forEach((frame) => {
-    try {
-      frame.contentWindow?.postMessage(message, "*");
-    } catch {}
-  });
-  if (attempts > 0) {
-    window.setTimeout(() => postOnlyOfficeCommand(container, message, attempts - 1), 250);
-  }
+  return retryOnlyOfficePost(() => {
+    const frames = [...(container?.querySelectorAll?.("iframe") || [])];
+    frames.forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage(message, "*");
+      } catch {}
+    });
+  }, attempts);
 }
 
 function requestOnlyOfficeDocumentSave(trigger = "manual") {
@@ -184,10 +186,12 @@ function requestOnlyOfficeApplyLayoutFormat(plan, options = {}) {
   const timeoutMs = Number(options.timeoutMs || 15000);
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -200,7 +204,7 @@ function requestOnlyOfficeApplyLayoutFormat(plan, options = {}) {
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, summary: "OnlyOffice 未响应排版命令。", items: [] }), timeoutMs);
     window.addEventListener("message", handleMessage);
     console.log("[guangfa-layout-format-command]", { requestId, actions: Array.isArray(plan?.actions) ? plan.actions.length : 0 });
-    postAllOnlyOfficeFrames({
+    cancelPost = postAllOnlyOfficeFrames({
       source: "guangfa-parent",
       action: "apply-layout-format",
       requestId,
@@ -214,10 +218,12 @@ function requestOnlyOfficeAnalyzeLayoutFormat(standard, options = {}) {
   const timeoutMs = Number(options.timeoutMs || 15000);
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -230,7 +236,7 @@ function requestOnlyOfficeAnalyzeLayoutFormat(standard, options = {}) {
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, summary: "OnlyOffice 未响应格式体检命令。", findings: [] }), timeoutMs);
     window.addEventListener("message", handleMessage);
     console.log("[guangfa-layout-format-analyze-command]", { requestId, rules: Array.isArray(standard?.rules) ? standard.rules.length : 0 });
-    postAllOnlyOfficeFrames({
+    cancelPost = postAllOnlyOfficeFrames({
       source: "guangfa-parent",
       action: "analyze-layout-format",
       requestId,
@@ -264,8 +270,9 @@ function requestOnlyOfficeAddInputPoint(field) {
 }
 
 function requestOnlyOfficeFillField(field, options = {}) {
-  if (!field?.value && !field?.choiceValue) return Promise.resolve({ ok: false, skipped: true, reason: "empty-value", id: field?.id });
-  if (requiresInputPoint(field) && !hasInputPoint(field)) {
+  const clear = options.clear === true;
+  if (!clear && !field?.value && !field?.choiceValue) return Promise.resolve({ ok: false, skipped: true, reason: "empty-value", id: field?.id });
+  if (!clear && requiresInputPoint(field) && !hasInputPoint(field)) {
     console.warn("[fill] skip write without input point", { id: field.id, sourceText: getTemplateFieldSourceText(field) });
     return Promise.resolve({ ok: false, skipped: true, reason: "missing-input-point", id: field.id });
   }
@@ -274,10 +281,12 @@ function requestOnlyOfficeFillField(field, options = {}) {
   const payload = buildOnlyOfficeFillFieldPayload([field])[0] || {};
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -289,13 +298,14 @@ function requestOnlyOfficeFillField(field, options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, id: field.id, requestId, timeout: true, error: "OnlyOffice 未在限定时间内确认字段写入。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames({
+    cancelPost = postAllOnlyOfficeFrames({
       source: "guangfa-parent",
       action: "fill-field-value",
       requestId,
       field: {
         ...payload,
         requestId,
+        clear,
         suppressPageSync: Boolean(options.suppressPageSync),
       },
     }, 0);
@@ -318,10 +328,12 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
   return new Promise((resolve) => {
     let done = false;
     let firstFailure = null;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -337,7 +349,7 @@ function requestOnlyOfficeInsertPlaceholderVariable(variable, anchorIndex) {
     };
     const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段插入命令。" }), 8000);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 8);
+    cancelPost = postAllOnlyOfficeFrames(message, 8);
   });
 }
 
@@ -368,10 +380,12 @@ function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
   return new Promise((resolve) => {
     let done = false;
     let firstFailure = null;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -387,7 +401,7 @@ function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
     };
     const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段填充命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 8);
+    cancelPost = postAllOnlyOfficeFrames(message, 8);
   });
 }
 
@@ -455,10 +469,12 @@ function requestOnlyOfficeInsertKnowledgeTable(table, options = {}) {
   };
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -470,7 +486,7 @@ function requestOnlyOfficeInsertKnowledgeTable(table, options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应资料表格插入命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 0);
+    cancelPost = postAllOnlyOfficeFrames(message, 0);
   });
 }
 
@@ -508,10 +524,12 @@ async function requestOnlyOfficeInsertKnowledgeImage(image, options = {}) {
   };
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -523,7 +541,7 @@ async function requestOnlyOfficeInsertKnowledgeImage(image, options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应资料图片插入命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 0);
+    cancelPost = postAllOnlyOfficeFrames(message, 0);
   });
 }
 
@@ -537,10 +555,12 @@ function requestOnlyOfficeOutline(options = {}) {
   };
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -552,7 +572,7 @@ function requestOnlyOfficeOutline(options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应大纲读取命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 8);
+    cancelPost = postAllOnlyOfficeFrames(message, 8);
   });
 }
 
@@ -563,8 +583,10 @@ function requestOnlyOfficeInsertSolutionText(text, options = {}) {
   if (paragraphs.length && !options.skipConnector) {
     return insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeoutMs, replaceTarget: options.replaceTarget || null })
       .then((result) => {
-        if (result?.ok) return result;
-        return requestOnlyOfficeInsertSolutionTextViaProbe(text, { ...options, requestId, timeoutMs, connectorResult: result });
+        if (result?.skipped === true) {
+          return requestOnlyOfficeInsertSolutionTextViaProbe(text, { ...options, requestId, timeoutMs, connectorResult: result });
+        }
+        return result;
       });
   }
   return requestOnlyOfficeInsertSolutionTextViaProbe(text, { ...options, requestId, timeoutMs });
@@ -584,10 +606,12 @@ function requestOnlyOfficeInsertSolutionTextViaProbe(text, options = {}) {
   };
   return new Promise((resolve) => {
     let done = false;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -599,7 +623,7 @@ function requestOnlyOfficeInsertSolutionTextViaProbe(text, options = {}) {
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应方案正文写入命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 0);
+    cancelPost = postAllOnlyOfficeFrames(message, 0);
   });
 }
 
@@ -626,11 +650,13 @@ function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeo
     let done = false;
     let firstFailure = null;
     let failureTimer = null;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
       if (failureTimer) window.clearTimeout(failureTimer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -653,7 +679,7 @@ function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeo
     };
     const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, postAttempts);
+    cancelPost = postAllOnlyOfficeFrames(message, postAttempts);
   });
 }
 
@@ -670,11 +696,13 @@ function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) 
     let done = false;
     let firstFailure = null;
     let failureTimer = null;
+    let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
       if (failureTimer) window.clearTimeout(failureTimer);
+      cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
     };
@@ -693,18 +721,34 @@ function requestOnlyOfficePlaceholderAnchorAction(action, resultAction, anchor) 
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段书签命令。" }), 8000);
     window.addEventListener("message", handleMessage);
-    postAllOnlyOfficeFrames(message, 8);
+    cancelPost = postAllOnlyOfficeFrames(message, 8);
   });
 }
 
 function postAllOnlyOfficeFrames(message, attempts = 8) {
-  [...document.querySelectorAll("iframe")].forEach((frame) => {
-    try {
-      frame.contentWindow?.postMessage(message, "*");
-      postFrameChildren(frame.contentWindow, message);
-    } catch {}
-  });
-  if (attempts > 0) window.setTimeout(() => postAllOnlyOfficeFrames(message, attempts - 1), 250);
+  return retryOnlyOfficePost(() => {
+    [...document.querySelectorAll("iframe")].forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage(message, "*");
+        postFrameChildren(frame.contentWindow, message);
+      } catch {}
+    });
+  }, attempts);
+}
+
+function retryOnlyOfficePost(post, attempts) {
+  let cancelled = false;
+  let timer = null;
+  const send = (remaining) => {
+    if (cancelled) return;
+    post();
+    if (remaining > 0) timer = window.setTimeout(() => send(remaining - 1), 250);
+  };
+  send(Math.max(0, Number(attempts) || 0));
+  return () => {
+    cancelled = true;
+    if (timer) window.clearTimeout(timer);
+  };
 }
 
 function postFrameChildren(frameWindow, message) {

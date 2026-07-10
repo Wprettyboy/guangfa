@@ -183,208 +183,15 @@
           title: String(item?.title || item?.displayTitle || ""),
         };
       })
-      .filter(function (item) { return Number.isFinite(item.index) && item.title.trim(); });
+      .filter(function (item) { return Number.isFinite(item.index); });
     if (!sourceItems.length) {
       window.Asc = window.Asc || {};
       window.Asc.scope = window.Asc.scope || {};
-      window.Asc.scope.gfOutlineStyleDebug = { error: "没有可匹配的大纲标题" };
+      window.Asc.scope.gfOutlineStyleDebug = { error: "没有可读取的大纲项" };
       window.Asc.scope.gfOutlineDocumentText = "";
       return [];
     }
-    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
-      return readOutlineStyleMetadataFromLogic(sourceItems, "logic-document-no-call-command");
-    }
-    try {
-      window.Asc.scope = window.Asc.scope || {};
-      window.Asc.scope.gfOutlineStyleItems = sourceItems;
-      window.Asc.scope.gfOutlineStyleResult = [];
-      await window.Asc.Editor.callCommand(function () {
-        function normalizeText(value) {
-          return String(value || "").replace(/\s+/g, " ").trim();
-        }
-        function callAny(target, names) {
-          for (var index = 0; index < names.length; index += 1) {
-            try {
-              if (target && typeof target[names[index]] === "function") return target[names[index]]();
-            } catch (error) {}
-          }
-          return null;
-        }
-        function callWithArgs(target, name, args) {
-          try {
-            if (target && typeof target[name] === "function") return target[name].apply(target, args || []);
-          } catch (error) {}
-          return null;
-        }
-        function collectParagraphs(element, paragraphs) {
-          if (!element) return;
-          var className = String(element.constructor?.name || "");
-          if (/Paragraph/i.test(className) || typeof element.GetText === "function") paragraphs.push(element);
-          var count = Number(callAny(element, ["GetElementsCount"]) || 0) || 0;
-          for (var index = 0; index < count; index += 1) {
-            try {
-              collectParagraphs(element.GetElement(index), paragraphs);
-            } catch (error) {}
-          }
-        }
-        function getParagraphs(doc) {
-          var direct = callAny(doc, ["GetAllParagraphs"]);
-          if (Array.isArray(direct)) return direct;
-          var paragraphs = [];
-          collectParagraphs(doc, paragraphs);
-          return paragraphs;
-        }
-        function collectChildText(element, parts, depth) {
-          if (!element || depth > 6) return;
-          var text = "";
-          try {
-            if (typeof element.GetText === "function") text = normalizeText(element.GetText());
-          } catch (error) {}
-          if (text) parts.push(text);
-          var count = Number(callAny(element, ["GetElementsCount"]) || 0) || 0;
-          for (var index = 0; index < count; index += 1) {
-            try {
-              collectChildText(element.GetElement(index), parts, depth + 1);
-            } catch (error) {}
-          }
-        }
-        function getParagraphText(paragraph) {
-          var options = { NewLine: true, ParaSeparator: "\n", Numbering: false };
-          var rangeAttempts = [
-            function () { return callWithArgs(paragraph, "GetRange", [0, -1]); },
-            function () { return callWithArgs(paragraph, "GetRange", []); },
-          ];
-          for (var rangeIndex = 0; rangeIndex < rangeAttempts.length; rangeIndex += 1) {
-            var range = rangeAttempts[rangeIndex]();
-            var rangeText = normalizeText(
-              callWithArgs(range, "GetText", [options])
-              || callWithArgs(range, "GetText", [])
-            );
-            if (rangeText) return rangeText;
-          }
-          var directText = normalizeText(
-            callWithArgs(paragraph, "GetText", [options])
-            || callWithArgs(paragraph, "GetText", [])
-          );
-          if (directText) return directText;
-          var parts = [];
-          collectChildText(paragraph, parts, 0);
-          return normalizeText(parts.join(" "));
-        }
-        function getStyleNameFromStyle(style) {
-          return normalizeText(
-            style?.name
-            || style?.Name
-            || callAny(style, ["GetName", "get_Name"])
-            || "",
-          );
-        }
-        function getParagraphStyleName(paragraph) {
-          var directStyle = callAny(paragraph, ["GetStyle", "get_Style"]);
-          var directName = getStyleNameFromStyle(directStyle);
-          if (directName) return directName;
-          var paraPr = callAny(paragraph, ["GetParaPr"]);
-          var style = callAny(paraPr, ["GetStyle", "get_Style"]);
-          return getStyleNameFromStyle(style);
-        }
-        try {
-          var doc = Api.GetDocument();
-          var paragraphs = getParagraphs(doc);
-          var paragraphRows = paragraphs.map(function (paragraph, paragraphIndex) {
-            return {
-              paragraphIndex: paragraphIndex,
-              text: getParagraphText(paragraph),
-              styleName: getParagraphStyleName(paragraph),
-            };
-          }).filter(function (row) { return row.text; });
-          Asc.scope.gfOutlineStyleDebug = {
-            paragraphCount: paragraphs.length,
-            nonEmptyParagraphCount: paragraphRows.length,
-            requestedTitles: (Asc.scope.gfOutlineStyleItems || []).map(function (item) {
-              return { index: item.index, title: item.title };
-            }).slice(0, 12),
-            samples: paragraphRows.slice(0, 18).map(function (row) {
-              return {
-                paragraphIndex: row.paragraphIndex,
-                text: row.text,
-                styleName: row.styleName,
-              };
-            }),
-          };
-          Asc.scope.gfOutlineDocumentText = paragraphRows.map(function (row) { return row.text; }).filter(Boolean).join("\n").slice(0, 80000);
-          var cursor = 0;
-          var matched = [];
-          var items = Asc.scope.gfOutlineStyleItems || [];
-          for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-            var item = items[itemIndex];
-            var targetText = normalizeText(item.title);
-            var found = null;
-            for (var rowIndex = cursor; rowIndex < paragraphRows.length; rowIndex += 1) {
-              if (paragraphRows[rowIndex].text === targetText) {
-                found = paragraphRows[rowIndex];
-                cursor = rowIndex + 1;
-                break;
-              }
-            }
-            matched.push({
-              index: item.index,
-              paragraphIndex: found ? found.paragraphIndex : null,
-              styleName: found?.styleName || "",
-              styleSource: found ? "paragraph-exact-title" : "not-found",
-              styleRef: found ? {
-                paragraphIndex: found.paragraphIndex,
-                outlineIndex: item.index,
-                title: item.title,
-                level: Number.isFinite(Number(item.level)) ? Number(item.level) : null,
-                styleName: found.styleName || "",
-              } : null,
-            });
-          }
-          for (var matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
-            var current = matched[matchIndex];
-            if (!Number.isFinite(Number(current.paragraphIndex))) continue;
-            var nextParagraphIndex = Number.POSITIVE_INFINITY;
-            for (var nextIndex = matchIndex + 1; nextIndex < matched.length; nextIndex += 1) {
-              if (Number.isFinite(Number(matched[nextIndex].paragraphIndex))) {
-                nextParagraphIndex = matched[nextIndex].paragraphIndex;
-                break;
-              }
-            }
-            var body = paragraphRows.find(function (row) {
-              return row.paragraphIndex > current.paragraphIndex
-                && row.paragraphIndex < nextParagraphIndex
-                && !isSolutionHeadingStyleName(row.styleName);
-            });
-            var bodyRows = paragraphRows.filter(function (row) {
-              return row.paragraphIndex > current.paragraphIndex
-                && row.paragraphIndex < nextParagraphIndex
-                && !isSolutionHeadingStyleName(row.styleName);
-            });
-            current.bodyStyleName = body?.styleName || "";
-            current.bodyParagraphIndex = body ? body.paragraphIndex : null;
-            current.bodyStyleSource = body ? "next-paragraph-before-next-outline" : "not-found";
-            current.bodyText = bodyRows.map(function (row) { return row.text; }).filter(Boolean).join("\n").slice(0, 6000);
-            current.bodyParagraphCount = bodyRows.length;
-            current.bodyStyleRef = body ? {
-              paragraphIndex: body.paragraphIndex,
-              outlineIndex: current.index,
-              title: current.styleRef?.title || "",
-              text: body.text || "",
-              level: current.styleRef?.level ?? null,
-              styleName: body.styleName || "",
-            } : null;
-          }
-          Asc.scope.gfOutlineStyleResult = matched;
-        } catch (error) {
-          Asc.scope.gfOutlineStyleResult = [];
-          Asc.scope.gfOutlineStyleDebug = { error: String(error?.message || error || "样式读取失败") };
-          Asc.scope.gfOutlineDocumentText = "";
-        }
-      });
-      return Array.isArray(window.Asc.scope.gfOutlineStyleResult) ? window.Asc.scope.gfOutlineStyleResult : [];
-    } catch {
-      return readOutlineStyleMetadataFromLogic(sourceItems, "logic-document-call-command-failed");
-    }
+    return readOutlineStyleMetadataFromLogic(sourceItems, "outline-manager-elements");
   }
 
   function readOutlineStyleMetadataFromLogic(sourceItems, source) {
@@ -392,19 +199,22 @@
     window.Asc.scope = window.Asc.scope || {};
     try {
       const logicDocument = getLogicDocument();
+      const outlineElements = getOutlineManager()?.Elements;
       const paragraphs = getLogicDocumentParagraphs(logicDocument);
       const paragraphRows = paragraphs.map((paragraph, paragraphIndex) => ({
+        paragraph,
         paragraphIndex,
         text: normalizeOutlineText(safeCall(paragraph, "GetText", "", { NewLine: true, ParaSeparator: "\n", Numbering: true })),
         styleName: getLogicParagraphStyleName(paragraph, logicDocument),
-      })).filter((row) => row.text);
-      const matched = matchOutlineStyleRows(sourceItems, paragraphRows, source);
+      }));
+      const matched = matchOutlineStyleRows(sourceItems, outlineElements, paragraphRows, source);
       window.Asc.scope.gfOutlineStyleDebug = {
         source,
         paragraphCount: paragraphs.length,
-        nonEmptyParagraphCount: paragraphRows.length,
+        nonEmptyParagraphCount: paragraphRows.filter((row) => row.text).length,
+        matchedParagraphCount: matched.filter((item) => item.styleRef).length,
         requestedTitles: sourceItems.slice(0, 12).map((item) => ({ index: item.index, title: item.title })),
-        samples: paragraphRows.slice(0, 18).map((row) => ({
+        samples: paragraphRows.filter((row) => row.text).slice(0, 18).map((row) => ({
           paragraphIndex: row.paragraphIndex,
           text: row.text,
           styleName: row.styleName,
@@ -454,24 +264,16 @@
     return getOnlyOfficeStyleName(style);
   }
 
-  function matchOutlineStyleRows(items, paragraphRows, source) {
-    let cursor = 0;
-    const matched = [];
-    for (const item of items) {
-      const targetText = normalizeOutlineText(item.title);
-      let found = null;
-      for (let rowIndex = cursor; rowIndex < paragraphRows.length; rowIndex += 1) {
-        if (paragraphRows[rowIndex].text === targetText) {
-          found = paragraphRows[rowIndex];
-          cursor = rowIndex + 1;
-          break;
-        }
-      }
-      matched.push({
+  function matchOutlineStyleRows(items, outlineElements, paragraphRows, source) {
+    const paragraphIndexes = new Map(paragraphRows.map((row) => [row.paragraph, row.paragraphIndex]));
+    const matched = items.map((item) => {
+      const paragraphIndex = paragraphIndexes.get(outlineElements?.[item.index]);
+      const found = Number.isInteger(paragraphIndex) ? paragraphRows[paragraphIndex] : null;
+      return {
         index: item.index,
         paragraphIndex: found ? found.paragraphIndex : null,
         styleName: found?.styleName || "",
-        styleSource: found ? `${source}-paragraph-exact-title` : "not-found",
+        styleSource: found ? `${source}-paragraph-identity` : "not-found",
         styleRef: found ? {
           paragraphIndex: found.paragraphIndex,
           outlineIndex: item.index,
@@ -479,33 +281,39 @@
           level: Number.isFinite(Number(item.level)) ? Number(item.level) : null,
           styleName: found.styleName || "",
         } : null,
-      });
-    }
+        bodyStyleName: "",
+        bodyParagraphIndex: null,
+        bodyStyleSource: "not-found",
+        bodyText: "",
+        bodyParagraphCount: null,
+        bodyStyleRef: null,
+      };
+    });
     for (let matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
       const current = matched[matchIndex];
       if (!Number.isFinite(Number(current.paragraphIndex))) continue;
-      let nextParagraphIndex = Number.POSITIVE_INFINITY;
-      for (let nextIndex = matchIndex + 1; nextIndex < matched.length; nextIndex += 1) {
-        if (Number.isFinite(Number(matched[nextIndex].paragraphIndex))) {
-          nextParagraphIndex = matched[nextIndex].paragraphIndex;
-          break;
-        }
-      }
+      const next = matched[matchIndex + 1];
+      const boundaryIndex = next
+        ? Number.isFinite(Number(next.paragraphIndex)) ? Number(next.paragraphIndex) : null
+        : paragraphRows.length;
+      if (!Number.isFinite(boundaryIndex) || boundaryIndex <= current.paragraphIndex) continue;
       const body = paragraphRows.find((row) => (
         row.paragraphIndex > current.paragraphIndex
-        && row.paragraphIndex < nextParagraphIndex
+        && row.paragraphIndex < boundaryIndex
+        && row.text
         && !isSolutionHeadingStyleName(row.styleName)
       ));
       const bodyRows = paragraphRows.filter((row) => (
         row.paragraphIndex > current.paragraphIndex
-        && row.paragraphIndex < nextParagraphIndex
+        && row.paragraphIndex < boundaryIndex
+        && row.text
         && !isSolutionHeadingStyleName(row.styleName)
       ));
       current.bodyStyleName = body?.styleName || "";
       current.bodyParagraphIndex = body ? body.paragraphIndex : null;
       current.bodyStyleSource = body ? `${source}-next-paragraph-before-next-outline` : "not-found";
       current.bodyText = bodyRows.map((row) => row.text).filter(Boolean).join("\n").slice(0, 6000);
-      current.bodyParagraphCount = bodyRows.length;
+      current.bodyParagraphCount = Math.max(0, boundaryIndex - current.paragraphIndex - 1);
       current.bodyStyleRef = body ? {
         paragraphIndex: body.paragraphIndex,
         outlineIndex: current.index,
@@ -1403,6 +1211,64 @@
     return { ok: false, error: "文本输入接口不可用" };
   }
 
+  function clearBookmarkedField(field) {
+    const bookmarkName = getFieldBookmarkName(field);
+    let contentRemoved = false;
+    if (!/^GF_FIELD_/.test(bookmarkName)) {
+      return {
+        ok: false,
+        cleared: false,
+        id: field?.id,
+        bookmarkName,
+        error: /^GF_INPUT_/.test(bookmarkName)
+          ? "输入点书签没有可确认的已写范围，不能安全清空。"
+          : "只有精确字段范围书签支持清空。",
+      };
+    }
+    const logicDocument = getLogicDocument();
+    const manager = logicDocument && typeof logicDocument.GetBookmarksManager === "function" ? logicDocument.GetBookmarksManager() : null;
+    if (!manager || typeof manager.SelectBookmark !== "function" || typeof manager.AddBookmark !== "function") {
+      return { ok: false, cleared: false, id: field?.id, bookmarkName, error: "字段书签清空接口不可用。" };
+    }
+    try {
+      if (!hasBookmark(manager, bookmarkName) || manager.SelectBookmark(bookmarkName) === false) {
+        return { ok: false, cleared: false, id: field?.id, bookmarkName, error: "字段书签不存在，无法安全清空。" };
+      }
+      const selectedText = readSelectedText(logicDocument) || readSelectedText(getEditorApi());
+      const selectionEmpty = safeCall(logicDocument, "IsSelectionEmpty", null, true);
+      const pageInfo = extractOnlyOfficePage(safeCall(logicDocument, "GetSelectionState", null));
+      if (selectionEmpty === true) {
+        return { ok: true, cleared: true, alreadyCleared: true, id: field?.id, bookmarkName, page: pageInfo.page };
+      }
+      if (selectionEmpty !== false && !normalizeSelectionText(selectedText)) {
+        return { ok: false, cleared: false, id: field?.id, bookmarkName, page: pageInfo.page, error: "无法确认字段书签范围，未执行清空。" };
+      }
+      const removed = removeSelectedTextForReplacement();
+      if (!removed.ok) {
+        return { ok: false, cleared: false, id: field?.id, bookmarkName, page: pageInfo.page, error: removed.error || "字段内容清空失败。" };
+      }
+      contentRemoved = true;
+      removeBookmark(manager, bookmarkName);
+      const added = manager.AddBookmark(bookmarkName);
+      if (added === false || !hasBookmark(manager, bookmarkName)) {
+        return { ok: false, partial: true, cleared: true, id: field?.id, bookmarkName, page: pageInfo.page, error: "字段内容已清空，但空书签重建失败。" };
+      }
+      saveOnlyOfficeDocument("clear-field");
+      postFieldPages("clear-field");
+      return {
+        ok: true,
+        cleared: true,
+        id: field?.id,
+        bookmarkName,
+        page: pageInfo.page,
+        source: "field-bookmark-clear",
+        previousText: selectedText,
+      };
+    } catch (error) {
+      return { ok: false, partial: contentRemoved, cleared: contentRemoved, id: field?.id, bookmarkName, error: error?.message || "字段书签清空失败。" };
+    }
+  }
+
   function normalizeSolutionWritingParagraphs(payload) {
     const rows = Array.isArray(payload?.paragraphs) ? payload.paragraphs : [];
     return rows
@@ -1439,13 +1305,15 @@
     const title = String(target.title || "").trim();
     const styleRef = normalizeSolutionStyleRef(target.styleRef);
     const bodyStyleRef = normalizeSolutionStyleRef(target.bodyStyleRef);
+    const rawBodyParagraphCount = target.bodyParagraphCount;
+    const bodyParagraphCount = rawBodyParagraphCount == null || String(rawBodyParagraphCount).trim() === "" ? null : Number(rawBodyParagraphCount);
     if (!title && !styleRef) return null;
     return {
       title,
       headingPath: Array.isArray(target.headingPath) ? target.headingPath.map(function (item) { return String(item || "").trim(); }).filter(Boolean) : [],
       styleRef,
       bodyStyleRef,
-      bodyParagraphCount: Number.isFinite(Number(target.bodyParagraphCount)) ? Math.max(0, Number(target.bodyParagraphCount)) : 0,
+      bodyParagraphCount: Number.isInteger(bodyParagraphCount) && bodyParagraphCount >= 0 ? bodyParagraphCount : null,
     };
   }
 
@@ -1469,9 +1337,7 @@
     const expected = normalizeOutlineText(styleRef?.title || styleRef?.text || "");
     const candidate = Number.isFinite(paragraphIndex) ? paragraphs[paragraphIndex] : null;
     const readText = (paragraph) => normalizeOutlineText(safeCall(paragraph, "GetText", "", { NewLine: true, ParaSeparator: "\n", Numbering: true }));
-    if (candidate && (!expected || readText(candidate) === expected)) return candidate;
-    if (!expected) return null;
-    return paragraphs.find((paragraph) => readText(paragraph) === expected) || null;
+    return candidate && expected && readText(candidate) === expected ? candidate : null;
   }
 
   function getLogicReferenceStyleName(item) {
@@ -1504,116 +1370,18 @@
     return false;
   }
 
-  function getLogicParagraphText(paragraph) {
-    return normalizeOutlineText(safeCall(paragraph, "GetText", "", { NewLine: true, ParaSeparator: "\n", Numbering: true }));
-  }
-
-  function getSolutionTargetTitle(target) {
-    return normalizeOutlineText(target?.title || target?.styleRef?.title || target?.styleRef?.text || "");
-  }
-
-  function findLogicSolutionHeadingIndex(paragraphs, target) {
-    const title = getSolutionTargetTitle(target);
-    const ref = target?.styleRef || null;
-    const refIndex = Number(ref?.paragraphIndex);
-    if (Number.isFinite(refIndex) && paragraphs[refIndex]) {
-      const expected = normalizeOutlineText(ref.title || ref.text || title);
-      const candidate = getLogicParagraphText(paragraphs[refIndex]);
-      if (!expected || candidate === expected || candidate === title) return refIndex;
-    }
-    if (!title) return -1;
-    return paragraphs.findIndex((paragraph) => getLogicParagraphText(paragraph) === title);
-  }
-
-  function findNextLogicSolutionHeadingIndex(paragraphs, headingIndex, logicDocument) {
-    for (let index = headingIndex + 1; index < paragraphs.length; index += 1) {
-      if (isSolutionHeadingStyleName(getLogicParagraphStyleName(paragraphs[index], logicDocument))) return index;
-    }
-    return paragraphs.length;
-  }
-
-  function deleteLogicParagraph(paragraph) {
-    const parent = safeCall(paragraph, "GetParent", null);
-    const index = Number(safeCall(paragraph, "GetIndex", -1));
-    if (!parent || !Number.isFinite(index) || index < 0) return false;
-    try { safeCall(paragraph, "PreDelete", null); } catch {}
-    const attempts = [
-      () => typeof parent.Remove_FromContent === "function" && parent.Remove_FromContent(index, 1, true) !== false,
-      () => typeof parent.RemoveFromContent === "function" && parent.RemoveFromContent(index, 1) !== false,
-      () => typeof parent.Internal_Content_Remove2 === "function" && parent.Internal_Content_Remove2(index, 1) !== false,
-    ];
-    for (const attempt of attempts) {
-      try {
-        if (attempt()) return true;
-      } catch {}
-    }
-    return false;
-  }
-
-  function clearLogicSolutionBodyParagraphs(paragraphs, headingIndex, nextHeadingIndex, logicDocument) {
-    let cleared = 0;
-    for (let index = nextHeadingIndex - 1; index > headingIndex; index -= 1) {
-      const paragraph = paragraphs[index];
-      if (!paragraph || isSolutionHeadingStyleName(getLogicParagraphStyleName(paragraph, logicDocument))) continue;
-      if (deleteLogicParagraph(paragraph)) cleared += 1;
-    }
-    return cleared;
-  }
-
-  function moveLogicCursorAfterParagraph(paragraph, logicDocument) {
-    try {
-      if (typeof paragraph?.Document_SetThisElementCurrent === "function") paragraph.Document_SetThisElementCurrent(false);
-      if (typeof paragraph?.MoveCursorToEndPos === "function") paragraph.MoveCursorToEndPos(false);
-      if (typeof logicDocument?.AddNewParagraph === "function") {
-        logicDocument.AddNewParagraph(false, true);
-        return true;
-      }
-    } catch {}
-    return false;
-  }
-
-  function getFirstSolutionInsertText(paragraphs) {
-    const first = (Array.isArray(paragraphs) ? paragraphs : []).find((item) => normalizeOutlineText(item?.text));
-    return normalizeOutlineText(first?.text || "");
-  }
-
-  function verifyLogicSolutionInsertedText(logicDocument, replaceTarget, paragraphs) {
-    const expected = getFirstSolutionInsertText(paragraphs);
-    if (!expected) return false;
-    const allParagraphs = getLogicDocumentParagraphs(logicDocument);
-    const headingIndex = findLogicSolutionHeadingIndex(allParagraphs, replaceTarget);
-    if (headingIndex < 0) return false;
-    const nextHeadingIndex = findNextLogicSolutionHeadingIndex(allParagraphs, headingIndex, logicDocument);
-    const needle = expected.slice(0, Math.min(48, expected.length));
-    return allParagraphs.slice(headingIndex + 1, nextHeadingIndex).some((paragraph) => (
-      normalizeOutlineText(getLogicParagraphText(paragraph)).includes(needle)
-    ));
-  }
-
   function insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) {
+    if (replaceTarget) {
+      return { ok: false, error: "定向替换只允许使用保存的精确标题位置，逻辑文档 fallback 已关闭。" };
+    }
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) {
-      return replaceTarget
-        ? { ok: false, error: "方案正文为空，无法按标题替换写入。" }
-        : enterTextAtSelection(fallbackText, "solution-writing");
+      return enterTextAtSelection(fallbackText, "solution-writing");
     }
     const logicDocument = getLogicDocument();
     if (!logicDocument || typeof logicDocument.EnterText !== "function") {
-      return replaceTarget
-        ? { ok: false, error: "OnlyOffice 逻辑文档接口不可用，无法按标题定位写入。" }
-        : enterTextAtSelection(fallbackText, "solution-writing");
+      return enterTextAtSelection(fallbackText, "solution-writing");
     }
     try {
-      let cleared = 0;
-      if (replaceTarget) {
-        const allParagraphs = getLogicDocumentParagraphs(logicDocument);
-        const headingIndex = findLogicSolutionHeadingIndex(allParagraphs, replaceTarget);
-        if (headingIndex < 0) return { ok: false, error: `未找到对应原模板标题：${getSolutionTargetTitle(replaceTarget)}` };
-        const nextHeadingIndex = findNextLogicSolutionHeadingIndex(allParagraphs, headingIndex, logicDocument);
-        cleared = clearLogicSolutionBodyParagraphs(allParagraphs, headingIndex, nextHeadingIndex, logicDocument);
-        if (!moveLogicCursorAfterParagraph(allParagraphs[headingIndex], logicDocument)) {
-          return { ok: false, error: `未能定位到目标标题后方：${getSolutionTargetTitle(replaceTarget)}` };
-        }
-      }
       let textCount = 0;
       const styleResults = [];
       paragraphs.forEach((item, index) => {
@@ -1635,17 +1403,12 @@
       safeCall(logicDocument, "Recalculate", null);
       safeCall(logicDocument, "UpdateInterface", null);
       safeCall(logicDocument, "UpdateSelection", null);
-      if (replaceTarget && !verifyLogicSolutionInsertedText(logicDocument, replaceTarget, paragraphs)) {
-        return { ok: false, error: `OnlyOffice 未确认正文写入目标标题：${getSolutionTargetTitle(replaceTarget)}` };
-      }
       saveOnlyOfficeDocument("solution-writing");
       return {
         ok: true,
-        source: replaceTarget ? "logic-document-replace-heading-body" : "logic-document-reference-style-enter-text",
+        source: "logic-document-reference-style-enter-text",
         count: paragraphs.length,
         textCount,
-        cleared,
-        targetTitle: replaceTarget ? getSolutionTargetTitle(replaceTarget) : "",
         styles: styleResults,
       };
     } catch (error) {
@@ -1733,56 +1496,44 @@
           return normalizeText(target.title || (target.styleRef && (target.styleRef.title || target.styleRef.text)) || "");
         }
 
-        function getParagraphStyleName(paragraph) {
-          try {
-            var paragraphPr = typeof paragraph.GetParaPr === "function" ? paragraph.GetParaPr() : null;
-            var style = paragraphPr && typeof paragraphPr.GetStyle === "function" ? paragraphPr.GetStyle() : null;
-            return style && typeof style.GetName === "function" ? style.GetName() : "";
-          } catch (error) {
-            return "";
-          }
-        }
-
         function findTargetHeadingIndex(paragraphs, target) {
           if (!target || !paragraphs.length) return -1;
           var title = getTargetTitle(target);
           var ref = target.styleRef || null;
           var refIndex = Number(ref && ref.paragraphIndex);
-          if (Number.isFinite(refIndex) && paragraphs[refIndex]) {
-            var expected = normalizeText(ref.title || ref.text || title);
-            var candidate = normalizeText(getParagraphText(paragraphs[refIndex]));
-            if (!expected || candidate === expected || candidate === title) return refIndex;
-          }
-          if (!title) return -1;
-          for (var index = 0; index < paragraphs.length; index += 1) {
-            if (normalizeText(getParagraphText(paragraphs[index])) === title) return index;
-          }
-          return -1;
+          var expected = normalizeText(ref && (ref.title || ref.text) || title);
+          var candidate = Number.isFinite(refIndex) ? paragraphs[refIndex] : null;
+          return candidate && expected && getParagraphText(candidate) === expected ? refIndex : -1;
         }
 
-        function findNextHeadingIndex(paragraphs, headingIndex) {
-          for (var index = headingIndex + 1; index < paragraphs.length; index += 1) {
-            if (isSolutionHeadingStyleName(getParagraphStyleName(paragraphs[index]))) return index;
-          }
-          return paragraphs.length;
+        function getTargetBodyParagraphs(paragraphs, headingIndex, target) {
+          if (!target || target.bodyParagraphCount === null || target.bodyParagraphCount === undefined) return null;
+          var count = Number(target.bodyParagraphCount);
+          if (!Number.isInteger(count) || count < 0) return null;
+          var endIndex = headingIndex + 1 + count;
+          return endIndex <= paragraphs.length ? paragraphs.slice(headingIndex + 1, endIndex) : null;
         }
 
-        function clearTargetBodyParagraphs(paragraphs, headingIndex, nextHeadingIndex) {
+        function clearTargetBodyParagraphs(paragraphs) {
           var cleared = 0;
-          for (var index = nextHeadingIndex - 1; index > headingIndex; index -= 1) {
+          for (var index = paragraphs.length - 1; index >= 0; index -= 1) {
             var paragraph = paragraphs[index];
-            if (!paragraph || isSolutionHeadingStyleName(getParagraphStyleName(paragraph))) continue;
+            if (!paragraph) return { ok: false, cleared: cleared, error: "目标正文段落引用无效" };
+            var removed = false;
             try {
               if (typeof paragraph.Delete === "function" && paragraph.Delete() !== false) {
-                cleared += 1;
-                continue;
+                removed = true;
               }
             } catch (error) {}
-            try {
-              if (typeof paragraph.RemoveAllElements === "function" && paragraph.RemoveAllElements() !== false) cleared += 1;
-            } catch (error) {}
+            if (!removed) {
+              try {
+                if (typeof paragraph.RemoveAllElements === "function" && paragraph.RemoveAllElements() !== false) removed = true;
+              } catch (error) {}
+            }
+            if (!removed) return { ok: false, cleared: cleared, error: "目标正文清理失败" };
+            cleared += 1;
           }
-          return cleared;
+          return { ok: true, cleared: cleared };
         }
 
         function getDocumentContentIndex(paragraph, fallbackIndex) {
@@ -1795,12 +1546,18 @@
         }
 
         function insertContentAfterHeading(doc, headingParagraph, fallbackIndex, content) {
-          if (!content.length || typeof doc.AddElement !== "function") return false;
+          if (!content.length || typeof doc.AddElement !== "function") return { ok: false, inserted: 0, error: "OnlyOffice 标题后插入接口不可用" };
           var insertIndex = getDocumentContentIndex(headingParagraph, fallbackIndex);
           for (var index = 0; index < content.length; index += 1) {
-            if (doc.AddElement(insertIndex + 1 + index, content[index]) === false) return false;
+            try {
+              if (doc.AddElement(insertIndex + 1 + index, content[index]) === false) {
+                return { ok: false, inserted: index, partial: index > 0, error: "OnlyOffice 标题后插入返回失败" };
+              }
+            } catch (error) {
+              return { ok: false, inserted: index, partial: index > 0, error: error && error.message ? error.message : "OnlyOffice 标题后插入失败" };
+            }
           }
-          return true;
+          return { ok: true, inserted: content.length };
         }
 
         function verifyInsertedAfterHeading(doc, target, rows) {
@@ -1809,12 +1566,8 @@
           var paragraphs = getAllParagraphs(doc);
           var headingIndex = findTargetHeadingIndex(paragraphs, target);
           if (headingIndex < 0) return false;
-          var nextHeadingIndex = findNextHeadingIndex(paragraphs, headingIndex);
-          var needle = expected.slice(0, Math.min(48, expected.length));
-          for (var index = headingIndex + 1; index < nextHeadingIndex; index += 1) {
-            if (normalizeText(getParagraphText(paragraphs[index])).indexOf(needle) >= 0) return true;
-          }
-          return false;
+          var insertedParagraph = paragraphs[headingIndex + 1];
+          return Boolean(insertedParagraph && getParagraphText(insertedParagraph) === expected);
         }
 
         function getReferenceParagraph(doc, item) {
@@ -1824,12 +1577,7 @@
           var paragraphIndex = Number(ref.paragraphIndex);
           var expected = String(ref.title || ref.text || "").replace(/\s+/g, " ").trim();
           var candidate = Number.isFinite(paragraphIndex) ? paragraphs[paragraphIndex] : null;
-          if (candidate && (!expected || getParagraphText(candidate) === expected)) return candidate;
-          if (!expected) return null;
-          for (var index = 0; index < paragraphs.length; index += 1) {
-            if (getParagraphText(paragraphs[index]) === expected) return paragraphs[index];
-          }
-          return null;
+          return candidate && expected && getParagraphText(candidate) === expected ? candidate : null;
         }
 
         function applyStyleObject(paragraph, style) {
@@ -1923,17 +1671,20 @@
         function prepareCurrentInsertPosition(doc) {
           try {
             var anchorParagraph = Api.CreateParagraph();
-            doc.InsertContent([anchorParagraph]);
-            return true;
+            var result = doc.InsertContent([anchorParagraph]);
+            return result === false
+              ? { ok: false, inserted: false, error: "OnlyOffice 插入锚点返回失败" }
+              : { ok: true, inserted: true };
           } catch (error) {
-            return false;
+            return { ok: false, inserted: false, error: error && error.message ? error.message : "OnlyOffice 插入锚点失败" };
           }
         }
 
+        var mutation = { anchorInserted: false, inserted: 0, cleared: 0 };
         try {
           var source = Asc.scope.gfSolutionWritingParagraphs || [];
           var doc = Api.GetDocument();
-          if (!doc || typeof doc.InsertContent !== "function" || typeof Api.CreateParagraph !== "function") {
+          if (!doc || typeof Api.CreateParagraph !== "function") {
             Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 段落插入接口不可用" };
             return;
           }
@@ -1979,17 +1730,28 @@
             var allParagraphs = getAllParagraphs(doc);
             var headingIndex = findTargetHeadingIndex(allParagraphs, replaceTarget);
             if (headingIndex < 0) {
-              Asc.scope.gfSolutionWritingResult = { ok: false, error: "未找到对应原模板标题：" + getTargetTitle(replaceTarget) };
+              Asc.scope.gfSolutionWritingResult = { ok: false, error: "保存的标题定位已失效：" + getTargetTitle(replaceTarget) };
               return;
             }
-            var nextHeadingIndex = findNextHeadingIndex(allParagraphs, headingIndex);
-            var cleared = clearTargetBodyParagraphs(allParagraphs, headingIndex, nextHeadingIndex);
-            if (!insertContentAfterHeading(doc, allParagraphs[headingIndex], headingIndex, content)) {
-              Asc.scope.gfSolutionWritingResult = { ok: false, error: "未能写入目标标题正文：" + getTargetTitle(replaceTarget) };
+            var oldBodyParagraphs = getTargetBodyParagraphs(allParagraphs, headingIndex, replaceTarget);
+            if (!oldBodyParagraphs) {
+              Asc.scope.gfSolutionWritingResult = { ok: false, error: "保存的标题正文范围已失效：" + getTargetTitle(replaceTarget) };
+              return;
+            }
+            var inserted = insertContentAfterHeading(doc, allParagraphs[headingIndex], headingIndex, content);
+            mutation.inserted = inserted.inserted || 0;
+            if (!inserted.ok) {
+              Asc.scope.gfSolutionWritingResult = { ok: false, partial: Boolean(inserted.partial), inserted: mutation.inserted, error: inserted.error || "未能写入目标标题正文：" + getTargetTitle(replaceTarget) };
               return;
             }
             if (!verifyInsertedAfterHeading(doc, replaceTarget, source)) {
-              Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 未确认正文写入目标标题：" + getTargetTitle(replaceTarget) };
+              Asc.scope.gfSolutionWritingResult = { ok: false, partial: true, inserted: mutation.inserted, error: "OnlyOffice 未确认正文写入目标标题：" + getTargetTitle(replaceTarget) };
+              return;
+            }
+            var cleared = clearTargetBodyParagraphs(oldBodyParagraphs);
+            mutation.cleared = cleared.cleared || 0;
+            if (!cleared.ok) {
+              Asc.scope.gfSolutionWritingResult = { ok: false, partial: true, inserted: mutation.inserted, cleared: mutation.cleared, error: cleared.error || "新正文已写入，但原正文未能完整清理" };
               return;
             }
             Asc.scope.gfSolutionWritingResult = {
@@ -1997,21 +1759,37 @@
               source: "api-replace-heading-body",
               count: content.length,
               textCount: textCount,
-              cleared,
+              cleared: mutation.cleared,
               targetTitle: getTargetTitle(replaceTarget),
               styles: styleResults,
             };
             return;
           }
-          prepareCurrentInsertPosition(doc);
-          var inserted = doc.InsertContent(content);
-          if (inserted === false) {
-            Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 未确认方案规划段落插入。" };
+          var anchor = prepareCurrentInsertPosition(doc);
+          mutation.anchorInserted = Boolean(anchor.inserted);
+          if (!anchor.ok) {
+            Asc.scope.gfSolutionWritingResult = { ok: false, error: anchor.error || "OnlyOffice 未能建立当前插入位置。" };
             return;
           }
+          if (typeof doc.InsertContent !== "function") {
+            Asc.scope.gfSolutionWritingResult = { ok: false, partial: true, error: "OnlyOffice 段落插入接口不可用" };
+            return;
+          }
+          var insertResult = doc.InsertContent(content);
+          if (insertResult === false) {
+            Asc.scope.gfSolutionWritingResult = { ok: false, partial: true, error: "OnlyOffice 未确认方案规划段落插入。" };
+            return;
+          }
+          mutation.inserted = content.length;
           Asc.scope.gfSolutionWritingResult = { ok: true, source: "api-insert-content-paragraphs", count: content.length, textCount: textCount, styles: styleResults };
         } catch (error) {
-          Asc.scope.gfSolutionWritingResult = { ok: false, error: error?.message || "方案规划段落插入失败" };
+          Asc.scope.gfSolutionWritingResult = {
+            ok: false,
+            partial: mutation.anchorInserted || mutation.inserted > 0 || mutation.cleared > 0,
+            inserted: mutation.inserted,
+            cleared: mutation.cleared,
+            error: error?.message || "方案规划段落插入失败",
+          };
         }
       });
       const result = window.Asc.scope.gfSolutionWritingResult || { ok: false, error: "OnlyOffice 段落插入命令未返回结果。" };
@@ -2022,7 +1800,7 @@
         saveOnlyOfficeDocument("solution-writing");
         return result;
       }
-      return replaceTarget ? insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget) : result;
+      return result;
     } catch (error) {
       return { ok: false, error: error?.message || "方案规划段落插入失败" };
     }
@@ -2053,10 +1831,13 @@
     const removed = removeSelectedTextForReplacement();
     if (!removed.ok) return removed;
     const entered = enterTextAtSelection(text);
-    return { ...entered, removeResult: removed };
+    return entered.ok
+      ? { ...entered, removeResult: removed }
+      : { ...entered, partial: true, cleared: true, removeResult: removed };
   }
 
   function fillBookmarkedField(field) {
+    if (field?.clear === true) return clearBookmarkedField(field);
     const fillText = String(field?.fillText || field?.value || "");
     if (!fillText) return { ok: false, id: field?.id, error: "字段填充值为空" };
     if (isChoiceMarkerField(field)) {

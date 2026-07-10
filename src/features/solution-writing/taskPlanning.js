@@ -53,7 +53,7 @@ function normalizeOutlineRows(items = []) {
       bodyText: String(item.bodyText || "").trim(),
       styleRef: normalizeStyleRef(item.styleRef),
       bodyStyleRef: normalizeStyleRef(item.bodyStyleRef),
-      bodyParagraphCount: Number.isFinite(Number(item.bodyParagraphCount)) ? Number(item.bodyParagraphCount) : 0,
+      bodyParagraphCount: normalizeBodyParagraphCount(item.bodyParagraphCount),
     }))
     .filter((item) => item.title)
     .sort((a, b) => a.index - b.index);
@@ -105,7 +105,7 @@ function createTask(item, { headingPath, childTitles, previousTask, outlineText 
       headingPath,
       styleRef: item.styleRef || null,
       bodyStyleRef: item.bodyStyleRef || null,
-      bodyParagraphCount: item.bodyParagraphCount || 0,
+      bodyParagraphCount: normalizeBodyParagraphCount(item.bodyParagraphCount),
     },
     sourceText,
     headingPath,
@@ -156,6 +156,12 @@ function normalizeStyleRef(ref) {
     level: Number.isFinite(Number(ref.level)) ? Number(ref.level) : null,
     styleName: String(ref.styleName || "").trim(),
   };
+}
+
+function normalizeBodyParagraphCount(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 0 ? count : null;
 }
 
 function buildOutlineText(rows, rootLevel) {

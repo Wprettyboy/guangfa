@@ -1,4 +1,4 @@
-import { searchKnowledgeBase } from "../knowledge-base.js";
+import { searchKnowledgeBase } from "../knowledge/documents.js";
 
 import { getAiRuntimeConfig, materialChunkOverlap, materialChunkSize } from "./config.js";
 
@@ -39,19 +39,15 @@ async function searchKnowledgeForAi(runtime, { rawQuery = "", field = {}, messag
   const plan = await createKnowledgeRetrievalPlan(runtime, { rawQuery: fallbackQuery, field, message, debugFileName });
   const query = plan.query || "";
   if (!query) return { snippets: [], rawQuery: fallbackQuery, query, plan };
-  try {
-    const snippets = await searchKnowledgeBase({
-      query,
-      projectId: knowledgeOptions.projectId || "default-project",
-      kbIds,
-      globalKbIds,
-      includeGlobal: knowledgeOptions.includeGlobal,
-      topK: knowledgeOptions.topK || 6,
-    });
-    return { snippets, rawQuery: fallbackQuery, query, plan };
-  } catch {
-    return { snippets: [], rawQuery: fallbackQuery, query, plan };
-  }
+  const snippets = await searchKnowledgeBase({
+    query,
+    projectId: knowledgeOptions.projectId || "default-project",
+    kbIds,
+    globalKbIds,
+    includeGlobal: knowledgeOptions.includeGlobal,
+    topK: knowledgeOptions.topK || 6,
+  });
+  return { snippets, rawQuery: fallbackQuery, query, plan };
 }
 
 async function createKnowledgeRetrievalPlan(runtime, { rawQuery = "", field = {}, message = "", debugFileName = "ai-knowledge-query-last.json" } = {}) {
@@ -91,18 +87,13 @@ async function createKnowledgeRetrievalPlan(runtime, { rawQuery = "", field = {}
     `原始检索文本：${rawQuery}`,
   ].join("\n");
 
-  let extractorError = "";
   const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 512, {
     debugFileName,
     debugContext: { rawQuery, field: summarizeFieldForDebug(field), message },
-  }).catch((error) => {
-    extractorError = error.message || "检索词提取失败";
-    return {};
   });
   const plan = normalizeKnowledgeRetrievalPlan(parsed, rawQuery);
   return {
     ...plan,
-    extractorError,
     query: buildKnowledgeSearchQuery(plan),
   };
 }

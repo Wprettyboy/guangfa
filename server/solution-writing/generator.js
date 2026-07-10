@@ -674,13 +674,17 @@ function normalizeSolutionReplaceTarget(target) {
   const styleRef = normalizeSolutionStyleRef(target.styleRef);
   const bodyStyleRef = normalizeSolutionStyleRef(target.bodyStyleRef);
   const title = cleanText(target.title);
+  const rawBodyParagraphCount = target.bodyParagraphCount;
+  const bodyParagraphCount = rawBodyParagraphCount == null || String(rawBodyParagraphCount).trim() === ""
+    ? null
+    : Number(rawBodyParagraphCount);
   return title || styleRef
     ? {
       title,
       headingPath: normalizeStringList(target.headingPath).slice(0, 12),
       styleRef,
       bodyStyleRef,
-      bodyParagraphCount: Number.isFinite(Number(target.bodyParagraphCount)) ? Math.max(0, Number(target.bodyParagraphCount)) : 0,
+      bodyParagraphCount: Number.isInteger(bodyParagraphCount) && bodyParagraphCount >= 0 ? bodyParagraphCount : null,
     }
     : null;
 }

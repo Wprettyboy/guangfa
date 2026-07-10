@@ -44,13 +44,15 @@ function normalizeReplaceTarget(target, fallbackTitle = "") {
   const title = String(target?.title || fallbackTitle || "").trim();
   const styleRef = normalizeStyleRef(target?.styleRef);
   const bodyStyleRef = normalizeStyleRef(target?.bodyStyleRef);
+  const rawBodyParagraphCount = target?.bodyParagraphCount;
+  const bodyParagraphCount = rawBodyParagraphCount == null || String(rawBodyParagraphCount).trim() === "" ? null : Number(rawBodyParagraphCount);
   return title || styleRef
     ? {
       title,
       headingPath: Array.isArray(target?.headingPath) ? target.headingPath.map((item) => String(item || "").trim()).filter(Boolean) : [],
       styleRef,
       bodyStyleRef,
-      bodyParagraphCount: Number.isFinite(Number(target?.bodyParagraphCount)) ? Math.max(0, Number(target.bodyParagraphCount)) : 0,
+      bodyParagraphCount: Number.isInteger(bodyParagraphCount) && bodyParagraphCount >= 0 ? bodyParagraphCount : null,
     }
     : null;
 }

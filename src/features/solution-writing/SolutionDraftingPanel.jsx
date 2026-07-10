@@ -3,6 +3,18 @@ import { ChevronDown, ChevronRight, FileText, Loader2, Send, Wand2 } from "lucid
 import { generateSolutionDraftContent } from "./service.js";
 import { buildDraftSectionInsert, buildDraftSectionsInsert, groupDraftSectionsByTarget } from "./draftInsert.js";
 
+function buildDescendingInsertPayloads(groups) {
+  return groups
+    .map(buildDraftSectionsInsert)
+    .sort((left, right) => {
+      const leftIndex = Number(left?.replaceTarget?.styleRef?.paragraphIndex);
+      const rightIndex = Number(right?.replaceTarget?.styleRef?.paragraphIndex);
+      if (!Number.isFinite(leftIndex)) return Number.isFinite(rightIndex) ? 1 : 0;
+      if (!Number.isFinite(rightIndex)) return -1;
+      return rightIndex - leftIndex;
+    });
+}
+
 function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText }) {
   const [globalPrompt, setGlobalPrompt] = useState("你是一名资深政企技术方案编制专家，文档类型为正式技术方案，表达需要专业、稳健、可落地。");
   const [draft, setDraft] = useState(null);
@@ -56,20 +68,18 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText }) {
   }
 
   async function insertCategory(category) {
-    for (const group of groupDraftSectionsByTarget(category.sections || [])) {
-      const payload = buildDraftSectionsInsert(group);
+    const payloads = buildDescendingInsertPayloads(groupDraftSectionsByTarget(category.sections || []));
+    for (const payload of payloads) {
       const ok = await insertPayload(payload, `已写入 ${category.title}`);
       if (!ok) return;
     }
   }
 
   async function insertAllDraft() {
-    for (const category of draft?.categories || []) {
-      for (const group of groupDraftSectionsByTarget(category.sections || [])) {
-        const payload = buildDraftSectionsInsert(group);
-        const ok = await insertPayload(payload, "已写入全部方案内容");
-        if (!ok) return;
-      }
+    const groups = (draft?.categories || []).flatMap((category) => groupDraftSectionsByTarget(category.sections || []));
+    for (const payload of buildDescendingInsertPayloads(groups)) {
+      const ok = await insertPayload(payload, "已写入全部方案内容");
+      if (!ok) return;
     }
   }
 
