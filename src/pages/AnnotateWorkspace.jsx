@@ -91,6 +91,10 @@ function AnnotateWorkspace({
     setTemplateCategory(normalizeTemplateCategory(inferTemplateCategory(templateFile?.name)));
   }, [templateFile?.name]);
 
+  useEffect(() => {
+    setOfficeOutline(null);
+  }, [templateFile?.buffer, templateFile?.previewId, templateFile?.uploadedAt]);
+
   useGSAP(
     () => {
       const rows = gsap.utils.toArray(".annotation-field-row");
@@ -157,6 +161,7 @@ function AnnotateWorkspace({
             onRequestOutline={requestOnlyOfficeOutline}
             onInsertText={requestOnlyOfficeInsertSolutionText}
             onExportWord={onExportSolutionWord}
+            onOutlineInvalidated={() => setOfficeOutline(null)}
           />
         ) : showComplexFillPanel ? (
           <ComplexFillPanel

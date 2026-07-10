@@ -2,6 +2,8 @@
   const complexFillHighlightColor = { r: 211, g: 211, b: 211, color: "D3D3D3" };
   const handledKnowledgeTableRequestIds = new Set();
   const handledKnowledgeImageRequestIds = new Set();
+  const handledOutlineRequestIds = new Set();
+  const handledSolutionWritingRequestIds = new Set();
   let fallbackBookmarkIdSeed = 0;
 
   function getApplication() {
@@ -271,6 +273,7 @@
       const found = Number.isInteger(paragraphIndex) ? paragraphRows[paragraphIndex] : null;
       return {
         index: item.index,
+        level: item.level != null && Number.isFinite(Number(item.level)) ? Number(item.level) : null,
         paragraphIndex: found ? found.paragraphIndex : null,
         styleName: found?.styleName || "",
         styleSource: found ? `${source}-paragraph-identity` : "not-found",
@@ -278,7 +281,7 @@
           paragraphIndex: found.paragraphIndex,
           outlineIndex: item.index,
           title: item.title,
-          level: Number.isFinite(Number(item.level)) ? Number(item.level) : null,
+          level: item.level != null && Number.isFinite(Number(item.level)) ? Number(item.level) : null,
           styleName: found.styleName || "",
         } : null,
         bodyStyleName: "",
@@ -287,6 +290,7 @@
         bodyText: "",
         bodyParagraphCount: null,
         bodyStyleRef: null,
+        subtreeParagraphCount: null,
       };
     });
     for (let matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
@@ -322,6 +326,31 @@
         level: current.styleRef?.level ?? null,
         styleName: body.styleName || "",
       } : null;
+    }
+    for (let matchIndex = 0; matchIndex < matched.length; matchIndex += 1) {
+      const current = matched[matchIndex];
+      const currentIndex = Number(current.paragraphIndex);
+      const currentLevel = current.level == null ? NaN : Number(current.level);
+      if (!current.styleRef || !Number.isFinite(currentIndex) || !Number.isFinite(currentLevel)) continue;
+      let boundary = null;
+      for (let boundaryIndex = matchIndex + 1; boundaryIndex < matched.length; boundaryIndex += 1) {
+        const candidate = matched[boundaryIndex];
+        if (candidate.level != null && Number.isFinite(Number(candidate.level)) && Number(candidate.level) <= currentLevel) {
+          boundary = candidate;
+          break;
+        }
+      }
+      if (boundary) {
+        const boundaryIndex = Number(boundary.paragraphIndex);
+        if (!boundary.styleRef || !Number.isFinite(boundaryIndex) || boundaryIndex <= currentIndex) continue;
+        current.subtreeParagraphCount = boundaryIndex - currentIndex;
+        current.subtreeEndRef = boundary.styleRef;
+        continue;
+      }
+      if (currentIndex < paragraphRows.length) {
+        current.subtreeParagraphCount = paragraphRows.length - currentIndex;
+        current.subtreeEndRef = null;
+      }
     }
     return matched;
   }
@@ -1288,8 +1317,9 @@
 
   function normalizeSolutionStyleRef(ref) {
     if (!ref || typeof ref !== "object") return null;
+    if (ref.paragraphIndex == null || String(ref.paragraphIndex).trim() === "") return null;
     const paragraphIndex = Number(ref.paragraphIndex);
-    if (!Number.isFinite(paragraphIndex)) return null;
+    if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0) return null;
     return {
       paragraphIndex,
       outlineIndex: Number.isFinite(Number(ref.outlineIndex)) ? Number(ref.outlineIndex) : null,
@@ -1307,13 +1337,33 @@
     const bodyStyleRef = normalizeSolutionStyleRef(target.bodyStyleRef);
     const rawBodyParagraphCount = target.bodyParagraphCount;
     const bodyParagraphCount = rawBodyParagraphCount == null || String(rawBodyParagraphCount).trim() === "" ? null : Number(rawBodyParagraphCount);
+    const scope = target.scope === "subtree" ? "subtree" : "body";
+    const normalizedTitle = title.replace(/\s+/g, " ");
+    const styleRefTitle = String(styleRef?.title || styleRef?.text || "").replace(/\s+/g, " ").trim();
+    if (scope === "subtree" && (!styleRefTitle || (normalizedTitle && normalizedTitle !== styleRefTitle))) return null;
+    const rawSubtreeParagraphCount = target.subtreeParagraphCount;
+    const subtreeParagraphCount = rawSubtreeParagraphCount == null || String(rawSubtreeParagraphCount).trim() === ""
+      ? null
+      : Number(rawSubtreeParagraphCount);
+    const hasSubtreeEndRef = Object.prototype.hasOwnProperty.call(target, "subtreeEndRef");
+    const subtreeEndsAtDocumentEnd = hasSubtreeEndRef && target.subtreeEndRef === null;
+    const subtreeEndRef = subtreeEndsAtDocumentEnd ? null : normalizeSolutionStyleRef(target.subtreeEndRef);
+    const subtreeMetadataValid = scope !== "subtree" || (
+      Number.isInteger(subtreeParagraphCount)
+      && subtreeParagraphCount >= 1
+      && (subtreeEndsAtDocumentEnd || Boolean(subtreeEndRef))
+    );
     if (!title && !styleRef) return null;
     return {
-      title,
+      title: scope === "subtree" ? styleRefTitle : title,
       headingPath: Array.isArray(target.headingPath) ? target.headingPath.map(function (item) { return String(item || "").trim(); }).filter(Boolean) : [],
       styleRef,
       bodyStyleRef,
       bodyParagraphCount: Number.isInteger(bodyParagraphCount) && bodyParagraphCount >= 0 ? bodyParagraphCount : null,
+      scope,
+      subtreeParagraphCount: subtreeMetadataValid ? subtreeParagraphCount : null,
+      subtreeEndRef,
+      subtreeEndsAtDocumentEnd,
     };
   }
 
@@ -1501,7 +1551,9 @@
           var title = getTargetTitle(target);
           var ref = target.styleRef || null;
           var refIndex = Number(ref && ref.paragraphIndex);
-          var expected = normalizeText(ref && (ref.title || ref.text) || title);
+          var refTitle = normalizeText(ref && (ref.title || ref.text));
+          if (target.scope === "subtree" && (!ref || !Number.isInteger(refIndex) || refIndex < 0 || !refTitle)) return -1;
+          var expected = refTitle || title;
           var candidate = Number.isFinite(refIndex) ? paragraphs[refIndex] : null;
           return candidate && expected && getParagraphText(candidate) === expected ? refIndex : -1;
         }
@@ -1512,6 +1564,27 @@
           if (!Number.isInteger(count) || count < 0) return null;
           var endIndex = headingIndex + 1 + count;
           return endIndex <= paragraphs.length ? paragraphs.slice(headingIndex + 1, endIndex) : null;
+        }
+
+        function getTargetSubtreeParagraphs(paragraphs, headingIndex, target) {
+          if (!target || target.subtreeParagraphCount === null || target.subtreeParagraphCount === undefined) return null;
+          var count = Number(target.subtreeParagraphCount);
+          if (!Number.isInteger(count) || count < 1) return null;
+          var endIndex = headingIndex + count;
+          if (endIndex > paragraphs.length) return null;
+          if (target.subtreeEndsAtDocumentEnd) {
+            if (endIndex !== paragraphs.length) return null;
+          } else {
+            var endRef = target.subtreeEndRef || null;
+            var refIndex = Number(endRef && endRef.paragraphIndex);
+            var expected = normalizeText(endRef && (endRef.title || endRef.text) || "");
+            var boundary = Number.isFinite(refIndex) ? paragraphs[refIndex] : null;
+            if (refIndex !== endIndex || !boundary || !expected || getParagraphText(boundary) !== expected) return null;
+          }
+          var subtreeParagraphs = paragraphs.slice(headingIndex, endIndex);
+          return subtreeParagraphs.some(function (paragraph) { return !paragraph || typeof paragraph.Delete !== "function"; })
+            ? null
+            : subtreeParagraphs;
         }
 
         function clearTargetBodyParagraphs(paragraphs) {
@@ -1536,11 +1609,30 @@
           return { ok: true, cleared: cleared };
         }
 
+        function deleteTargetSubtreeParagraphs(paragraphs) {
+          var cleared = 0;
+          for (var index = paragraphs.length - 1; index >= 0; index -= 1) {
+            var paragraph = paragraphs[index];
+            if (!paragraph || typeof paragraph.Delete !== "function") {
+              return { ok: false, cleared: cleared, error: "目标标题子树删除接口不可用" };
+            }
+            try {
+              if (paragraph.Delete() === false) {
+                return { ok: false, cleared: cleared, error: "目标标题子树删除失败" };
+              }
+            } catch (error) {
+              return { ok: false, cleared: cleared, error: error && error.message ? error.message : "目标标题子树删除失败" };
+            }
+            cleared += 1;
+          }
+          return { ok: true, cleared: cleared };
+        }
+
         function getDocumentContentIndex(paragraph, fallbackIndex) {
           try {
             var impl = paragraph && typeof paragraph.private_GetImpl === "function" ? paragraph.private_GetImpl() : null;
             var index = impl && typeof impl.GetIndex === "function" ? impl.GetIndex() : null;
-            if (Number.isFinite(Number(index)) && Number(index) >= 0) return Number(index);
+            if (index !== null && index !== undefined && Number.isInteger(Number(index)) && Number(index) >= 0) return Number(index);
           } catch (error) {}
           return fallbackIndex;
         }
@@ -1560,6 +1652,50 @@
           return { ok: true, inserted: content.length };
         }
 
+        function insertContentAtHeading(doc, headingParagraph, headingIndex, previousParagraphCount, content) {
+          if (!content.length || typeof doc.AddElement !== "function") return { ok: false, inserted: 0, error: "OnlyOffice 标题位置插入接口不可用" };
+          if (content.some(function (paragraph) { return !paragraph || typeof paragraph.Delete !== "function"; })) {
+            return { ok: false, inserted: 0, error: "OnlyOffice 标题替换回滚接口不可用" };
+          }
+          var insertIndex = getDocumentContentIndex(headingParagraph, null);
+          if (!Number.isInteger(insertIndex)) return { ok: false, inserted: 0, error: "OnlyOffice 无法取得标题根的精确内容索引" };
+          for (var index = 0; index < content.length; index += 1) {
+            try {
+              if (doc.AddElement(insertIndex + index, content[index]) === false) {
+                var returnedFailureRollback = rollbackInsertedParagraphs(doc, content.slice(0, index), previousParagraphCount, headingIndex, getParagraphText(headingParagraph));
+                return { ok: false, inserted: returnedFailureRollback ? 0 : index, partial: !returnedFailureRollback, error: "OnlyOffice 标题位置插入返回失败" + (returnedFailureRollback ? "，已回滚" : "，且回滚失败") };
+              }
+            } catch (error) {
+              var thrownFailureRollback = rollbackInsertedParagraphs(doc, content.slice(0, index), previousParagraphCount, headingIndex, getParagraphText(headingParagraph));
+              var insertError = error && error.message ? error.message : "OnlyOffice 标题位置插入失败";
+              return { ok: false, inserted: thrownFailureRollback ? 0 : index, partial: !thrownFailureRollback, error: insertError + (thrownFailureRollback ? "，已回滚" : "，且回滚失败") };
+            }
+          }
+          return { ok: true, inserted: content.length };
+        }
+
+        function rollbackInsertedParagraphs(doc, paragraphs, expectedParagraphCount, rootIndex, rootTitle) {
+          for (var index = paragraphs.length - 1; index >= 0; index -= 1) {
+            try {
+              if (!paragraphs[index] || typeof paragraphs[index].Delete !== "function" || paragraphs[index].Delete() === false) return false;
+            } catch (error) {
+              return false;
+            }
+          }
+          var current = getAllParagraphs(doc);
+          return current.length === expectedParagraphCount
+            && current[rootIndex]
+            && getParagraphText(current[rootIndex]) === rootTitle;
+        }
+
+        function isOldSubtreeIntactAfterInsert(doc, target, headingIndex, previousParagraphCount, insertedCount) {
+          var paragraphs = getAllParagraphs(doc);
+          var oldRoot = paragraphs[headingIndex + insertedCount];
+          return paragraphs.length === previousParagraphCount + insertedCount
+            && oldRoot
+            && getParagraphText(oldRoot) === getTargetTitle(target);
+        }
+
         function verifyInsertedAfterHeading(doc, target, rows) {
           var expected = getFirstInsertText(rows);
           if (!expected) return false;
@@ -1568,6 +1704,52 @@
           if (headingIndex < 0) return false;
           var insertedParagraph = paragraphs[headingIndex + 1];
           return Boolean(insertedParagraph && getParagraphText(insertedParagraph) === expected);
+        }
+
+        function verifyInsertedAtHeading(doc, target, headingIndex, rows, insertedCount, previousParagraphCount) {
+          var expected = getFirstInsertText(rows);
+          if (!expected) return false;
+          var firstTextOffset = -1;
+          for (var index = 0; index < rows.length; index += 1) {
+            if (normalizeText(rows[index] && rows[index].text)) {
+              firstTextOffset = index;
+              break;
+            }
+          }
+          if (firstTextOffset < 0) return false;
+          var paragraphs = getAllParagraphs(doc);
+          if (paragraphs.length !== previousParagraphCount + insertedCount) return false;
+          var insertedParagraph = paragraphs[headingIndex + firstTextOffset];
+          var oldRootParagraph = paragraphs[headingIndex + insertedCount];
+          return Boolean(
+            insertedParagraph
+            && getParagraphText(insertedParagraph) === expected
+            && oldRootParagraph
+            && getParagraphText(oldRootParagraph) === getTargetTitle(target)
+          );
+        }
+
+        function verifySubtreeReplacement(doc, target, headingIndex, rows, insertedCount, previousParagraphCount, removedCount) {
+          var expected = getFirstInsertText(rows);
+          if (!expected) return false;
+          var firstTextOffset = -1;
+          for (var index = 0; index < rows.length; index += 1) {
+            if (normalizeText(rows[index] && rows[index].text)) {
+              firstTextOffset = index;
+              break;
+            }
+          }
+          if (firstTextOffset < 0) return false;
+          var paragraphs = getAllParagraphs(doc);
+          if (paragraphs.length !== previousParagraphCount + insertedCount - removedCount) return false;
+          var insertedParagraph = paragraphs[headingIndex + firstTextOffset];
+          if (!insertedParagraph || getParagraphText(insertedParagraph) !== expected) return false;
+          var boundaryIndex = headingIndex + insertedCount;
+          if (target.subtreeEndsAtDocumentEnd) return boundaryIndex === paragraphs.length;
+          var endRef = target.subtreeEndRef || null;
+          var boundaryExpected = normalizeText(endRef && (endRef.title || endRef.text) || "");
+          var boundary = paragraphs[boundaryIndex];
+          return Boolean(boundary && boundaryExpected && getParagraphText(boundary) === boundaryExpected);
         }
 
         function getReferenceParagraph(doc, item) {
@@ -1731,6 +1913,51 @@
             var headingIndex = findTargetHeadingIndex(allParagraphs, replaceTarget);
             if (headingIndex < 0) {
               Asc.scope.gfSolutionWritingResult = { ok: false, error: "保存的标题定位已失效：" + getTargetTitle(replaceTarget) };
+              return;
+            }
+            if (replaceTarget.scope === "subtree") {
+              var oldSubtreeParagraphs = getTargetSubtreeParagraphs(allParagraphs, headingIndex, replaceTarget);
+              if (!oldSubtreeParagraphs) {
+                Asc.scope.gfSolutionWritingResult = { ok: false, error: "保存的标题子树范围已失效：" + getTargetTitle(replaceTarget) };
+                return;
+              }
+              var previousParagraphCount = allParagraphs.length;
+              var subtreeInserted = insertContentAtHeading(doc, allParagraphs[headingIndex], headingIndex, previousParagraphCount, content);
+              mutation.inserted = subtreeInserted.inserted || 0;
+              if (!subtreeInserted.ok) {
+                Asc.scope.gfSolutionWritingResult = { ok: false, partial: Boolean(subtreeInserted.partial), inserted: mutation.inserted, error: subtreeInserted.error || "未能写入目标标题子树：" + getTargetTitle(replaceTarget) };
+                return;
+              }
+              if (!verifyInsertedAtHeading(doc, replaceTarget, headingIndex, source, content.length, previousParagraphCount)) {
+                var verificationRollback = rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, getTargetTitle(replaceTarget));
+                mutation.inserted = verificationRollback ? 0 : mutation.inserted;
+                Asc.scope.gfSolutionWritingResult = { ok: false, partial: !verificationRollback, inserted: mutation.inserted, error: "OnlyOffice 未确认内容写入目标标题位置：" + getTargetTitle(replaceTarget) + (verificationRollback ? "，已回滚" : "，且回滚失败") };
+                return;
+              }
+              var subtreeCleared = deleteTargetSubtreeParagraphs(oldSubtreeParagraphs);
+              mutation.cleared = subtreeCleared.cleared || 0;
+              if (!subtreeCleared.ok) {
+                var oldSubtreeIntact = mutation.cleared === 0 && isOldSubtreeIntactAfterInsert(doc, replaceTarget, headingIndex, previousParagraphCount, mutation.inserted);
+                var deleteFailureRollback = oldSubtreeIntact
+                  ? rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, getTargetTitle(replaceTarget))
+                  : false;
+                mutation.inserted = deleteFailureRollback ? 0 : mutation.inserted;
+                Asc.scope.gfSolutionWritingResult = { ok: false, partial: !deleteFailureRollback, inserted: mutation.inserted, cleared: mutation.cleared, error: (subtreeCleared.error || "新内容已写入，但原标题子树未能完整清理") + (deleteFailureRollback ? "，新内容已回滚" : "") };
+                return;
+              }
+              if (!verifySubtreeReplacement(doc, replaceTarget, headingIndex, source, mutation.inserted, previousParagraphCount, mutation.cleared)) {
+                Asc.scope.gfSolutionWritingResult = { ok: false, partial: true, inserted: mutation.inserted, cleared: mutation.cleared, error: "OnlyOffice 未确认标题子树替换后的最终位置：" + getTargetTitle(replaceTarget) };
+                return;
+              }
+              Asc.scope.gfSolutionWritingResult = {
+                ok: true,
+                source: "api-replace-heading-subtree",
+                count: content.length,
+                textCount: textCount,
+                cleared: mutation.cleared,
+                targetTitle: getTargetTitle(replaceTarget),
+                styles: styleResults,
+              };
               return;
             }
             var oldBodyParagraphs = getTargetBodyParagraphs(allParagraphs, headingIndex, replaceTarget);
@@ -2370,6 +2597,13 @@
   }
 
   async function postOutline(trigger, requestId) {
+    if (requestId) {
+      if (handledOutlineRequestIds.has(requestId)) return null;
+      handledOutlineRequestIds.add(requestId);
+      window.setTimeout(function () {
+        handledOutlineRequestIds.delete(requestId);
+      }, 120000);
+    }
     const payload = { ...extractOnlyOfficeOutline(), trigger, requestId: requestId || "" };
     const [documentStyles, outlineStyles] = await Promise.all([
       readDocumentStylesForPost(),
@@ -2400,10 +2634,20 @@
 
   async function insertSolutionWritingText(payload) {
     const requestId = payload?.requestId || "";
+    if (requestId) {
+      if (handledSolutionWritingRequestIds.has(requestId)) return null;
+      handledSolutionWritingRequestIds.add(requestId);
+      window.setTimeout(function () {
+        handledSolutionWritingRequestIds.delete(requestId);
+      }, 120000);
+    }
     const text = String(payload?.text || "").trim();
     const paragraphs = normalizeSolutionWritingParagraphs(payload);
-    const replaceTarget = normalizeSolutionReplaceTarget(payload?.replaceTarget);
-    const result = text
+    const rawReplaceTarget = payload?.replaceTarget;
+    const replaceTarget = normalizeSolutionReplaceTarget(rawReplaceTarget);
+    const result = rawReplaceTarget && !replaceTarget
+      ? { ok: false, error: "章节替换目标缺少精确定位信息" }
+      : text
       ? await insertStructuredSolutionWritingText(paragraphs, text, replaceTarget)
       : { ok: false, error: "方案正文为空" };
     const message = { source: "guangfa-onlyoffice-custom", action: "solution-writing-inserted", result: { ...result, requestId } };

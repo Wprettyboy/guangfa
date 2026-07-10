@@ -26,6 +26,7 @@ import {
 
 import {
   OnlyOfficePreview,
+  isActiveOnlyOfficeMessageSource,
   readOnlyOfficePageNumber,
 } from "./office/bridge.jsx";
 
@@ -406,6 +407,7 @@ function DocumentFrame({
         return;
       }
       if (data.action === "onlyoffice-outline-probe") {
+        if (!isActiveOnlyOfficeMessageSource(event.source)) return;
         onOfficeOutlineChange?.(data.outline);
         return;
       }

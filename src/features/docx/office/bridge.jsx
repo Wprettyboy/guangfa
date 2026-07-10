@@ -27,6 +27,7 @@ let onlyOfficeLayoutAnalyzeRequestSeq = 0;
 let onlyOfficeKnowledgeTableRequestSeq = 0;
 let onlyOfficeKnowledgeImageRequestSeq = 0;
 let onlyOfficeSolutionWritingRequestSeq = 0;
+let activeOnlyOfficeContainer = null;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
@@ -83,6 +84,7 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
     let editor = null;
     const container = containerRef.current;
     if (!container) return undefined;
+    activeOnlyOfficeContainer = container;
 
     container.replaceChildren();
     const holder = document.createElement("div");
@@ -152,6 +154,7 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
       cancelled = true;
       if (window.__guangfaActiveOnlyOfficeEditor === editor) window.__guangfaActiveOnlyOfficeEditor = null;
       clearOnlyOfficeEditor(editor);
+      if (activeOnlyOfficeContainer === container) activeOnlyOfficeContainer = null;
       try {
         editor?.destroyEditor?.();
       } catch {}
@@ -567,12 +570,13 @@ function requestOnlyOfficeOutline(options = {}) {
     const handleMessage = (event) => {
       const data = event.data || {};
       if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-outline-probe") return;
+      if (!isActiveOnlyOfficeMessageSource(event.source)) return;
       if (data.outline?.requestId !== requestId) return;
       finish(data.outline);
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应大纲读取命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    cancelPost = postAllOnlyOfficeFrames(message, 8);
+    cancelPost = postActiveOnlyOfficeFrames(message, 8);
   });
 }
 
@@ -618,12 +622,13 @@ function requestOnlyOfficeInsertSolutionTextViaProbe(text, options = {}) {
     const handleMessage = (event) => {
       const data = event.data || {};
       if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "solution-writing-inserted") return;
+      if (!isActiveOnlyOfficeMessageSource(event.source)) return;
       if (data.result?.requestId !== requestId) return;
       finish(data.result);
     };
     const timer = window.setTimeout(() => finish({ ok: false, timeout: true, requestId, error: "OnlyOffice 未响应方案正文写入命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
-    cancelPost = postAllOnlyOfficeFrames(message, 0);
+    cancelPost = postActiveOnlyOfficeFrames(message, 0);
   });
 }
 
@@ -736,6 +741,35 @@ function postAllOnlyOfficeFrames(message, attempts = 8) {
   }, attempts);
 }
 
+function postActiveOnlyOfficeFrames(message, attempts = 8) {
+  const container = activeOnlyOfficeContainer;
+  return retryOnlyOfficePost(() => {
+    [...(container?.querySelectorAll?.("iframe") || [])].forEach((frame) => {
+      try {
+        frame.contentWindow?.postMessage(message, "*");
+        postFrameChildren(frame.contentWindow, message);
+      } catch {}
+    });
+  }, attempts);
+}
+
+function isActiveOnlyOfficeMessageSource(source) {
+  if (!source || !activeOnlyOfficeContainer) return false;
+  return [...activeOnlyOfficeContainer.querySelectorAll("iframe")]
+    .some((frame) => frameTreeContainsSource(frame.contentWindow, source));
+}
+
+function frameTreeContainsSource(frameWindow, source) {
+  if (!frameWindow) return false;
+  if (frameWindow === source) return true;
+  try {
+    for (let index = 0; index < frameWindow.frames.length; index += 1) {
+      if (frameTreeContainsSource(frameWindow.frames[index], source)) return true;
+    }
+  } catch {}
+  return false;
+}
+
 function retryOnlyOfficePost(post, attempts) {
   let cancelled = false;
   let timer = null;
@@ -834,6 +868,7 @@ export {
   OnlyOfficePreview,
   fetchOnlyOfficeDownloadAsBuffer,
   loadOnlyOfficeApi,
+  isActiveOnlyOfficeMessageSource,
   postAllOnlyOfficeFrames,
   postOnlyOfficeCommand,
   readOnlyOfficePageNumber,

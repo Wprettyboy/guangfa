@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Download, FileText, Loader2, Plus, RefreshCw, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
+import { bindPlanningInsertTarget, buildPlanningReplaceTarget, normalizePlanningSubtreeMetadata } from "./planningInsert.js";
 import SolutionDraftingPanel from "./SolutionDraftingPanel.jsx";
 import TaskPlanningPanel from "./TaskPlanningPanel.jsx";
 
@@ -27,8 +28,9 @@ function SolutionWritingPanel({
   onRequestOutline,
   onInsertText,
   onExportWord,
+  onOutlineInvalidated,
 }) {
-  const [localOutline, setLocalOutline] = useState(null);
+  const [localOutline, setLocalOutline] = useState(() => outline || null);
   const [selectedGroupKey, setSelectedGroupKey] = useState("");
   const [userInstruction, setUserInstruction] = useState("");
   const [modules, setModules] = useState([]);
@@ -36,19 +38,23 @@ function SolutionWritingPanel({
   const [collapsedSectionIds, setCollapsedSectionIds] = useState(["template", "knowledge", "identify", "modules"]);
   const [activePlanPanel, setActivePlanPanel] = useState("outline-plan");
   const [generatedBlocks, setGeneratedBlocks] = useState([]);
+  const [generatedPlanningTarget, setGeneratedPlanningTarget] = useState(null);
   const [generatedTaskPlan, setGeneratedTaskPlan] = useState(null);
   const [styleSelections, setStyleSelections] = useState({});
   const [styleProbeText, setStyleProbeText] = useState("样式测试文本");
   const [styleProbeValue, setStyleProbeValue] = useState("");
   const [status, setStatus] = useState("idle");
   const [message, setMessage] = useState("");
-  const effectiveOutline = localOutline || outline;
+  const planningVersionRef = useRef(0);
+  const activeOutlineRequestRef = useRef(null);
+  const effectiveOutline = localOutline;
   const rawOutlineCount = Array.isArray(effectiveOutline?.items) ? effectiveOutline.items.length : 0;
   const styleDebug = effectiveOutline?.styleDebug || null;
   const outlineItems = useMemo(() => normalizeOutlineItems(effectiveOutline?.items), [effectiveOutline]);
   const documentStyles = useMemo(() => normalizeDocumentStyles(effectiveOutline?.documentStyles), [effectiveOutline]);
   const templateGroups = useMemo(() => buildTemplateGroups(outlineItems), [outlineItems]);
   const selectedGroup = templateGroups.find((group) => group.key === selectedGroupKey) || templateGroups[0] || null;
+  const planningReplaceTarget = useMemo(() => buildPlanningReplaceTarget(selectedGroup), [selectedGroup]);
   const styleOptions = useMemo(() => buildStyleOptions(documentStyles), [documentStyles]);
   const styleMappingRows = useMemo(() => buildStyleMappingRows(selectedGroup, documentStyles), [selectedGroup, documentStyles]);
   const styleProbeRows = useMemo(
@@ -70,6 +76,21 @@ function SolutionWritingPanel({
   }), [currentProjectId, knowledgeTopK, selectedGlobalKnowledgeBaseIds, selectedKnowledgeBases, selectedProjectKnowledgeBaseIds]);
 
   useEffect(() => {
+    const activeRequest = activeOutlineRequestRef.current;
+    const matchesActiveRequest = Boolean(outline?.requestId && outline.requestId === activeRequest?.requestId);
+    if (matchesActiveRequest && activeRequest.planningVersion !== planningVersionRef.current) {
+      activeOutlineRequestRef.current = null;
+      onOutlineInvalidated?.();
+      return;
+    }
+    setLocalOutline(outline || null);
+    if (!matchesActiveRequest) {
+      invalidatePlanningWorkflow();
+    }
+    setStatus((current) => (["identifying", "generating", "loading-outline", "inserting"].includes(current) ? "idle" : current));
+  }, [outline]);
+
+  useEffect(() => {
     if (selectedGroupKey && templateGroups.some((group) => group.key === selectedGroupKey)) return;
     const recommended = getRecommendedTemplateGroup(templateGroups);
     setSelectedGroupKey(recommended?.key || "");
@@ -86,13 +107,24 @@ function SolutionWritingPanel({
   }, [styleProbeRows, styleProbeValue]);
 
   async function refreshOutline() {
+    invalidatePlanningWorkflow();
+    setLocalOutline(null);
+    setSelectedGroupKey("");
     setStatus("loading-outline");
     setMessage("");
-    const result = await onRequestOutline?.();
+    const planningVersion = planningVersionRef.current;
+    const requestId = `solution-outline-${Date.now()}-${planningVersion}`;
+    activeOutlineRequestRef.current = { requestId, planningVersion };
+    const result = await onRequestOutline?.({ requestId });
+    if (planningVersion !== planningVersionRef.current || activeOutlineRequestRef.current?.requestId !== requestId) return;
+    activeOutlineRequestRef.current = null;
     if (result?.ok) {
       const nextOutlineItems = normalizeOutlineItems(result.items);
       const nextTemplateGroups = buildTemplateGroups(nextOutlineItems);
+      const nextSelectedGroup = nextTemplateGroups.find((group) => group.key === selectedGroupKey)
+        || getRecommendedTemplateGroup(nextTemplateGroups);
       setLocalOutline(result);
+      setSelectedGroupKey(nextSelectedGroup?.key || "");
       setStatus("idle");
       setMessage(`已读取有效标题 ${nextOutlineItems.length} 个（原始 ${result.items?.length || 0} 个），可选章节模板 ${nextTemplateGroups.length} 组`);
       return;
@@ -101,8 +133,25 @@ function SolutionWritingPanel({
     setMessage(result?.error || "未读取到 OnlyOffice 大纲，请确认左侧文档已加载。");
   }
 
+  function invalidatePlanningWorkflow() {
+    planningVersionRef.current += 1;
+    setModules([]);
+    setGeneratedBlocks([]);
+    setGeneratedPlanningTarget(null);
+    setCollapsedModuleIds([]);
+  }
+
+  function changeTemplateGroup(nextGroupKey) {
+    if (nextGroupKey === selectedGroup?.key) return;
+    setSelectedGroupKey(nextGroupKey);
+    invalidatePlanningWorkflow();
+    setMessage("");
+  }
+
   async function identifyModules() {
     if (!selectedGroup) return;
+    invalidatePlanningWorkflow();
+    const planningVersion = planningVersionRef.current;
     setStatus("identifying");
     setMessage("");
     try {
@@ -112,6 +161,7 @@ function SolutionWritingPanel({
         userInstruction,
         knowledgeOptions,
       });
+      if (planningVersion !== planningVersionRef.current) return;
       const nextModules = result.modules || [];
       setModules(nextModules);
       setCollapsedModuleIds(nextModules.map((module) => module.id));
@@ -119,6 +169,7 @@ function SolutionWritingPanel({
       setStatus("idle");
       setMessage(result.modules?.length ? `已识别 ${result.modules.length} 个功能模块` : "未识别到功能模块，请调整知识库范围或补充要求。");
     } catch (error) {
+      if (planningVersion !== planningVersionRef.current) return;
       setStatus("error");
       setMessage(error?.message || "功能模块识别失败");
     }
@@ -126,6 +177,16 @@ function SolutionWritingPanel({
 
   async function generateSections() {
     if (!selectedGroup || modules.length === 0) return;
+    const generationTarget = planningReplaceTarget;
+    if (!generationTarget) {
+      setStatus("error");
+      setMessage("选定章节模板缺少精确子树定位，请重新读取大纲后再生成规划。");
+      return;
+    }
+    planningVersionRef.current += 1;
+    const planningVersion = planningVersionRef.current;
+    setGeneratedBlocks([]);
+    setGeneratedPlanningTarget(null);
     setStatus("generating");
     setMessage("");
     const nextBlocks = [];
@@ -139,6 +200,7 @@ function SolutionWritingPanel({
           userInstruction,
           knowledgeOptions,
         });
+        if (planningVersion !== planningVersionRef.current) return;
         nextBlocks.push({
           moduleId: module.id,
           moduleName: result.moduleName || module.name,
@@ -146,25 +208,52 @@ function SolutionWritingPanel({
           warnings: result.warnings || [],
         });
       }
+      if (planningVersion !== planningVersionRef.current) return;
       setGeneratedBlocks(nextBlocks);
+      setGeneratedPlanningTarget(generationTarget);
       setStatus("idle");
       setMessage(nextBlocks.length ? `已生成 ${nextBlocks.length} 个模块写作规划，可按模块或子标题插入。` : "没有可生成的模块。");
     } catch (error) {
+      if (planningVersion !== planningVersionRef.current) return;
       setStatus("error");
       setMessage(error?.message || "方案章节生成失败");
     }
   }
 
-  async function insertGeneratedText(content, successMessage = "已插入当前光标位置") {
+  async function insertGeneratedText(content, successMessage = "已插入当前光标位置", options = {}) {
     const payload = normalizeInsertPayload(content);
     if (!payload.text) return;
+    const replaceTarget = options.replaceTarget || payload.replaceTarget || null;
+    if (options.requireReplaceTarget && !replaceTarget) {
+      setStatus("error");
+      setMessage("选定章节模板缺少精确子树定位，请重新读取大纲后再插入。");
+      return;
+    }
     setStatus("inserting");
     setMessage("");
-    const result = await onInsertText?.(payload.text, { paragraphs: payload.paragraphs });
+    const planningVersion = planningVersionRef.current;
+    const result = await onInsertText?.(payload.text, {
+      paragraphs: payload.paragraphs,
+      ...(replaceTarget ? { replaceTarget, timeoutMs: 20000 } : {}),
+    });
+    if (planningVersion !== planningVersionRef.current) return;
     if (result?.ok) {
+      const replacedSubtree = replaceTarget?.scope === "subtree";
+      if (replacedSubtree) {
+        invalidatePlanningWorkflow();
+        setLocalOutline(null);
+        setSelectedGroupKey("");
+        onOutlineInvalidated?.();
+      }
       setStatus("idle");
-      setMessage(successMessage);
+      setMessage(replacedSubtree ? `${successMessage}；请重新读取大纲后继续。` : successMessage);
       return;
+    }
+    if (result?.partial && replaceTarget?.scope === "subtree") {
+      invalidatePlanningWorkflow();
+      setLocalOutline(null);
+      setSelectedGroupKey("");
+      onOutlineInvalidated?.();
     }
     setStatus("error");
     setMessage(result?.error || "写入失败，请确认左侧文档已加载并把光标放在目标位置。");
@@ -309,7 +398,7 @@ function SolutionWritingPanel({
           onToggle={() => toggleSection("template")}
           icon={<FileText size={15} />}
         >
-          <select value={selectedGroup?.key || ""} onChange={(event) => setSelectedGroupKey(event.target.value)} disabled={templateGroups.length === 0}>
+          <select value={selectedGroup?.key || ""} onChange={(event) => changeTemplateGroup(event.target.value)} disabled={templateGroups.length === 0 || busy}>
             {templateGroups.length === 0 ? (
               <option value="">请先读取左侧文档大纲</option>
             ) : templateGroups.map((group) => (
@@ -508,8 +597,8 @@ function SolutionWritingPanel({
                 <button
                   className="text-button"
                   type="button"
-                  onClick={() => insertGeneratedText(buildAllGeneratedModulesInsert(selectedGroup, generatedBlocks, styleSelections), "已插入全部写作规划")}
-                  disabled={busy}
+                  onClick={() => insertGeneratedText(buildAllGeneratedModulesInsert(selectedGroup, generatedBlocks, styleSelections), "已按所选模板替换全部写作规划", { requireReplaceTarget: true, replaceTarget: generatedPlanningTarget })}
+                  disabled={busy || !generatedPlanningTarget}
                 >
                   {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
                   全部插入规划
@@ -534,8 +623,8 @@ function SolutionWritingPanel({
                       <button
                         className="text-button"
                         type="button"
-                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, styleSelections), `已插入 ${block.moduleName} 写作规划`)}
-                        disabled={busy}
+                        onClick={() => insertGeneratedText(buildGeneratedModuleInsert(selectedGroup, block, styleSelections), `已按所选模板替换 ${block.moduleName} 写作规划`, { requireReplaceTarget: true, replaceTarget: generatedPlanningTarget })}
+                        disabled={busy || !generatedPlanningTarget}
                       >
                         {status === "inserting" ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
                         插入规划
@@ -545,7 +634,6 @@ function SolutionWritingPanel({
                       {block.sections.map((section, sectionIndex) => {
                         const sectionLevel = Number(selectedGroup?.level || 0) + 1;
                         const sectionTitle = stripHeadingNumber(section.templateTitle || section.heading);
-                        const sectionTemplate = getSectionTemplate(selectedGroup, section, sectionIndex);
                         const sectionStyleLabel = getStyleLabel(resolveParagraphStyle("section-heading", sectionLevel, styleSelections), styleOptions);
                         const bodyStyleLabel = getStyleLabel(resolveParagraphStyle("body", null, styleSelections), styleOptions);
                         return (
@@ -558,8 +646,12 @@ function SolutionWritingPanel({
                               <button
                                 className="text-button"
                                 type="button"
-                                onClick={() => insertGeneratedText(buildGeneratedSectionInsert(sectionTitle, section.content, selectedGroup?.level + 1, styleSelections, sectionTemplate, selectedGroup), `已插入 ${sectionTitle} 写作规划`)}
-                                disabled={busy}
+                                onClick={() => insertGeneratedText(
+                                  buildGeneratedModuleInsert(selectedGroup, { ...block, sections: [section] }, styleSelections),
+                                  `已按所选模板替换 ${sectionTitle} 写作规划`,
+                                  { requireReplaceTarget: true, replaceTarget: generatedPlanningTarget },
+                                )}
+                                disabled={busy || !generatedPlanningTarget}
                               >
                                 <Send size={13} />
                                 插入规划
@@ -680,6 +772,7 @@ function normalizeOutlineItems(items) {
       bodyStyleRef: normalizeStyleRef(item.bodyStyleRef),
       bodyText: String(item.bodyText || "").trim(),
       bodyParagraphCount: normalizeBodyParagraphCount(item.bodyParagraphCount),
+      ...normalizePlanningSubtreeMetadata(item),
     }))
     .filter((item) => item.title && !item.isEmptyItem);
 }
@@ -723,6 +816,7 @@ function buildTemplateGroups(items) {
             bodyStyleName: normalizeBodyStyleName(child.bodyStyleName),
             bodyStyleSource: child.bodyStyleSource,
             bodyStyleRef: normalizeBodyStyleRef(child.bodyStyleRef),
+            ...normalizePlanningSubtreeMetadata(child),
           });
         }
       }
@@ -739,6 +833,7 @@ function buildTemplateGroups(items) {
         bodyStyleName: itemBodyStyleName || firstBodyTemplate?.bodyStyleName || "",
         bodyStyleSource: itemBodyStyleName ? item.bodyStyleSource : firstBodyTemplate?.bodyStyleSource || "",
         bodyStyleRef: itemBodyStyleRef || firstBodyTemplate?.bodyStyleRef || null,
+        ...normalizePlanningSubtreeMetadata(item),
         childTemplates,
       };
     })
@@ -932,12 +1027,12 @@ function getStyleName(value) {
 
 function buildAllGeneratedModulesInsert(group, blocks, styleSelections = {}) {
   const items = (Array.isArray(blocks) ? blocks : []).map((block) => buildGeneratedModuleInsert(group, block, styleSelections));
-  return {
+  return bindPlanningInsertTarget({
     text: items.map((item) => item.text).filter(Boolean).join("\n\n"),
     paragraphs: items.flatMap((item, index) => (
       index === 0 ? item.paragraphs : [{ type: "blank", text: "" }, ...item.paragraphs]
     )),
-  };
+  }, group);
 }
 
 function buildGeneratedModuleInsert(group, block, styleSelections = {}) {
@@ -959,7 +1054,7 @@ function buildGeneratedModuleInsert(group, block, styleSelections = {}) {
     const template = getSectionTemplate(group, section, sectionIndex);
     paragraphs.push(...buildGeneratedSectionInsert(title, section.content, Number(group?.level || 0) + 1, styleSelections, template, group).paragraphs);
   });
-  return paragraphsToInsertPayload(paragraphs);
+  return bindPlanningInsertTarget(paragraphsToInsertPayload(paragraphs), group);
 }
 
 function buildGeneratedSectionInsert(title, content, level = 2, styleSelections = {}, template = null, bodyTemplate = null) {
@@ -1014,8 +1109,9 @@ function paragraphsToInsertPayload(paragraphs) {
 
 function normalizeStyleRef(ref) {
   if (!ref || typeof ref !== "object") return null;
+  if (ref.paragraphIndex == null || String(ref.paragraphIndex).trim() === "") return null;
   const paragraphIndex = Number(ref.paragraphIndex);
-  return Number.isFinite(paragraphIndex)
+  return Number.isInteger(paragraphIndex) && paragraphIndex >= 0
     ? {
       paragraphIndex,
       outlineIndex: Number.isFinite(Number(ref.outlineIndex)) ? Number(ref.outlineIndex) : null,
@@ -1059,7 +1155,12 @@ function getSectionTemplate(group, section, sectionIndex) {
 }
 
 function normalizeInsertPayload(content) {
-  if (content && typeof content === "object") return paragraphsToInsertPayload(content.paragraphs || []);
+  if (content && typeof content === "object") {
+    return {
+      ...paragraphsToInsertPayload(content.paragraphs || []),
+      ...(Object.hasOwn(content, "replaceTarget") ? { replaceTarget: content.replaceTarget } : {}),
+    };
+  }
   const text = String(content || "").trim();
   return {
     text,
