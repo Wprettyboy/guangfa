@@ -134,6 +134,7 @@ import {
   sortFieldsByDocumentOrder,
 } from "./utils/fields.js";
 import {
+  downloadDocxBuffer,
   formatFileSize,
   readKnowledgeDocumentFile,
   readMaterialFile,
@@ -2210,6 +2211,14 @@ export default function App() {
     return requestOnlyOfficeInsertKnowledgeImage(image);
   }
 
+  async function exportSolutionWord() {
+    if (!templateFile?.buffer) throw new Error("请先加载 Word 文档。");
+    const buffer = await requestOnlyOfficeDocumentDownloadAs("docx", 20000);
+    if (!buffer) throw new Error("OnlyOffice 未返回导出文件，请等待文档加载完成后重试。");
+    const sourceName = String(templateFile.name || "方案文档.docx").trim() || "方案文档.docx";
+    downloadDocxBuffer(buffer, /\.docx$/i.test(sourceName) ? sourceName : `${sourceName}.docx`);
+  }
+
   const solutionWritingWorkspaceActive = activeWorkspace === "solution-writing";
 
   return (
@@ -2434,6 +2443,7 @@ export default function App() {
                 currentPage={annotatePreviewPage}
                 onUploadTemplate={uploadTemplate}
                 onSaveTemplate={saveTemplate}
+                onExportSolutionWord={templateOfficeDocId ? exportSolutionWord : null}
                 onPreviewPageChange={setAnnotatePreviewPage}
                 onSlotClick={markSlot}
                 onSelectField={(fieldId) => {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Loader2, Plus, RefreshCw, Save, Send, Trash2, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Download, FileText, Loader2, Plus, RefreshCw, Send, Trash2, Wand2 } from "lucide-react";
 import { generateSolutionModuleSections, identifySolutionModules } from "./service.js";
 import SolutionDraftingPanel from "./SolutionDraftingPanel.jsx";
 import TaskPlanningPanel from "./TaskPlanningPanel.jsx";
@@ -16,7 +16,6 @@ const SOLUTION_STYLE_OPTIONS = [
 
 function SolutionWritingPanel({
   outline,
-  saveState,
   knowledgeBases = [],
   selectedProjectKnowledgeBaseIds = [],
   selectedGlobalKnowledgeBaseIds = [],
@@ -27,7 +26,7 @@ function SolutionWritingPanel({
   onKnowledgeTopKChange,
   onRequestOutline,
   onInsertText,
-  onSaveTemplate,
+  onExportWord,
 }) {
   const [localOutline, setLocalOutline] = useState(null);
   const [selectedGroupKey, setSelectedGroupKey] = useState("");
@@ -186,6 +185,20 @@ function SolutionWritingPanel({
     await insertGeneratedText({ text, paragraphs: [paragraph] }, `已插入样式测试：${row.label}`);
   }
 
+  async function exportWord() {
+    if (!onExportWord) return;
+    setStatus("exporting");
+    setMessage("");
+    try {
+      await onExportWord();
+      setStatus("idle");
+      setMessage("Word 文档已导出");
+    } catch (error) {
+      setStatus("error");
+      setMessage(error?.message || "导出失败，请确认左侧文档已加载。");
+    }
+  }
+
   function addModule() {
     const nextId = `SOL-M${String(modules.length + 1).padStart(3, "0")}-${Date.now()}`;
     const nextModule = { id: nextId, name: "新功能模块", description: "", reason: "", sourceRefs: [] };
@@ -226,7 +239,7 @@ function SolutionWritingPanel({
     });
   }
 
-  const busy = ["loading-outline", "identifying", "generating", "inserting"].includes(status);
+  const busy = ["loading-outline", "identifying", "generating", "inserting", "exporting"].includes(status);
 
   return (
     <div className="panel-section solution-writing-panel standalone">
@@ -237,9 +250,9 @@ function SolutionWritingPanel({
             {status === "loading-outline" ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
             读取大纲
           </button>
-          <button className="text-button" type="button" onClick={onSaveTemplate} disabled={saveState === "saving"}>
-            {saveState === "saving" ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
-            保存模板
+          <button className="text-button" type="button" onClick={exportWord} disabled={busy || !onExportWord}>
+            {status === "exporting" ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+            {status === "exporting" ? "导出中" : "导出Word"}
           </button>
         </div>
       </div>

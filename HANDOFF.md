@@ -176,6 +176,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - “方案编写”已从 OnlyOffice“定制组件”迁为一级“方案编写工作台”，同时加入侧栏与工作台标签导航。
 - 新工作台复用 `AnnotateWorkspace` 和同一个 `DocumentFrame(mode="annotate")`，在模板标注与方案编写之间切换时不重建 OnlyOffice 编辑器；方案大纲读取、结构化文本写入、知识库配图和 AI 生图继续使用现有 bridge。
+- 方案编写面板右上角使用“导出Word”，直接调用 `requestOnlyOfficeDocumentDownloadAs("docx")` 下载当前编辑器中的最新文档；编辑器未就绪或实时导出失败时不回退旧模板文件。
 - 已删除 Toolbar 中的“方案编写”按钮、前端 `open-solution-writing-panel` 消息分支和对应回调 prop；旧会话/草稿中的 `annotate + solution-writing` 路由会精确迁到新工作台。
 - RequireJS 缓存号已更新到 `gf=25`，工作台会话同时补齐 `layout` 与 `complex-fill` 的既有恢复白名单。
 - 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下各 7 项回归测试、生产构建和注入脚本语法；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，Toolbar 已无旧入口且 `.js/.gz` 哈希一致。

@@ -27,6 +27,7 @@ function AnnotateWorkspace({
   currentPage,
   onUploadTemplate,
   onSaveTemplate,
+  onExportSolutionWord,
   onPreviewPageChange,
   onSlotClick,
   onSelectField,
@@ -145,7 +146,6 @@ function AnnotateWorkspace({
         {showSolutionWritingPanel ? (
           <SolutionWritingPanel
             outline={officeOutline}
-            saveState={saveState}
             knowledgeBases={knowledgeBases}
             selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
             selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
@@ -156,7 +156,7 @@ function AnnotateWorkspace({
             onKnowledgeTopKChange={onKnowledgeTopKChange}
             onRequestOutline={requestOnlyOfficeOutline}
             onInsertText={requestOnlyOfficeInsertSolutionText}
-            onSaveTemplate={() => onSaveTemplate?.(templateCategory)}
+            onExportWord={onExportSolutionWord}
           />
         ) : showComplexFillPanel ? (
           <ComplexFillPanel
