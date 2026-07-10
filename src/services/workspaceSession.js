@@ -1,8 +1,8 @@
 const workspaceSessionKey = "guangfa-workspace-session";
 
 const validModules = new Set(["workspace", "template-management", "knowledge-management", "settings"]);
-const validWorkspaces = new Set(["annotate", "fill", "audit"]);
-const validAnnotatePanels = new Set(["fields", "placeholders"]);
+const validWorkspaces = new Set(["annotate", "fill", "solution-writing", "layout", "audit"]);
+const validAnnotatePanels = new Set(["fields", "placeholders", "complex-fill"]);
 
 function readWorkspaceSession() {
   try {
@@ -21,9 +21,18 @@ function saveWorkspaceSession(session = {}) {
 }
 
 function normalizeWorkspaceSession(session = {}) {
+  const legacySolutionWritingRoute = session.activeWorkspace === "annotate" && session.annotateSidePanelMode === "solution-writing";
   const activeModule = validModules.has(session.activeModule) ? session.activeModule : "workspace";
-  const activeWorkspace = validWorkspaces.has(session.activeWorkspace) ? session.activeWorkspace : "annotate";
-  const annotateSidePanelMode = validAnnotatePanels.has(session.annotateSidePanelMode) ? session.annotateSidePanelMode : "fields";
+  const activeWorkspace = legacySolutionWritingRoute
+    ? "solution-writing"
+    : validWorkspaces.has(session.activeWorkspace)
+      ? session.activeWorkspace
+      : "annotate";
+  const annotateSidePanelMode = legacySolutionWritingRoute
+    ? "fields"
+    : validAnnotatePanels.has(session.annotateSidePanelMode)
+      ? session.annotateSidePanelMode
+      : "fields";
   return {
     activeModule,
     activeWorkspace,
@@ -45,6 +54,7 @@ function normalizePage(page) {
 }
 
 export {
+  normalizeWorkspaceSession,
   readWorkspaceSession,
   saveWorkspaceSession,
 };

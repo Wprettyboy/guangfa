@@ -345,11 +345,13 @@ export default function App() {
           ? "系统设置"
           : activeWorkspace === "annotate"
             ? "模板标注工作台"
-            : activeWorkspace === "layout"
-              ? "排版工作台"
-            : activeWorkspace === "audit"
-              ? "格式审核工作台"
-              : "填充确认工作台";
+            : activeWorkspace === "solution-writing"
+              ? "方案编写工作台"
+              : activeWorkspace === "layout"
+                ? "排版工作台"
+                : activeWorkspace === "audit"
+                  ? "格式审核工作台"
+                  : "填充确认工作台";
   const selectedFillKnowledgeBaseIds = useMemo(
     () => [...selectedProjectKnowledgeBaseIds, ...selectedGlobalKnowledgeBaseIds],
     [selectedGlobalKnowledgeBaseIds, selectedProjectKnowledgeBaseIds],
@@ -561,6 +563,12 @@ export default function App() {
         });
       },
     });
+  }
+
+  function openAnnotateSidePanel(panelMode) {
+    setActiveModule("workspace");
+    setActiveWorkspace("annotate");
+    setAnnotateSidePanelMode(panelMode);
   }
 
   function getDraftTemplateFile(file = templateFile) {
@@ -900,6 +908,7 @@ export default function App() {
 
     const existingField = templateFields.find((field) => field.slotId === slot.id);
     if (existingField) {
+      openAnnotateSidePanel("fields");
       setSelectedTemplateFieldId(existingField.id);
       return existingField.id;
     }
@@ -908,7 +917,7 @@ export default function App() {
     const nextField = createAnnotatedField(slot, getNextFieldNumber(templateFields), fieldType);
     const nextFields = [...templateFields, nextField];
     setTemplateFields(nextFields);
-    setAnnotateSidePanelMode("fields");
+    openAnnotateSidePanel("fields");
     setSelectedTemplateFieldId(nextField.id);
     setSaveState("dirty");
     requestOnlyOfficeAddFieldBookmark(nextField);
@@ -1399,7 +1408,7 @@ export default function App() {
     setCitationFieldId(nextCitationFieldId);
     await saveDraftState(normalizeDraftFillState({
       activeModule,
-      activeWorkspace: "annotate",
+      activeWorkspace,
       annotateSidePanelMode,
       templateFile: getDraftTemplateFile({ ...templateFile, sourceTemplateId: savedTemplate.id, buffer: fileBuffer, size: formatFileSize(fileBuffer.byteLength) }),
       templateFields: normalizedTemplateFields,
@@ -2201,7 +2210,7 @@ export default function App() {
     return requestOnlyOfficeInsertKnowledgeImage(image);
   }
 
-  const solutionWritingPanelActive = activeWorkspace === "annotate" && annotateSidePanelMode === "solution-writing";
+  const solutionWritingWorkspaceActive = activeWorkspace === "solution-writing";
 
   return (
     <div className="app-shell" ref={appRef}>
@@ -2237,6 +2246,12 @@ export default function App() {
                 onClick={() => animateWorkspace("fill")}
               >
                 填充确认工作台
+              </button>
+              <button
+                className={activeModule === "workspace" && activeWorkspace === "solution-writing" ? "child-link active" : "child-link"}
+                onClick={() => animateWorkspace("solution-writing")}
+              >
+                方案编写工作台
               </button>
               <button
                 className={activeModule === "workspace" && activeWorkspace === "layout" ? "child-link active" : "child-link"}
@@ -2312,7 +2327,7 @@ export default function App() {
                     </button>
                   </>
                 ) : null}
-                {solutionWritingPanelActive ? (
+                {solutionWritingWorkspaceActive ? (
                   <>
                     <button className="tool-button workspace-table-button" type="button" onClick={() => setKnowledgeImagePickerOpen(true)}>
                       <ImageIcon size={16} />
@@ -2338,6 +2353,13 @@ export default function App() {
                     onClick={() => animateWorkspace("fill")}
                   >
                     填充确认工作台
+                  </button>
+                  <button
+                    className={activeWorkspace === "solution-writing" ? "tab active" : "tab"}
+                    data-testid="tab-solution-writing"
+                    onClick={() => animateWorkspace("solution-writing")}
+                  >
+                    方案编写工作台
                   </button>
                   <button
                     className={activeWorkspace === "layout" ? "tab active" : "tab"}
@@ -2390,7 +2412,7 @@ export default function App() {
               <LayoutWorkspace />
             ) : activeWorkspace === "audit" ? (
               <FormatAuditWorkspace onStoreTemplate={storeAuditTemplate} />
-            ) : activeWorkspace === "annotate" ? (
+            ) : activeWorkspace === "annotate" || activeWorkspace === "solution-writing" ? (
               <AnnotateWorkspace
                 templateFile={templateFile}
                 fields={templateFields}
@@ -2399,7 +2421,7 @@ export default function App() {
                 placeholderReuseTemplates={templateLibrary}
                 complexFillFields={complexFillFields}
                 complexFillAnchors={complexFillAnchors}
-                sidePanelMode={annotateSidePanelMode}
+                sidePanelMode={solutionWritingWorkspaceActive ? "solution-writing" : annotateSidePanelMode}
                 knowledgeBases={knowledgeBases}
                 selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
                 selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
@@ -2415,7 +2437,7 @@ export default function App() {
                 onPreviewPageChange={setAnnotatePreviewPage}
                 onSlotClick={markSlot}
                 onSelectField={(fieldId) => {
-                  setAnnotateSidePanelMode("fields");
+                  openAnnotateSidePanel("fields");
                   setSelectedTemplateFieldId(fieldId);
                 }}
                 onUpdateField={updateTemplateField}
@@ -2430,9 +2452,8 @@ export default function App() {
                 onInsertPlaceholderVariable={insertPlaceholderVariable}
                 onJumpPlaceholderAnchor={jumpToPlaceholderAnchor}
                 onDeletePlaceholderAnchor={deletePlaceholderAnchor}
-                onOpenPlaceholderPanel={() => setAnnotateSidePanelMode("placeholders")}
-                onOpenComplexFillPanel={() => setAnnotateSidePanelMode("complex-fill")}
-                onOpenSolutionWritingPanel={() => setAnnotateSidePanelMode("solution-writing")}
+                onOpenPlaceholderPanel={() => openAnnotateSidePanel("placeholders")}
+                onOpenComplexFillPanel={() => openAnnotateSidePanel("complex-fill")}
                 onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
                 onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
                 onKnowledgeTopKChange={setKnowledgeTopK}
@@ -2500,10 +2521,10 @@ export default function App() {
         onClose={() => setKnowledgeTablePickerOpen(false)}
       />
       <KnowledgeImagePicker
-        open={knowledgeImagePickerOpen && activeModule === "workspace" && (activeWorkspace === "fill" || solutionWritingPanelActive)}
-        title={solutionWritingPanelActive ? "插入方案配图" : "插入资料图片"}
-        emptyScopeMessage={solutionWritingPanelActive ? "请先在方案编写的知识库范围中选择项目库或全局库。" : "请先在填充工作台选择项目库或全局库。"}
-        insertButtonLabel={solutionWritingPanelActive ? "插入配图" : "插入到光标"}
+        open={knowledgeImagePickerOpen && activeModule === "workspace" && (activeWorkspace === "fill" || solutionWritingWorkspaceActive)}
+        title={solutionWritingWorkspaceActive ? "插入方案配图" : "插入资料图片"}
+        emptyScopeMessage={solutionWritingWorkspaceActive ? "请先在方案编写的知识库范围中选择项目库或全局库。" : "请先在填充工作台选择项目库或全局库。"}
+        insertButtonLabel={solutionWritingWorkspaceActive ? "插入配图" : "插入到光标"}
         knowledgeBases={knowledgeBases}
         selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
         selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
@@ -2511,7 +2532,7 @@ export default function App() {
         onClose={() => setKnowledgeImagePickerOpen(false)}
       />
       <SolutionAiImageModal
-        open={solutionAiImageOpen && activeModule === "workspace" && solutionWritingPanelActive}
+        open={solutionAiImageOpen && activeModule === "workspace" && solutionWritingWorkspaceActive}
         outline={null}
         onRequestOutline={requestOnlyOfficeOutline}
         onInsertImage={insertKnowledgeImage}

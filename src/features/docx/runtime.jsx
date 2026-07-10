@@ -100,7 +100,6 @@ function DocumentFrame({
   onInputPointCaptured,
   onOpenPlaceholderPanel,
   onOpenComplexFillPanel,
-  onOpenSolutionWritingPanel,
   onOfficeOutlineChange,
   onOfficeDocumentReady,
   aiKnowledgeContext,
@@ -406,10 +405,6 @@ function DocumentFrame({
         onOpenComplexFillPanel?.();
         return;
       }
-      if (data.action === "open-solution-writing-panel") {
-        onOpenSolutionWritingPanel?.();
-        return;
-      }
       if (data.action === "onlyoffice-outline-probe") {
         onOfficeOutlineChange?.(data.outline);
         return;
@@ -446,7 +441,7 @@ function DocumentFrame({
     }
     window.addEventListener("message", handleOfficeAnnotation);
     return () => window.removeEventListener("message", handleOfficeAnnotation);
-  }, [activeOfficePreview?.id, mode, onFieldPagesChange, onInputPointCaptured, onOfficeOutlineChange, onOpenComplexFillPanel, onOpenPlaceholderPanel, onOpenSolutionWritingPanel, onSlotClick]);
+  }, [activeOfficePreview?.id, mode, onFieldPagesChange, onInputPointCaptured, onOfficeOutlineChange, onOpenComplexFillPanel, onOpenPlaceholderPanel, onSlotClick]);
 
   function jumpToPage(pageNumber) {
     if (!isReady) return;

@@ -63,7 +63,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 - `src/main.jsx`：前端入口，只做 React 挂载；不要再把业务逻辑堆回这里。
 - `src/App.jsx`：根状态与工作台编排，目前仍偏重；只放跨页面状态、批量填充编排、草稿保存这类上层逻辑。
-- `src/pages/AnnotateWorkspace.jsx`：模板标注页面组合。
+- `src/pages/AnnotateWorkspace.jsx`：模板标注与方案编写工作台页面组合；两者复用同一个 `DocumentFrame(mode="annotate")`，切换工作台时只切换右侧业务面板。
 - `src/pages/FillWorkspace.jsx`：填充工作台页面组合。
 - `src/pages/LayoutWorkspace.jsx`：排版工作台页面组合，复用 OnlyOffice 预览并调用排版 bridge。
 - `src/pages/FormatAuditWorkspace.jsx`：格式审核页面组合。
@@ -103,7 +103,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `src/features/placeholders/variables.js`：自动字段设置的变量/Token/锚点归一化、排序和填充卡片聚合工具，独立于旧模板字段。
 - `src/features/placeholders/fill.js`：自动字段填充的 AI 请求字段构造、返回值归一化和写入失败状态辅助。
 - `src/features/placeholders/PlaceholderFillCards.jsx`：填充工作台的自动字段卡片列表，只展示已有插入位置的字段。
-- `src/features/solution-writing/`：方案编写面板与前端服务，负责读取 OnlyOffice 大纲、选择章节模板组、确认功能模块清单、生成模块章节并写入当前光标。
+- `src/features/solution-writing/`：方案编写工作台侧栏与前端服务，负责读取 OnlyOffice 大纲、选择章节模板组、确认功能模块清单、生成模块章节并写入当前光标。
 - `scripts/onlyoffice-placeholder-fields.js`：注入 OnlyOffice 的占位符变量脚本，负责 `GF_PH_` 书签插入、跳转、删除和按书签替换填充值。
 - `scripts/patch-onlyoffice.py`：补 OnlyOffice 前端，包括隐藏品牌、注入定制组件入口等。
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
@@ -164,13 +164,21 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ## 当前技术路线
 
 1. 文档预览已经切到 OnlyOffice，不再以 `docx-preview` 做主预览。
-2. 自定义业务功能通过 OnlyOffice 的“定制组件”按钮和 `postMessage` 与 React 通信。
+2. OnlyOffice 编辑器能力通过现有 bridge / `postMessage` 与 React 通信；工作台级入口由应用导航承载，编辑器上下文操作保留在“定制组件”。
 3. 模板标注以 OnlyOffice 真实选区为准，字段保存的是选区原文、页码、bookmark/selection/inputPoint 等信息。
 4. 填充确认工作台优先用 OnlyOffice 现场写入与下载回传保存，避免旧 HTML DOCX 预览链路导致状态丢失。
 5. 格式审核工作台保留脚本审查 + AI 大纲审查；修复仍由脚本写 DOCX 副本。
 6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/_meta/routes` 和 `/api/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
 
 ## 最近已完成
+
+### 方案编写工作台迁移
+
+- “方案编写”已从 OnlyOffice“定制组件”迁为一级“方案编写工作台”，同时加入侧栏与工作台标签导航。
+- 新工作台复用 `AnnotateWorkspace` 和同一个 `DocumentFrame(mode="annotate")`，在模板标注与方案编写之间切换时不重建 OnlyOffice 编辑器；方案大纲读取、结构化文本写入、知识库配图和 AI 生图继续使用现有 bridge。
+- 已删除 Toolbar 中的“方案编写”按钮、前端 `open-solution-writing-panel` 消息分支和对应回调 prop；旧会话/草稿中的 `annotate + solution-writing` 路由会精确迁到新工作台。
+- RequireJS 缓存号已更新到 `gf=25`，工作台会话同时补齐 `layout` 与 `complex-fill` 的既有恢复白名单。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下各 7 项回归测试、生产构建和注入脚本语法；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，Toolbar 已无旧入口且 `.js/.gz` 哈希一致。
 
 ### 安全与失败语义加固
 
@@ -369,7 +377,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
-- 当前有效缓存号：outline `gf=117`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=24`、API `_dc=9.4.0-129-gf30`。
+- 当前有效缓存号：outline `gf=117`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 ### OnlyOffice 原生 AI 接本地模型
@@ -402,9 +410,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 标注字段
 - 自动字段设置（占位符变量）
 - 复杂类填充
-- 方案编写
 
-不要再污染 OnlyOffice 原生工具按钮。业务按钮放在“定制组件”里。
+不要再污染 OnlyOffice 原生工具按钮。编辑器上下文按钮放在“定制组件”里，工作台入口放在应用导航中。
 
 ## 历史坑位
 

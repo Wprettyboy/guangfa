@@ -36,8 +36,11 @@ function normalizePendingFillFields(fields = []) {
 
 function normalizeDraftFillState(draft) {
   if (!draft) return draft;
+  const legacySolutionWritingRoute = draft.activeWorkspace === "annotate" && draft.annotateSidePanelMode === "solution-writing";
   return {
     ...draft,
+    activeWorkspace: legacySolutionWritingRoute ? "solution-writing" : draft.activeWorkspace,
+    annotateSidePanelMode: legacySolutionWritingRoute ? "fields" : draft.annotateSidePanelMode,
     placeholderFills: normalizePendingFillMap(draft.placeholderFills),
     complexFillFills: normalizePendingFillMap(draft.complexFillFills),
     fillFields: normalizePendingFillFields(draft.fillFields),

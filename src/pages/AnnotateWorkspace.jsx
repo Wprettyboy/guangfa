@@ -44,7 +44,6 @@ function AnnotateWorkspace({
   onDeletePlaceholderAnchor,
   onOpenPlaceholderPanel,
   onOpenComplexFillPanel,
-  onOpenSolutionWritingPanel,
   onAddComplexFillField,
   onUpdateComplexFillField,
   onDeleteComplexFillField,
@@ -137,7 +136,6 @@ function AnnotateWorkspace({
           onInputPointCaptured={onInputPointCaptured}
           onOpenPlaceholderPanel={onOpenPlaceholderPanel}
           onOpenComplexFillPanel={onOpenComplexFillPanel}
-          onOpenSolutionWritingPanel={onOpenSolutionWritingPanel}
           onOfficeOutlineChange={setOfficeOutline}
           onOfficeDocumentReady={onOfficeDocumentReady}
         />

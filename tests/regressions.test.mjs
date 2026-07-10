@@ -8,7 +8,32 @@ import { assertFillModelResult } from "../server/ai/fill.js";
 import { parseModelJson } from "../server/ai/model.js";
 import { assertOfficeDocumentId, createOfficeDocument, validateOnlyOfficeDocumentUrl } from "../server/office.js";
 import { API_KEY_UNCHANGED, redactModelConfig, resolveApiKeyUpdate } from "../server/settings.js";
+import { normalizeDraftFillState } from "../src/features/docx/fill/draftState.js";
+import { normalizeWorkspaceSession } from "../src/services/workspaceSession.js";
 import { isAllowedApiOrigin } from "../vite.config.js";
+
+test("workspace sessions restore standalone and annotation workspaces", () => {
+  assert.equal(normalizeWorkspaceSession({ activeWorkspace: "solution-writing" }).activeWorkspace, "solution-writing");
+  assert.equal(normalizeWorkspaceSession({ activeWorkspace: "layout" }).activeWorkspace, "layout");
+  assert.equal(normalizeWorkspaceSession({ annotateSidePanelMode: "complex-fill" }).annotateSidePanelMode, "complex-fill");
+
+  const legacySession = normalizeWorkspaceSession({
+    activeWorkspace: "annotate",
+    annotateSidePanelMode: "solution-writing",
+  });
+  assert.equal(legacySession.activeWorkspace, "solution-writing");
+  assert.equal(legacySession.annotateSidePanelMode, "fields");
+});
+
+test("legacy solution-writing drafts migrate to the standalone workspace", () => {
+  const draft = normalizeDraftFillState({
+    activeWorkspace: "annotate",
+    annotateSidePanelMode: "solution-writing",
+  });
+
+  assert.equal(draft.activeWorkspace, "solution-writing");
+  assert.equal(draft.annotateSidePanelMode, "fields");
+});
 
 test("API origins are limited to the local web app and OnlyOffice", () => {
   const request = {
