@@ -188,7 +188,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 写入使用 `replaceTarget.scope = "subtree"`，同时校验根标题索引/原文、子树段落数和结束边界；校验成功后在原根位置插入新规划，再按旧对象引用逆序删除原子树。任一边界失效均失败关闭，不按标题搜索、不扩大范围、不回退当前光标。
 - 缺失的 `subtreeEndRef` 不会被归一化成文档末尾；子树目标必须带非空且一致的 `styleRef` 标题。大纲读取、AI 识别/生成和插入均绑定版本，消息只向当前 OnlyOffice 实例发送并校验回包来源，文档切换后的迟到结果不会复活旧目标。
 - Probe 按 `requestId` 去重大纲读取和方案写入。新内容插入失败或删除旧子树前验证失败时会回滚并复核段落数/原标题；旧子树已部分删除等不可完整回滚场景返回 `partial: true`，前端立即废弃大纲和目标，强制重新读取。
-- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下各 9 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=118`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
+- OnlyOffice 9.4 的 `CDocumentOutline.Elements[index]` 是 `{ Paragraph, Lvl }` 包装项；Probe 必须使用其 `.Paragraph` 与 `LogicDocument.GetAllParagraphs()` 做对象身份匹配。直接拿包装项匹配会让全部 `styleRef` 和子树元数据为空。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下各 10 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=119`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
 
 ### 安全与失败语义加固
 
@@ -242,7 +243,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 3. `scripts/patch-onlyoffice.py` 注入脚本只作为现有功能兼容层或 Connector/插件不可用时的 fallback；后续新业务能力不要默认继续堆到注入脚本里。
 4. Connector 属于 OnlyOffice Automation API，部分部署版本可能不可用；调用方必须先探测能力并保留明确降级路径，不允许静默假装成功。
 5. 需要“沿用原文标题/正文样式”时，优先保存参考段落定位信息，在写入命令同一 Office 上下文里重新定位参考段落，并用 `referenceParagraph.GetParaPr().GetStyle()` + `targetParagraph.GetParaPr().SetStyle(style)` 复制真实段落样式；只有参考段落缺失时才退回样式名匹配。
-6. 需要把导航大纲项精确映射到正文段落时，兼容注入层使用 `CDocumentOutline.Elements[item.index]` 保存的真实 `Paragraph` 对象，与 `LogicDocument.GetAllParagraphs()` 按对象身份取得 `paragraphIndex`；对象或下一条大纲边界映射失败时返回空引用和空正文范围，不得按标题文本扫描补偿。
+6. 需要把导航大纲项精确映射到正文段落时，兼容注入层使用 `CDocumentOutline.Elements[item.index].Paragraph` 保存的真实 `Paragraph` 对象，与 `LogicDocument.GetAllParagraphs()` 按对象身份取得 `paragraphIndex`；`Elements[item.index]` 本身是 `{ Paragraph, Lvl }` 包装项。对象或下一条大纲边界映射失败时返回空引用和空正文范围，不得按标题文本扫描补偿。
 
 #### 通信约定
 
@@ -387,7 +388,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
-- 当前有效缓存号：outline `gf=118`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
+- 当前有效缓存号：outline `gf=119`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 ### OnlyOffice 原生 AI 接本地模型

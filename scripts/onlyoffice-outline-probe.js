@@ -269,7 +269,8 @@
   function matchOutlineStyleRows(items, outlineElements, paragraphRows, source) {
     const paragraphIndexes = new Map(paragraphRows.map((row) => [row.paragraph, row.paragraphIndex]));
     const matched = items.map((item) => {
-      const paragraphIndex = paragraphIndexes.get(outlineElements?.[item.index]);
+      const outlineEntry = outlineElements?.[item.index];
+      const paragraphIndex = paragraphIndexes.get(outlineEntry?.Paragraph);
       const found = Number.isInteger(paragraphIndex) ? paragraphRows[paragraphIndex] : null;
       return {
         index: item.index,
@@ -280,7 +281,7 @@
         styleRef: found ? {
           paragraphIndex: found.paragraphIndex,
           outlineIndex: item.index,
-          title: item.title,
+          title: found.text,
           level: item.level != null && Number.isFinite(Number(item.level)) ? Number(item.level) : null,
           styleName: found.styleName || "",
         } : null,

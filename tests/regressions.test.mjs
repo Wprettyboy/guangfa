@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { unlink } from "node:fs/promises";
+import { readFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -94,6 +94,13 @@ test("solution planning inserts preserve the selected template subtree target", 
   const invalidBoundaryMetadata = normalizePlanningSubtreeMetadata({ subtreeParagraphCount: 9, subtreeEndRef: { title: "invalid" } });
   assert.equal(Object.hasOwn(invalidBoundaryMetadata, "subtreeEndRef"), true);
   assert.equal(buildPlanningReplaceTarget({ ...target, ...invalidBoundaryMetadata }), null);
+});
+
+test("OnlyOffice outline metadata dereferences the SDK outline entry paragraph", async () => {
+  const source = await readFile(new URL("../scripts/onlyoffice-outline-probe.js", import.meta.url), "utf8");
+  assert.match(source, /const outlineEntry = outlineElements\?\.\[item\.index\]/);
+  assert.match(source, /paragraphIndexes\.get\(outlineEntry\?\.Paragraph\)/);
+  assert.match(source, /title: found\.text/);
 });
 
 test("solution connector replaces only the selected template subtree", async () => {
