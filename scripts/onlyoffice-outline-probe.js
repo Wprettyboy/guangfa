@@ -241,18 +241,8 @@
 
   function getLogicDocumentParagraphs(logicDocument) {
     if (!logicDocument) return [];
-    const attempts = [
-      () => safeCall(logicDocument, "GetAllParagraphs", null, { OnlyMainDocument: true, All: true }),
-      () => safeCall(logicDocument, "GetAllParagraphs", null, { All: true }),
-      () => safeCall(logicDocument, "GetAllParagraphs", null),
-    ];
-    for (const attempt of attempts) {
-      try {
-        const paragraphs = attempt();
-        if (Array.isArray(paragraphs)) return paragraphs;
-      } catch {}
-    }
-    return [];
+    const paragraphs = safeCall(logicDocument, "GetAllParagraphs", null, { OnlyMainDocument: true, All: true });
+    return Array.isArray(paragraphs) ? paragraphs : [];
   }
 
   function getLogicParagraphStyleName(paragraph, logicDocument) {
@@ -1539,8 +1529,24 @@
 
         function getAllParagraphs(doc) {
           try {
-            var direct = doc && typeof doc.GetAllParagraphs === "function" ? doc.GetAllParagraphs() : null;
-            return Array.isArray(direct) ? direct : [];
+            var apiParagraphs = doc && typeof doc.GetAllParagraphs === "function" ? doc.GetAllParagraphs() : null;
+            var logicParagraphs = doc && doc.Document && typeof doc.Document.GetAllParagraphs === "function"
+              ? doc.Document.GetAllParagraphs({ OnlyMainDocument: true, All: true })
+              : null;
+            if (!Array.isArray(apiParagraphs) || !Array.isArray(logicParagraphs)) return [];
+            var apiParagraphsByImpl = new Map();
+            for (var apiIndex = 0; apiIndex < apiParagraphs.length; apiIndex += 1) {
+              var apiParagraph = apiParagraphs[apiIndex];
+              var impl = apiParagraph && typeof apiParagraph.private_GetImpl === "function" ? apiParagraph.private_GetImpl() : null;
+              if (impl) apiParagraphsByImpl.set(impl, apiParagraph);
+            }
+            var mainParagraphs = [];
+            for (var logicIndex = 0; logicIndex < logicParagraphs.length; logicIndex += 1) {
+              var mapped = apiParagraphsByImpl.get(logicParagraphs[logicIndex]);
+              if (!mapped) return [];
+              mainParagraphs.push(mapped);
+            }
+            return mainParagraphs;
           } catch (error) {
             return [];
           }

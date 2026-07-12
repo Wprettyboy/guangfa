@@ -31,9 +31,24 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
       );
     }
     function getAllParagraphs(doc) {
-      var direct = callWithArgs(doc, "GetAllParagraphs", []);
-      if (Array.isArray(direct)) return direct;
-      return [];
+      var apiParagraphs = callWithArgs(doc, "GetAllParagraphs", []);
+      var logicParagraphs = doc && doc.Document
+        ? callWithArgs(doc.Document, "GetAllParagraphs", [{ OnlyMainDocument: true, All: true }])
+        : null;
+      if (!Array.isArray(apiParagraphs) || !Array.isArray(logicParagraphs)) return [];
+      var apiParagraphsByImpl = new Map();
+      for (var apiIndex = 0; apiIndex < apiParagraphs.length; apiIndex += 1) {
+        var apiParagraph = apiParagraphs[apiIndex];
+        var impl = callWithArgs(apiParagraph, "private_GetImpl", []);
+        if (impl) apiParagraphsByImpl.set(impl, apiParagraph);
+      }
+      var mainParagraphs = [];
+      for (var logicIndex = 0; logicIndex < logicParagraphs.length; logicIndex += 1) {
+        var mapped = apiParagraphsByImpl.get(logicParagraphs[logicIndex]);
+        if (!mapped) return [];
+        mainParagraphs.push(mapped);
+      }
+      return mainParagraphs;
     }
     function getReferenceParagraph(doc, item) {
       var ref = item && item.styleRef;

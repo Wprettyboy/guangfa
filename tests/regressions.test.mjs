@@ -110,7 +110,9 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   let documentApi = null;
   let actionStarts = 0;
   let actionFinishes = 0;
+  let resolveOutline;
   let resolveInsert;
+  const outlined = new Promise((resolve) => { resolveOutline = resolve; });
   const inserted = new Promise((resolve) => { resolveInsert = resolve; });
   const createParagraph = (text = "") => {
     const paragraph = {
@@ -120,19 +122,22 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
         return {};
       },
       Delete() {
-        const index = documentApi.paragraphs.indexOf(paragraph);
+        const index = mainParagraphs.indexOf(paragraph);
         if (index < 0) return false;
-        documentApi.paragraphs.splice(index, 1);
+        mainParagraphs.splice(index, 1);
         return true;
       },
       GetParaPr() {
         return { GetStyle: () => null, SetStyle: () => true };
       },
+      GetIndex() {
+        return mainParagraphs.indexOf(paragraph);
+      },
       GetText() {
         return this.text;
       },
       private_GetImpl() {
-        return { GetIndex: () => documentApi.paragraphs.indexOf(paragraph) };
+        return paragraph;
       },
       SetStyle() {
         return true;
@@ -140,10 +145,18 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
     };
     return paragraph;
   };
+  const mainParagraphs = ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph);
+  const headerParagraph = createParagraph("Header");
+  const footnoteParagraph = createParagraph("Footnote");
   documentApi = {
-    paragraphs: ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph),
+    get paragraphs() {
+      return [headerParagraph, ...mainParagraphs, footnoteParagraph];
+    },
+    Document: {
+      GetAllParagraphs: () => [...mainParagraphs],
+    },
     AddElement(index, paragraph) {
-      this.paragraphs.splice(index, 0, paragraph);
+      mainParagraphs.splice(index, 0, paragraph);
       return true;
     },
     GetAllParagraphs() {
@@ -157,6 +170,9 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
     FinalizeAction() {
       actionFinishes += 1;
     },
+    GetAllParagraphs(options) {
+      return options?.OnlyMainDocument ? [...mainParagraphs] : [...documentApi.paragraphs];
+    },
     Recalculate() {},
     StartAction() {
       actionStarts += 1;
@@ -166,8 +182,22 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   };
   const parent = {
     postMessage(message) {
+      if (message?.action === "onlyoffice-outline-probe") resolveOutline(message.outline);
       if (message?.action === "solution-writing-inserted") resolveInsert(message.result);
     },
+  };
+  const outlineRows = [
+    { paragraph: mainParagraphs[1], level: 1, title: "Template root" },
+    { paragraph: mainParagraphs[2], level: 2, title: "Template child" },
+    { paragraph: mainParagraphs[4], level: 1, title: "Next chapter" },
+  ];
+  const outlineManager = {
+    Elements: outlineRows.map((row) => ({ Paragraph: row.paragraph, Lvl: row.level })),
+    get_ElementsCount: () => outlineRows.length,
+    get_Level: (index) => outlineRows[index].level,
+    get_Text: (index) => outlineRows[index].title,
+    isEmptyItem: () => false,
+    isFirstItemNotHeader: () => false,
   };
   const asc = {
     editor: {
@@ -185,6 +215,9 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
       },
     },
     AscDFH: { historydescription_BuilderScript: 1 },
+    DE: {
+      getController: () => ({ _navigationObject: outlineManager, api: asc.editor }),
+    },
     addEventListener(type, handler) {
       if (type === "message") messageHandler = handler;
     },
@@ -195,8 +228,17 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
     setTimeout: () => 1,
     top: parent,
   };
-  runInNewContext(source, { Asc: asc, console, window: windowObject });
+  const quietConsole = { error() {}, log() {}, table() {}, warn() {} };
+  runInNewContext(source, { Asc: asc, console: quietConsole, window: windowObject });
   assert.equal(typeof messageHandler, "function");
+
+  messageHandler({ data: { source: "guangfa-parent", action: "request-outline", requestId: "builder-api-outline" } });
+  const outline = await outlined;
+  const target = outline.items.find((item) => item.title === "Template root");
+  assert.equal(target.paragraphIndex, 1);
+  assert.equal(target.styleRef.paragraphIndex, 1);
+  assert.equal(target.subtreeEndRef.paragraphIndex, 4);
+  assert.equal(target.subtreeParagraphCount, 3);
 
   messageHandler({
     data: {
@@ -210,10 +252,10 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
       ],
       replaceTarget: {
         scope: "subtree",
-        title: "Template root",
-        styleRef: { paragraphIndex: 1, title: "Template root" },
-        subtreeEndRef: { paragraphIndex: 4, title: "Next chapter" },
-        subtreeParagraphCount: 3,
+        title: target.styleRef.title,
+        styleRef: target.styleRef,
+        subtreeEndRef: target.subtreeEndRef,
+        subtreeParagraphCount: target.subtreeParagraphCount,
       },
     },
   });
@@ -221,9 +263,38 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   const result = await inserted;
   assert.equal(result.ok, true);
   assert.equal(result.source, "api-replace-heading-subtree");
-  assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "New root", "New body", "Next chapter", "After"]);
-  assert.equal(actionStarts, 1);
-  assert.equal(actionFinishes, 1);
+  assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "New root", "New body", "Next chapter", "After", "Footnote"]);
+
+  const outlinedEnd = new Promise((resolve) => { resolveOutline = resolve; });
+  messageHandler({ data: { source: "guangfa-parent", action: "request-outline", requestId: "builder-api-end-outline" } });
+  const endOutline = await outlinedEnd;
+  const endTarget = endOutline.items.find((item) => item.title === "Next chapter");
+  assert.equal(endTarget.styleRef.paragraphIndex, 3);
+  assert.equal(endTarget.subtreeParagraphCount, 2);
+  assert.equal(endTarget.subtreeEndRef, null);
+
+  const insertedEnd = new Promise((resolve) => { resolveInsert = resolve; });
+  messageHandler({
+    data: {
+      source: "guangfa-parent",
+      action: "insert-solution-writing-text",
+      requestId: "builder-api-end-subtree",
+      text: "Final chapter",
+      paragraphs: [{ type: "heading", text: "Final chapter" }],
+      replaceTarget: {
+        scope: "subtree",
+        title: endTarget.styleRef.title,
+        styleRef: endTarget.styleRef,
+        subtreeEndRef: null,
+        subtreeParagraphCount: endTarget.subtreeParagraphCount,
+      },
+    },
+  });
+  const endResult = await insertedEnd;
+  assert.equal(endResult.ok, true);
+  assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "New root", "New body", "Final chapter", "Footnote"]);
+  assert.equal(actionStarts, 2);
+  assert.equal(actionFinishes, 2);
 });
 
 test("solution connector replaces only the selected template subtree", async () => {
@@ -253,7 +324,10 @@ test("solution connector replaces only the selected template subtree", async () 
         return this.text;
       },
       private_GetImpl() {
-        return { GetIndex: () => documentApi.paragraphs.indexOf(paragraph) };
+        return paragraph;
+      },
+      GetIndex() {
+        return documentApi.paragraphs.indexOf(paragraph);
       },
       SetStyle() {
         return true;
@@ -265,6 +339,11 @@ test("solution connector replaces only the selected template subtree", async () 
     addElementCallCount = 0;
     documentApi = {
       paragraphs: ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph),
+      Document: {
+        GetAllParagraphs() {
+          return documentApi.paragraphs.map((paragraph) => paragraph.private_GetImpl());
+        },
+      },
       AddElement(index, paragraph) {
         if (addElementCallCount === addElementFailureAt) {
           addElementCallCount += 1;

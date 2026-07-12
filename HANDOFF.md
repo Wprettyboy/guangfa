@@ -190,7 +190,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - Probe 按 `requestId` 去重大纲读取和方案写入。新内容插入失败或删除旧子树前验证失败时会回滚并复核段落数/原标题；旧子树已部分删除等不可完整回滚场景返回 `partial: true`，前端立即废弃大纲和目标，强制重新读取。
 - OnlyOffice 9.4 的 `CDocumentOutline.Elements[index]` 是 `{ Paragraph, Lvl }` 包装项；Probe 必须使用其 `.Paragraph` 与 `LogicDocument.GetAllParagraphs()` 做对象身份匹配。直接拿包装项匹配会让全部 `styleRef` 和子树元数据为空。
 - 当前社区版外层 `api.js` 不提供 `DocsAPI.DocEditor.createConnector()`，编辑器主窗口也不是插件上下文，不能调用 `Asc.Editor.callCommand()`；注入层通过本地 SDK 已加载的 `AscBuilder.Api.GetDocument/CreateParagraph` 执行同一套精确替换命令，并用 `LogicDocument.StartAction/FinalizeAction` 包住历史动作。只有索引、标题、子树数量和结束边界全部校验通过才写入，逻辑文档当前光标 fallback 仍保持关闭。
-- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=120`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
+- `ApiDocument.GetAllParagraphs()` 无参调用会按“页眉页脚、主文档、脚注尾注”返回全量段落，不能直接使用大纲读取保存的主文档索引。Probe 与 Connector 写入命令现在从 `ApiDocument.Document.GetAllParagraphs({ OnlyMainDocument: true, All: true })` 取得主文档 Paragraph，再按 `ApiParagraph.private_GetImpl()` 对象身份映射回同序 API wrapper；任一对象缺失即失败关闭，不使用固定偏移或标题扫描。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=121`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
 
 ### 安全与失败语义加固
 
@@ -318,7 +319,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `insertKnowledgeTable(payload)`：调用 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入后端生成的单表格 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退 `Asc.Editor.callCommand()` + `Api.CreateTable(rows, columns)` + `ApiDocument.InsertContent([table])` 创建普通表格；按 `requestId` 去重，失败时返回 `knowledge-table-inserted` 错误结果。
   - `insertKnowledgeImage(payload)`：优先调用 OnlyOffice 工具栏同源接口 `api.AddImageUrl([imageSrc])` 插入当前光标；`imageSrc` 优先使用前端桥接层由图片预览地址转换出的 Base64 data URL，避免 Docker 内外 `127.0.0.1` / `host.docker.internal` 可访问性不一致导致空白图；原生接口不可用时才回退 `Api.CreateImage(imageSrc, widthEmu, heightEmu)` + `ApiDocument.InsertContent()`，旧数据缺少图片源时再回退 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入单图片 DOCX；按 `requestId` 去重，失败时返回 `knowledge-image-inserted` 错误结果。
   - `request-outline` 消息：调用 `postOutline("request", requestId)`，回传当前 OnlyOffice 大纲。
-  - `insertSolutionWritingText(payload)`：接收方案写入文本；当 payload 带 `paragraphs` 时，插件环境通过 `Asc.Editor.callCommand()` 执行结构化写入，当前社区版编辑器主窗口通过 SDK 已加载的 `AscBuilder.Api` 执行同一命令；两者均使用 `Api.CreateParagraph()`、`ApiDocument.InsertContent()`，并用 `ApiDocument.GetStyle()` + `ApiParagraph.SetStyle()` 套用 Word 段落样式。如传入 `styleName` 则优先使用文档真实样式名，只有样式未命中时才对 `ApiParagraph.AddText()` 返回的 run 做字体/字号/加粗兜底。正文定向替换接受保存的 `paragraphIndex + 预期标题 + bodyParagraphCount`；子树替换接受 `scope: "subtree" + 根 styleRef + subtreeParagraphCount + subtreeEndRef`，校验成功后在原根位置插入新内容，再删除精确旧子树。任一定位信息缺失或失效均失败关闭，不按标题文本或“下一个标题”扫描补偿，带 `replaceTarget` 的请求也不回退当前光标写入。普通当前光标插入仍可使用 `enterTextAtSelection(text, "solution-writing")` fallback。
+  - `insertSolutionWritingText(payload)`：接收方案写入文本；当 payload 带 `paragraphs` 时，插件环境通过 `Asc.Editor.callCommand()` 执行结构化写入，当前社区版编辑器主窗口通过 SDK 已加载的 `AscBuilder.Api` 执行同一命令；两者均使用 `Api.CreateParagraph()`、`ApiDocument.InsertContent()`，并用 `ApiDocument.GetStyle()` + `ApiParagraph.SetStyle()` 套用 Word 段落样式。定向写入会先把主文档真实 Paragraph 按对象身份映射为同序 API wrapper，确保读取和写入使用同一主文档索引空间。如传入 `styleName` 则优先使用文档真实样式名，只有样式未命中时才对 `ApiParagraph.AddText()` 返回的 run 做字体/字号/加粗兜底。正文定向替换接受保存的 `paragraphIndex + 预期标题 + bodyParagraphCount`；子树替换接受 `scope: "subtree" + 根 styleRef + subtreeParagraphCount + subtreeEndRef`，校验成功后在原根位置插入新内容，再删除精确旧子树。任一定位信息缺失或失效均失败关闭，不按标题文本或“下一个标题”扫描补偿，带 `replaceTarget` 的请求也不回退当前光标写入。普通当前光标插入仍可使用 `enterTextAtSelection(text, "solution-writing")` fallback。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
@@ -365,6 +366,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `Api.CreateTable(rows, columns)`：创建 OnlyOffice 表格对象。
 - `Api.CreateImage(imageSrc, width, height)`：创建 OnlyOffice 图片对象；OnlyOffice 官方支持互联网 URL 或 Base64 图片源，`width/height` 使用 EMU。项目内图片插入优先传 Base64 data URL；只有明确确认 URL 在浏览器与 DocumentServer 容器两侧都可访问时才直接传 URL。
 - `ApiDocument.InsertContent([element])`：把表格等文档对象插入当前光标位置。
+- `ApiDocument.Document.GetAllParagraphs({ OnlyMainDocument: true, All: true })` + `ApiParagraph.private_GetImpl()`：将主文档内部 Paragraph 列表按对象身份映射为同序 API wrapper，适合在存在页眉页脚、脚注尾注时继续使用保存的主文档精确索引；映射不完整时必须失败关闭。
 - `logicDocument.StartAction(...)` / `FinalizeAction()`：把一组内部编辑操作包成一次历史动作。
 - `logicDocument.Recalculate()`、`UpdateInterface()`、`UpdateSelection()`：插入或删除后刷新文档状态和 UI。
 - `logicDocument.MoveCursorRight(true, false)`：从当前位置向右扩展选区。
@@ -389,7 +391,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
-- 当前有效缓存号：outline `gf=120`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
+- 当前有效缓存号：outline `gf=121`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 ### OnlyOffice 原生 AI 接本地模型
