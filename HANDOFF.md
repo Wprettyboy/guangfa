@@ -189,7 +189,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 缺失的 `subtreeEndRef` 不会被归一化成文档末尾；子树目标必须带非空且一致的 `styleRef` 标题。大纲读取、AI 识别/生成和插入均绑定版本，消息只向当前 OnlyOffice 实例发送并校验回包来源，文档切换后的迟到结果不会复活旧目标。
 - Probe 按 `requestId` 去重大纲读取和方案写入。新内容插入失败或删除旧子树前验证失败时会回滚并复核段落数/原标题；旧子树已部分删除等不可完整回滚场景返回 `partial: true`，前端立即废弃大纲和目标，强制重新读取。
 - OnlyOffice 9.4 的 `CDocumentOutline.Elements[index]` 是 `{ Paragraph, Lvl }` 包装项；Probe 必须使用其 `.Paragraph` 与 `LogicDocument.GetAllParagraphs()` 做对象身份匹配。直接拿包装项匹配会让全部 `styleRef` 和子树元数据为空。
-- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8090` 下各 10 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=119`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
+- 当前社区版外层 `api.js` 不提供 `DocsAPI.DocEditor.createConnector()`，编辑器主窗口也不是插件上下文，不能调用 `Asc.Editor.callCommand()`；注入层通过本地 SDK 已加载的 `AscBuilder.Api.GetDocument/CreateParagraph` 执行同一套精确替换命令，并用 `LogicDocument.StartAction/FinalizeAction` 包住历史动作。只有索引、标题、子树数量和结束边界全部校验通过才写入，逻辑文档当前光标 fallback 仍保持关闭。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=120`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
 
 ### 安全与失败语义加固
 
@@ -317,7 +318,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
   - `insertKnowledgeTable(payload)`：调用 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入后端生成的单表格 DOCX；只有旧数据缺少 DOCX 片段 URL 时才回退 `Asc.Editor.callCommand()` + `Api.CreateTable(rows, columns)` + `ApiDocument.InsertContent([table])` 创建普通表格；按 `requestId` 去重，失败时返回 `knowledge-table-inserted` 错误结果。
   - `insertKnowledgeImage(payload)`：优先调用 OnlyOffice 工具栏同源接口 `api.AddImageUrl([imageSrc])` 插入当前光标；`imageSrc` 优先使用前端桥接层由图片预览地址转换出的 Base64 data URL，避免 Docker 内外 `127.0.0.1` / `host.docker.internal` 可访问性不一致导致空白图；原生接口不可用时才回退 `Api.CreateImage(imageSrc, widthEmu, heightEmu)` + `ApiDocument.InsertContent()`，旧数据缺少图片源时再回退 `asc_insertTextFromUrl(url)` 或 `AscCommonWord.CInsertDocumentManager(api).insertTextFromUrl(url)` 插入单图片 DOCX；按 `requestId` 去重，失败时返回 `knowledge-image-inserted` 错误结果。
   - `request-outline` 消息：调用 `postOutline("request", requestId)`，回传当前 OnlyOffice 大纲。
-  - `insertSolutionWritingText(payload)`：接收方案写入文本；当 payload 带 `paragraphs` 时，优先通过 OnlyOffice `Asc.Editor.callCommand()`、`Api.CreateParagraph()`、`ApiDocument.InsertContent()` 插入结构化段落，并用 `ApiDocument.GetStyle()` + `ApiParagraph.SetStyle()` 套用 Word 段落样式；如传入 `styleName` 则优先使用文档真实样式名，只有样式未命中时才对 `ApiParagraph.AddText()` 返回的 run 做字体/字号/加粗兜底。正文定向替换接受保存的 `paragraphIndex + 预期标题 + bodyParagraphCount`；子树替换接受 `scope: "subtree" + 根 styleRef + subtreeParagraphCount + subtreeEndRef`，校验成功后在原根位置插入新内容，再删除精确旧子树。任一定位信息缺失或失效均失败关闭，不按标题文本或“下一个标题”扫描补偿，带 `replaceTarget` 的请求也不回退当前光标写入。普通当前光标插入仍可使用 `enterTextAtSelection(text, "solution-writing")` fallback。
+  - `insertSolutionWritingText(payload)`：接收方案写入文本；当 payload 带 `paragraphs` 时，插件环境通过 `Asc.Editor.callCommand()` 执行结构化写入，当前社区版编辑器主窗口通过 SDK 已加载的 `AscBuilder.Api` 执行同一命令；两者均使用 `Api.CreateParagraph()`、`ApiDocument.InsertContent()`，并用 `ApiDocument.GetStyle()` + `ApiParagraph.SetStyle()` 套用 Word 段落样式。如传入 `styleName` 则优先使用文档真实样式名，只有样式未命中时才对 `ApiParagraph.AddText()` 返回的 run 做字体/字号/加粗兜底。正文定向替换接受保存的 `paragraphIndex + 预期标题 + bodyParagraphCount`；子树替换接受 `scope: "subtree" + 根 styleRef + subtreeParagraphCount + subtreeEndRef`，校验成功后在原根位置插入新内容，再删除精确旧子树。任一定位信息缺失或失效均失败关闭，不按标题文本或“下一个标题”扫描补偿，带 `replaceTarget` 的请求也不回退当前光标写入。普通当前光标插入仍可使用 `enterTextAtSelection(text, "solution-writing")` fallback。
   - `saveOnlyOfficeDocument(trigger)`：调用 `api.asc_Save(false)` 并回传保存结果。
   - `setTrackRevisions(enabled)`：依次尝试 `asc_SetTrackRevisions`、`asc_setTrackRevisions`、`SetTrackRevisions`、`logicDocument.SetTrackRevisions`。
   - `postOutline()`、`postSelection()`、`postPageChange()`：把大纲、选区、页码变化回传给 React。
@@ -388,7 +389,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
-- 当前有效缓存号：outline `gf=119`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
+- 当前有效缓存号：outline `gf=120`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 ### OnlyOffice 原生 AI 接本地模型

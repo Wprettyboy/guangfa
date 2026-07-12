@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { assertFillModelResult } from "../server/ai/fill.js";
 import { parseModelJson } from "../server/ai/model.js";
 import { assertOfficeDocumentId, createOfficeDocument, validateOnlyOfficeDocumentUrl } from "../server/office.js";
@@ -101,6 +102,128 @@ test("OnlyOffice outline metadata dereferences the SDK outline entry paragraph",
   assert.match(source, /const outlineEntry = outlineElements\?\.\[item\.index\]/);
   assert.match(source, /paragraphIndexes\.get\(outlineEntry\?\.Paragraph\)/);
   assert.match(source, /title: found\.text/);
+});
+
+test("OnlyOffice probe replaces a precise subtree through the loaded Builder API", async () => {
+  const source = await readFile(new URL("../scripts/onlyoffice-outline-probe.js", import.meta.url), "utf8");
+  let messageHandler = null;
+  let documentApi = null;
+  let actionStarts = 0;
+  let actionFinishes = 0;
+  let resolveInsert;
+  const inserted = new Promise((resolve) => { resolveInsert = resolve; });
+  const createParagraph = (text = "") => {
+    const paragraph = {
+      text,
+      AddText(value) {
+        this.text += String(value || "");
+        return {};
+      },
+      Delete() {
+        const index = documentApi.paragraphs.indexOf(paragraph);
+        if (index < 0) return false;
+        documentApi.paragraphs.splice(index, 1);
+        return true;
+      },
+      GetParaPr() {
+        return { GetStyle: () => null, SetStyle: () => true };
+      },
+      GetText() {
+        return this.text;
+      },
+      private_GetImpl() {
+        return { GetIndex: () => documentApi.paragraphs.indexOf(paragraph) };
+      },
+      SetStyle() {
+        return true;
+      },
+    };
+    return paragraph;
+  };
+  documentApi = {
+    paragraphs: ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph),
+    AddElement(index, paragraph) {
+      this.paragraphs.splice(index, 0, paragraph);
+      return true;
+    },
+    GetAllParagraphs() {
+      return [...this.paragraphs];
+    },
+    GetStyle() {
+      return null;
+    },
+  };
+  const logicDocument = {
+    FinalizeAction() {
+      actionFinishes += 1;
+    },
+    Recalculate() {},
+    StartAction() {
+      actionStarts += 1;
+    },
+    UpdateInterface() {},
+    UpdateSelection() {},
+  };
+  const parent = {
+    postMessage(message) {
+      if (message?.action === "solution-writing-inserted") resolveInsert(message.result);
+    },
+  };
+  const asc = {
+    editor: {
+      WordControl: { m_oLogicDocument: logicDocument },
+      asc_Save() {},
+    },
+    scope: {},
+  };
+  const windowObject = {
+    Asc: asc,
+    AscBuilder: {
+      Api: {
+        CreateParagraph: () => createParagraph(),
+        GetDocument: () => documentApi,
+      },
+    },
+    AscDFH: { historydescription_BuilderScript: 1 },
+    addEventListener(type, handler) {
+      if (type === "message") messageHandler = handler;
+    },
+    clearInterval() {},
+    clearTimeout() {},
+    parent,
+    setInterval: () => 1,
+    setTimeout: () => 1,
+    top: parent,
+  };
+  runInNewContext(source, { Asc: asc, console, window: windowObject });
+  assert.equal(typeof messageHandler, "function");
+
+  messageHandler({
+    data: {
+      source: "guangfa-parent",
+      action: "insert-solution-writing-text",
+      requestId: "builder-api-subtree",
+      text: "New root\nNew body",
+      paragraphs: [
+        { type: "heading", text: "New root" },
+        { type: "body", text: "New body" },
+      ],
+      replaceTarget: {
+        scope: "subtree",
+        title: "Template root",
+        styleRef: { paragraphIndex: 1, title: "Template root" },
+        subtreeEndRef: { paragraphIndex: 4, title: "Next chapter" },
+        subtreeParagraphCount: 3,
+      },
+    },
+  });
+
+  const result = await inserted;
+  assert.equal(result.ok, true);
+  assert.equal(result.source, "api-replace-heading-subtree");
+  assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "New root", "New body", "Next chapter", "After"]);
+  assert.equal(actionStarts, 1);
+  assert.equal(actionFinishes, 1);
 });
 
 test("solution connector replaces only the selected template subtree", async () => {

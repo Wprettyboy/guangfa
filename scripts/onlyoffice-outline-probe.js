@@ -1469,7 +1469,14 @@
 
   async function insertStructuredSolutionWritingText(paragraphs, fallbackText, replaceTarget) {
     if (!Array.isArray(paragraphs) || paragraphs.length === 0) return enterTextAtSelection(fallbackText, "solution-writing");
-    if (!window.Asc?.Editor || typeof window.Asc.Editor.callCommand !== "function") {
+    const canCallCommand = Boolean(window.Asc?.Editor && typeof window.Asc.Editor.callCommand === "function");
+    const builderApi = window.AscBuilder?.Api;
+    const canUseBuilderApi = Boolean(
+      builderApi
+      && typeof builderApi.GetDocument === "function"
+      && typeof builderApi.CreateParagraph === "function"
+    );
+    if (!canCallCommand && !canUseBuilderApi) {
       return insertStructuredSolutionWritingTextFromLogic(paragraphs, fallbackText, replaceTarget);
     }
     try {
@@ -1477,7 +1484,8 @@
       window.Asc.scope.gfSolutionWritingParagraphs = paragraphs;
       window.Asc.scope.gfSolutionWritingReplaceTarget = replaceTarget || null;
       window.Asc.scope.gfSolutionWritingResult = null;
-      await window.Asc.Editor.callCommand(function () {
+      const executeCommand = function (apiOverride) {
+        var officeApi = apiOverride && typeof apiOverride.GetDocument === "function" ? apiOverride : Api;
         function callAny(targets, names, args) {
           for (var targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
             var target = targets[targetIndex];
@@ -1853,7 +1861,7 @@
 
         function prepareCurrentInsertPosition(doc) {
           try {
-            var anchorParagraph = Api.CreateParagraph();
+            var anchorParagraph = officeApi.CreateParagraph();
             var result = doc.InsertContent([anchorParagraph]);
             return result === false
               ? { ok: false, inserted: false, error: "OnlyOffice 插入锚点返回失败" }
@@ -1866,8 +1874,8 @@
         var mutation = { anchorInserted: false, inserted: 0, cleared: 0 };
         try {
           var source = Asc.scope.gfSolutionWritingParagraphs || [];
-          var doc = Api.GetDocument();
-          if (!doc || typeof Api.CreateParagraph !== "function") {
+          var doc = officeApi.GetDocument();
+          if (!doc || typeof officeApi.CreateParagraph !== "function") {
             Asc.scope.gfSolutionWritingResult = { ok: false, error: "OnlyOffice 段落插入接口不可用" };
             return;
           }
@@ -1877,7 +1885,7 @@
           for (var index = 0; index < source.length; index += 1) {
             var item = source[index] || {};
             if (!item.text && item.type !== "blank") continue;
-            var paragraph = Api.CreateParagraph();
+            var paragraph = officeApi.CreateParagraph();
             var styleRequest = item.styleName || item.style || "";
             var styleItem = {};
             for (var key in item) {
@@ -2019,7 +2027,25 @@
             error: error?.message || "方案规划段落插入失败",
           };
         }
-      });
+      };
+      if (canCallCommand) {
+        await window.Asc.Editor.callCommand(executeCommand);
+      } else {
+        const logicDocument = getLogicDocument();
+        let actionStarted = false;
+        try {
+          if (logicDocument && typeof logicDocument.StartAction === "function") {
+            logicDocument.StartAction(window.AscDFH?.historydescription_BuilderScript);
+            actionStarted = true;
+          }
+          executeCommand(builderApi);
+          safeCall(logicDocument, "Recalculate", null);
+          safeCall(logicDocument, "UpdateInterface", null);
+          safeCall(logicDocument, "UpdateSelection", null);
+        } finally {
+          if (actionStarted) safeCall(logicDocument, "FinalizeAction", null);
+        }
+      }
       const result = window.Asc.scope.gfSolutionWritingResult || { ok: false, error: "OnlyOffice 段落插入命令未返回结果。" };
       if (result.ok) {
         safeCall(getLogicDocument(), "Recalculate", null);
