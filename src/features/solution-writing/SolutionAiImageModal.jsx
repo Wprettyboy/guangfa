@@ -26,7 +26,7 @@ function SolutionAiImageModal({
   const busy = status === "loading-outline" || status === "generating" || status === "inserting";
 
   useEffect(() => {
-    if (!open || outlineItems.length || status !== "idle") return;
+    if (!open) return;
     refreshOutline();
   }, [open]);
 
@@ -36,6 +36,8 @@ function SolutionAiImageModal({
     setStatus("loading-outline");
     setMessage("");
     setGeneratedImage(null);
+    setLocalOutline(null);
+    setSelectedIndex("");
     const result = await onRequestOutline?.({ timeoutMs: 10000 });
     if (result?.ok) {
       const nextItems = normalizeOutlineItems(result.items);
@@ -57,7 +59,6 @@ function SolutionAiImageModal({
     try {
       const result = await generateSolutionPlantumlImage({
         prompt,
-        selectedOutlineIndex: selectedItem.index,
         selectedTitle: selectedItem.title,
         selectedBodyText: selectedItem.bodyText,
         outlineItems,
@@ -132,7 +133,7 @@ function SolutionAiImageModal({
               <span>生图要求</span>
               <textarea
                 value={prompt}
-                placeholder="例如：生成系统总体架构图，突出业务层、能力层、数据层和外部接口关系。"
+                placeholder="例如：生成业务流程图；生成功能组成图；生成系统总体架构图。"
                 onChange={(event) => {
                   setPrompt(event.target.value);
                   setGeneratedImage(null);

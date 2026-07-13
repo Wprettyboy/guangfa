@@ -13,8 +13,8 @@ const plantumlAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqr
 
 async function generateSolutionPlantumlImage(payload = {}) {
   const runtime = getAiRuntimeConfig();
-  const prompt = cleanText(payload.prompt).slice(0, 2000);
-  const selectedTitle = cleanText(payload.selectedTitle || "当前章节").slice(0, 200);
+  const prompt = cleanMultilineText(payload.prompt).slice(0, 2000);
+  const selectedTitle = cleanText(payload.selectedTitle).slice(0, 200);
   const selectedBodyText = cleanMultilineText(payload.selectedBodyText).slice(0, 12000);
   const outlineText = cleanMultilineText(payload.outlineText || buildOutlineText(payload.outlineItems)).slice(0, 24000);
   if (!prompt) {
@@ -27,6 +27,7 @@ async function generateSolutionPlantumlImage(payload = {}) {
     error.statusCode = 400;
     throw error;
   }
+  const diagramPolicy = resolveDiagramPolicy({ prompt, selectedTitle });
 
   const errors = [];
   let lastParsed = null;
@@ -40,6 +41,7 @@ async function generateSolutionPlantumlImage(payload = {}) {
         selectedBodyText,
         outlineText,
         errors,
+        diagramPolicy,
       }),
       4096,
       {
@@ -48,6 +50,8 @@ async function generateSolutionPlantumlImage(payload = {}) {
           attempt,
           selectedTitle,
           prompt,
+          diagramType: diagramPolicy.type,
+          allowCombined: diagramPolicy.allowCombined,
           previousErrors: errors,
           hasSelectedBodyText: Boolean(selectedBodyText),
           outlineChars: outlineText.length,
@@ -55,8 +59,8 @@ async function generateSolutionPlantumlImage(payload = {}) {
       },
     );
     lastParsed = parsed;
-    const plantuml = normalizePlantumlSource(parsed.plantuml || parsed.uml || parsed.code);
-    const validation = await validatePlantuml(plantuml);
+    const plantuml = normalizePlantumlSource(parsed.plantuml || parsed.uml || parsed.code, diagramPolicy);
+    const validation = await validatePlantuml(plantuml, diagramPolicy);
     if (!validation.ok) {
       errors.push(validation.error);
       continue;
@@ -110,15 +114,22 @@ function buildPlantumlSystemPrompt() {
     "任务：根据当前文档标题、该标题下正文、全文大纲上下文和用户生图要求，输出一张可渲染的 PlantUML 配图。",
     "当前标题下正文是最重要依据；全文大纲只用于避免遗漏上下文和命名不一致。",
     "禁止引入正文和全文上下文之外的新系统、设备、流程或承诺。",
+    "流程图必须使用 PlantUML 活动图语法；功能组成图必须使用 PlantUML WBS 语法。",
+    "一张图始终只使用一种兼容图型；用户未明确要求组合时不得制作多面板，明确要求时也只能在主图型内用分区、分组或注释组织。",
     "统一视觉标准：必须使用 SimHei（Windows 黑体），默认字体大小不小于 20pt。",
     "输出必须是严格 JSON，不要输出 Markdown、解释或思考过程。",
   ].join("\n");
 }
 
-function buildPlantumlUserPrompt({ prompt, selectedTitle, selectedBodyText, outlineText, errors }) {
+function buildPlantumlUserPrompt({ prompt, selectedTitle, selectedBodyText, outlineText, errors, diagramPolicy }) {
+  const envelopeExample = diagramPolicy.type === "wbs"
+    ? "@startwbs\\n* 根功能\\n** 子功能\\n@endwbs"
+    : diagramPolicy.type === "activity"
+      ? "@startuml\\nstart\\n:处理动作;\\nstop\\n@enduml"
+      : "@startuml\\n...\\n@enduml";
   return [
     "输出 JSON：",
-    '{"title":"配图标题","plantuml":"@startuml\\n...\\n@enduml","warnings":["可为空"]}',
+    `{"title":"配图标题","plantuml":"${envelopeExample}","warnings":["可为空"]}`,
     "",
     `【当前标题】${selectedTitle}`,
     "",
@@ -130,22 +141,138 @@ function buildPlantumlUserPrompt({ prompt, selectedTitle, selectedBodyText, outl
     "",
     `【用户生图要求】${prompt}`,
     "",
+    "【本次图型约束】",
+    buildDiagramPolicyPrompt(diagramPolicy),
+    "",
     "PlantUML 规则：",
-    "1. 必须返回完整 @startuml 到 @enduml。",
+    `1. 必须返回完整 ${diagramPolicy.startToken} 到 ${diagramPolicy.endToken}。`,
     "2. 必须包含：skinparam defaultFontName SimHei。",
     "3. 必须包含：skinparam defaultFontSize 20 或更大字号。",
-    "4. 优先使用 component、rectangle、database、cloud、queue、node、package、箭头和简短中文标签，避免过长句子塞进节点。",
-    "5. 中文节点名用引号或 as 别名，避免 PlantUML 语法歧义。",
-    "6. 图面要服务方案说明，突出层次、流程、接口或数据关系，不要画无意义装饰图。",
-    "7. 不要输出 Markdown 代码块。",
+    "4. 节点使用简短中文标签，避免把长段正文塞进节点。",
+    "5. 图面只呈现正文和上下文已有的层次、流程、接口或数据关系，不画无意义装饰图。",
+    "6. 不要输出 Markdown 代码块。",
     errors.length ? `\n【上次 PlantUML 报错，请修复后重新输出】\n${errors.map((item, index) => `${index + 1}. ${item}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 }
 
-async function validatePlantuml(plantuml) {
-  if (!plantuml || !/@startuml/i.test(plantuml) || !/@enduml/i.test(plantuml)) {
-    return { ok: false, error: "PlantUML 必须包含 @startuml 和 @enduml。" };
+function resolveDiagramPolicy({ prompt, selectedTitle }) {
+  const promptType = detectPromptDiagramType(prompt);
+  const type = promptType || detectContextDiagramType(selectedTitle) || "single";
+  const allowCombined = hasExplicitCombinationRequest(prompt);
+  if (type === "wbs") {
+    return { type, allowCombined, startToken: "@startwbs", endToken: "@endwbs" };
   }
+  return { type, allowCombined, startToken: "@startuml", endToken: "@enduml" };
+}
+
+function detectPromptDiagramType(value) {
+  const text = cleanText(value);
+  if (!text) return "";
+  const candidates = [
+    { type: "wbs", match: text.match(/(?:功能|模块)(?:组成|构成|结构|分解)(?:结构)?图|\bWBS\b|工作分解结构(?:图)?/i) },
+    { type: "activity", match: text.match(/(?:业务|工作|操作|审批|处理|服务|数据|实施|响应|管理)?流程图|活动图/) },
+    { type: "single", match: text.match(/(?:架构|组件|部署|时序|序列|类|用例|状态|拓扑|数据流|实体关系|甘特|思维导)图/) },
+  ].filter((item) => item.match);
+  candidates.sort((left, right) => left.match.index - right.match.index);
+  return candidates[0]?.type || "";
+}
+
+function detectContextDiagramType(value) {
+  const text = cleanText(value);
+  if (!text) return "";
+  const explicitType = detectPromptDiagramType(text);
+  if (explicitType) return explicitType;
+  if (/(?:功能|模块)(?:组成|构成|结构|分解)|工作分解结构/i.test(text)) return "wbs";
+  if (/(?:业务|工作|操作|审批|处理|服务|数据|实施|响应|管理)?流程|活动图/.test(text)) return "activity";
+  return "";
+}
+
+function hasExplicitCombinationRequest(value) {
+  const text = cleanText(value);
+  if (/(?:不要|无需|禁止|避免|不允许|不需要).{0,12}(?:组合|混合)/.test(text)) return false;
+  return /(?:组合|混合)(?:图|展示|呈现|绘制)|同时(?:展示|绘制|包含).*(?:两种|多种|多个).*(?:图|视图)/.test(text);
+}
+
+function buildDiagramPolicyPrompt(diagramPolicy) {
+  const combinationRule = diagramPolicy.allowCombined
+    ? "用户已明确要求组合展示，但仍只能输出一个完整 PlantUML 图；请在本次主图型内用分区、分组或注释组织信息，不得混用其他图型语法。"
+    : "用户未明确要求组合展示，只生成一种图型，不得混入其他图型语法。";
+  if (diagramPolicy.type === "wbs") {
+    return [
+      "功能组成图强制使用 PlantUML WBS 结构图，必须以 @startwbs 开始、@endwbs 结束。",
+      "使用 * 表示根功能、** 表示二级功能、*** 表示三级功能，按正文已有功能层级逐级分解；不得改用 component、rectangle、mindmap 或活动图。",
+      "语法示例：",
+      "@startwbs",
+      "* Business Process Modelling WBS",
+      "** Launch the project",
+      "*** Complete Stakeholder Research",
+      "*** Initial Implementation Plan",
+      "** Design phase",
+      "*** Model of AsIs Processes Completed",
+      "**** Model of AsIs Processes Completed1",
+      "**** Model of AsIs Processes Completed2",
+      "*** Measure AsIs performance metrics",
+      "*** Identify Quick Wins",
+      "** Complete innovate phase",
+      "@endwbs",
+      combinationRule,
+    ].join("\n");
+  }
+  if (diagramPolicy.type === "activity") {
+    return [
+      "流程图强制使用 PlantUML 活动图：以 @startuml 开始，使用 start、:活动;、if/elseif/else、while/repeat、fork 和 stop/end 表达流程。",
+      "不得用 component、rectangle、node、package、database、cloud、queue、participant 或类图节点拼装流程图。",
+      combinationRule,
+    ].join("\n");
+  }
+  return [
+    "根据用户要求选择一种最合适的 PlantUML 图型，并保持单一图型语义。",
+    combinationRule,
+  ].join("\n");
+}
+
+function validatePlantumlPolicy(plantuml, diagramPolicy) {
+  const source = String(plantuml || "");
+  const lines = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const starts = source.match(/@start[a-z]+\b/gi) || [];
+  const ends = source.match(/@end(?:uml|wbs)\b/gi) || [];
+  if (starts.length !== 1 || ends.length !== 1 || /^\s*newpage\b/im.test(source) || /^\s*!(?:include|includeurl|import)\b/im.test(source)) {
+    return { ok: false, error: "PlantUML 必须且只能包含一个完整图，不能使用 newpage、外部 include/import 或多个图块。" };
+  }
+  if (lines[0]?.toLowerCase() !== diagramPolicy.startToken || lines.at(-1)?.toLowerCase() !== diagramPolicy.endToken) {
+    return { ok: false, error: `${diagramPolicy.startToken} 和 ${diagramPolicy.endToken} 必须是源码的首行和末行。` };
+  }
+  if (!new RegExp(`^\\s*${diagramPolicy.startToken}\\b`, "im").test(source)
+    || !new RegExp(`^\\s*${diagramPolicy.endToken}\\b`, "im").test(source)) {
+    return { ok: false, error: `本次图型必须使用 ${diagramPolicy.startToken} 到 ${diagramPolicy.endToken}。` };
+  }
+  if (diagramPolicy.type === "wbs") {
+    if (/^\s*(?:component|rectangle|node|package|database|cloud|queue|participant|actor|class|interface|usecase)\b/im.test(source)) {
+      return { ok: false, error: "功能组成图只能使用 WBS 层级节点，不得混入其他图型节点。" };
+    }
+    const nodes = source.split(/\r?\n/).filter((line) => /^\s*\*+\s+\S/.test(line));
+    const levels = nodes.map((line) => line.match(/^\s*(\*+)/)?.[1].length || 0);
+    if (levels.filter((level) => level === 1).length !== 1 || !levels.some((level) => level >= 2)) {
+      return { ok: false, error: "功能组成图必须包含一个 WBS 根功能和至少一个下级功能。" };
+    }
+    if (levels.some((level, index) => index === 0 ? level !== 1 : level > levels[index - 1] + 1)) {
+      return { ok: false, error: "WBS 必须从根功能开始逐级展开，不能跳过中间层级。" };
+    }
+  }
+  if (diagramPolicy.type === "activity") {
+    if (!/^\s*start\s*$/im.test(source) || !/^\s*(?:stop|end)\s*$/im.test(source) || !/^\s*:[^;\n]+;/m.test(source)) {
+      return { ok: false, error: "流程图必须使用包含 start、活动节点和 stop/end 的 PlantUML 活动图语法。" };
+    }
+    if (/^(?:\s*)(?:component|rectangle|node|package|database|cloud|queue|participant|actor|class|interface|usecase)\b/im.test(source)) {
+      return { ok: false, error: "流程图不得混入组件图、部署图、时序图、类图或用例图节点。" };
+    }
+  }
+  return { ok: true };
+}
+
+async function validatePlantuml(plantuml, diagramPolicy) {
+  const policyValidation = validatePlantumlPolicy(plantuml, diagramPolicy);
+  if (!policyValidation.ok) return policyValidation;
   const encoded = encodePlantuml(plantuml);
   const response = await fetch(`${plantumlBaseUrl.replace(/\/$/, "")}/svg/${encoded}`);
   const text = await response.text();
@@ -292,21 +419,20 @@ function encode6Bit(value) {
   return plantumlAlphabet[value & 0x3F];
 }
 
-function normalizePlantumlSource(value) {
-  let text = String(value || "").replace(/```(?:plantuml|puml|uml)?/gi, "").replace(/```/g, "").trim();
+function normalizePlantumlSource(value, diagramPolicy = resolveDiagramPolicy({})) {
+  let text = String(value || "").replace(/```(?:plantuml|puml|uml|wbs)?/gi, "").replace(/```/g, "").trim();
   if (!text) return "";
-  if (!/@startuml/i.test(text)) text = `@startuml\n${text}`;
-  if (!/@enduml/i.test(text)) text = `${text}\n@enduml`;
+  if (!/@start[a-z]+\b/i.test(text)) text = `${diagramPolicy.startToken}\n${text}`;
+  if (!/@end(?:uml|wbs)\b/i.test(text)) text = `${text}\n${diagramPolicy.endToken}`;
   const lines = text.split(/\r?\n/);
-  const startIndex = lines.findIndex((line) => /@startuml/i.test(line));
+  const startIndex = lines.findIndex((line) => /@start[a-z]+\b/i.test(line));
   const insertAt = startIndex >= 0 ? startIndex + 1 : 1;
-  const fontLineIndex = lines.findIndex((line) => /skinparam\s+defaultFontName/i.test(line));
-  if (fontLineIndex >= 0) {
-    lines[fontLineIndex] = "skinparam defaultFontName SimHei";
-  } else {
-    lines.splice(insertAt, 0, "skinparam defaultFontName SimHei");
-  }
-  if (!/skinparam\s+defaultFontSize/i.test(lines.join("\n"))) lines.splice(insertAt + 1, 0, "skinparam defaultFontSize 20");
+  const fontNameIndexes = lines.flatMap((line, index) => /skinparam\s+defaultFontName/i.test(line) ? [index] : []);
+  if (fontNameIndexes.length) fontNameIndexes.forEach((index) => { lines[index] = "skinparam defaultFontName SimHei"; });
+  else lines.splice(insertAt, 0, "skinparam defaultFontName SimHei");
+  const fontSizeIndexes = lines.flatMap((line, index) => /skinparam\s+defaultFontSize/i.test(line) ? [index] : []);
+  if (fontSizeIndexes.length) fontSizeIndexes.forEach((index) => { lines[index] = "skinparam defaultFontSize 20"; });
+  else lines.splice(insertAt + 1, 0, "skinparam defaultFontSize 20");
   return lines.join("\n");
 }
 
@@ -378,7 +504,11 @@ function escapeXml(value) {
 }
 
 export {
+  buildPlantumlUserPrompt,
   generateSolutionPlantumlImage,
+  normalizePlantumlSource,
   readSolutionPlantumlImageDocx,
   readSolutionPlantumlImageFile,
+  resolveDiagramPolicy,
+  validatePlantumlPolicy,
 };
