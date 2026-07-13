@@ -138,7 +138,15 @@ function SolutionWritingPanel({
     setModules([]);
     setGeneratedBlocks([]);
     setGeneratedPlanningTarget(null);
+    setGeneratedTaskPlan(null);
     setCollapsedModuleIds([]);
+  }
+
+  function invalidateDocumentTargets() {
+    invalidatePlanningWorkflow();
+    setLocalOutline(null);
+    setSelectedGroupKey("");
+    onOutlineInvalidated?.();
   }
 
   function changeTemplateGroup(nextGroupKey) {
@@ -687,6 +695,7 @@ function SolutionWritingPanel({
             taskPlan={generatedTaskPlan}
             knowledgeOptions={knowledgeOptions}
             onInsertText={onInsertText}
+            onDocumentMutated={invalidateDocumentTargets}
           />
         )}
       </div>

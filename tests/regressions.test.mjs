@@ -483,6 +483,22 @@ test("solution connector replaces only the selected template subtree", async () 
     assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "New module", "New planning body", "Final chapter", "Footnote"]);
 
     resetDocument();
+    const bodyResult = await insertSolutionWritingWithConnector({
+      text: "New exact body",
+      paragraphs: [{ type: "body", text: "New exact body" }],
+      requestId: "body-exact-target",
+      timeoutMs: 1000,
+      replaceTarget: {
+        title: "Template child",
+        styleRef: { paragraphIndex: 2, title: "Template child" },
+        bodyParagraphCount: 1,
+      },
+    });
+    assert.equal(bodyResult.ok, true);
+    assert.equal(bodyResult.source, "connector-replace-heading-body");
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "New exact body", "Next chapter", "After", "Footnote"]);
+
+    resetDocument();
     const invalidResult = await insertSolutionWritingWithConnector({
       text: "Must not insert",
       paragraphs: [{ type: "body", text: "Must not insert" }],
@@ -540,6 +556,19 @@ test("solution connector replaces only the selected template subtree", async () 
       },
     });
     assert.equal(titleOnlyResult.ok, false);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
+
+    const bodyTitleOnlyResult = await insertSolutionWritingWithConnector({
+      text: "Must not replace body by title only",
+      paragraphs: [{ type: "body", text: "Must not replace body by title only" }],
+      requestId: "body-title-only",
+      timeoutMs: 1000,
+      replaceTarget: {
+        title: "Header",
+        bodyParagraphCount: 0,
+      },
+    });
+    assert.equal(bodyTitleOnlyResult.ok, false);
     assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
 
     const emptyTargetResult = await insertSolutionWritingWithConnector({

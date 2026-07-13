@@ -426,13 +426,13 @@ function normalizeReplaceTarget(target) {
   const bodyStyleRef = normalizeStyleRef(target.bodyStyleRef);
   const rawBodyParagraphCount = target.bodyParagraphCount;
   const bodyParagraphCount = rawBodyParagraphCount == null || String(rawBodyParagraphCount).trim() === "" ? null : Number(rawBodyParagraphCount);
-  if (!title && !styleRef) return null;
+  if (!styleRef) return null;
   const scope = String(target.scope || "") === "subtree" ? "subtree" : "body";
   const normalizedTitle = title.replace(/\s+/g, " ");
   const styleRefTitle = String(styleRef?.title || styleRef?.text || "").replace(/\s+/g, " ").trim();
-  if (scope === "subtree" && (!styleRefTitle || (normalizedTitle && normalizedTitle !== styleRefTitle))) return null;
+  if (!styleRefTitle || (normalizedTitle && normalizedTitle !== styleRefTitle)) return null;
   const normalized = {
-    title: scope === "subtree" ? styleRefTitle : title,
+    title: styleRefTitle,
     headingPath: Array.isArray(target.headingPath) ? target.headingPath.map((item) => String(item || "").trim()).filter(Boolean) : [],
     styleRef,
     bodyStyleRef,

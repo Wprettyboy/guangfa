@@ -15,7 +15,7 @@ function buildDescendingInsertPayloads(groups) {
     });
 }
 
-function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText }) {
+function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText, onDocumentMutated }) {
   const [globalPrompt, setGlobalPrompt] = useState("你是一名资深政企技术方案编制专家，文档类型为正式技术方案，表达需要专业、稳健、可落地。");
   const [draft, setDraft] = useState(null);
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
@@ -64,41 +64,54 @@ function SolutionDraftingPanel({ taskPlan, knowledgeOptions, onInsertText }) {
 
   async function insertSection(section, successMessage) {
     const payload = buildDraftSectionInsert(section);
-    return insertPayload(payload, successMessage || `已写入 ${section.title || section.sourceHeading}`);
+    return insertPayloads([payload], successMessage || `已写入 ${section.title || section.sourceHeading}`);
   }
 
   async function insertCategory(category) {
     const payloads = buildDescendingInsertPayloads(groupDraftSectionsByTarget(category.sections || []));
-    for (const payload of payloads) {
-      const ok = await insertPayload(payload, `已写入 ${category.title}`);
-      if (!ok) return;
-    }
+    return insertPayloads(payloads, `已写入 ${category.title}`);
   }
 
   async function insertAllDraft() {
     const groups = (draft?.categories || []).flatMap((category) => groupDraftSectionsByTarget(category.sections || []));
-    for (const payload of buildDescendingInsertPayloads(groups)) {
-      const ok = await insertPayload(payload, "已写入全部方案内容");
-      if (!ok) return;
-    }
+    return insertPayloads(buildDescendingInsertPayloads(groups), "已写入全部方案内容");
   }
 
-  async function insertPayload(payload, successMessage) {
-    if (!payload?.text) return false;
+  async function insertPayloads(payloads, successMessage) {
+    const rows = (Array.isArray(payloads) ? payloads : []).filter((payload) => payload?.text);
+    if (!rows.length) return false;
     setStatus("inserting");
     setMessage("");
-    const result = await onInsertText?.(payload.text, {
-      paragraphs: payload.paragraphs,
-      replaceTarget: payload.replaceTarget,
-      timeoutMs: 20000,
-    });
-    if (result?.ok) {
+    let mutated = false;
+    let failure = null;
+    try {
+      for (const payload of rows) {
+        const result = await onInsertText?.(payload.text, {
+          paragraphs: payload.paragraphs,
+          replaceTarget: payload.replaceTarget,
+          timeoutMs: 20000,
+        });
+        mutated = mutated || Boolean(result?.ok || result?.partial);
+        if (!result?.ok) {
+          failure = result || { error: "写入失败：未匹配到对应标题" };
+          break;
+        }
+      }
+    } catch (error) {
+      failure = { error: error?.message || "写入失败：未匹配到对应标题" };
+    }
+
+    if (mutated) {
+      setDraft(null);
+      onDocumentMutated?.();
+    }
+    if (!failure) {
       setStatus("idle");
       setMessage(successMessage);
       return true;
     }
     setStatus("error");
-    setMessage(result?.error || "写入失败：未匹配到对应标题");
+    setMessage(failure.error || "写入失败：未匹配到对应标题");
     return false;
   }
 

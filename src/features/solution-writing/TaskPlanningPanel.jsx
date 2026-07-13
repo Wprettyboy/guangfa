@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, Loader2, RefreshCw, Send, Wand2 } from "lucide-react";
 import { generateSolutionTaskPlan, testSolutionTaskKnowledge } from "./service.js";
 import { buildTaskPlanningPreview } from "./taskPlanning.js";
@@ -6,7 +6,7 @@ import { buildTaskPlanningPreview } from "./taskPlanning.js";
 const TASK_DENSITY_OPTIONS = [
   { value: "concise", label: "简单", description: "适合简单方案，任务保持必要颗粒度" },
   { value: "moderate", label: "适中", description: "适度展开设计、执行、验收要求" },
-  { value: "rich", label: "丰富", description: "在资料范围内细化任务，支撑更充实正文" },
+  { value: "rich", label: "丰富", description: "根据标题原文、知识库与上下文拆分有依据的细节" },
 ];
 
 function TaskPlanningPanel({
@@ -28,8 +28,31 @@ function TaskPlanningPanel({
   const [taskStatus, setTaskStatus] = useState("idle");
   const [taskMessage, setTaskMessage] = useState("");
   const [knowledgeTest, setKnowledgeTest] = useState(null);
+  const requestVersionRef = useRef(0);
+  const outlineItemsRef = useRef(outlineItems);
+  outlineItemsRef.current = outlineItems;
   const outlinePreview = useMemo(() => buildTaskPlanningPreview(outlineItems), [outlineItems]);
   const outlineStats = outlinePreview.stats;
+
+  useEffect(() => {
+    invalidateLocalPlanning();
+  }, [outlineItems]);
+
+  function invalidateLocalPlanning() {
+    requestVersionRef.current += 1;
+    setPreview({ categories: [], stats: buildTaskPlanningPreview([]).stats });
+    setGeneratedPlan(null);
+    setCollapsedCategoryIds([]);
+    setExpandedTaskIds([]);
+    setTaskStatus("idle");
+    setTaskMessage("");
+    setKnowledgeTest(null);
+  }
+
+  function refreshOutline() {
+    invalidateLocalPlanning();
+    return onRefreshOutline?.();
+  }
 
   function generatePreview() {
     const nextPreview = buildTaskPlanningPreview(outlineItems);
@@ -42,8 +65,10 @@ function TaskPlanningPanel({
   }
 
   async function generateAiPlan() {
-    const inputPreview = preview.categories.length ? preview : buildTaskPlanningPreview(outlineItems);
+    const inputPreview = outlinePreview;
     if (!inputPreview.categories.length) return;
+    const requestVersion = ++requestVersionRef.current;
+    const requestOutlineItems = outlineItems;
     setTaskStatus("generating");
     setTaskMessage("");
     try {
@@ -54,14 +79,15 @@ function TaskPlanningPanel({
         knowledgeOptions,
         taskDensity,
       });
+      if (requestVersion !== requestVersionRef.current || requestOutlineItems !== outlineItemsRef.current) return;
       setGeneratedPlan(result);
-      setPreview({ categories: result.categories || [], stats: inputPreview.stats, outlineText: inputPreview.outlineText });
       setCollapsedCategoryIds([]);
       setExpandedTaskIds([]);
       setTaskStatus("idle");
       setTaskMessage(`已按${getTaskDensityLabel(taskDensity)}模式生成 ${result.stats?.taskCount || 0} 个任务规划`);
       onTaskPlanGenerated?.(result);
     } catch (error) {
+      if (requestVersion !== requestVersionRef.current || requestOutlineItems !== outlineItemsRef.current) return;
       setTaskStatus("error");
       setTaskMessage(error?.message || "任务规划生成失败");
     }
@@ -69,6 +95,8 @@ function TaskPlanningPanel({
 
   async function testKnowledge() {
     const inputPreview = preview.categories.length ? preview : buildTaskPlanningPreview(outlineItems);
+    const requestVersion = ++requestVersionRef.current;
+    const requestOutlineItems = outlineItems;
     setTaskStatus("testing-knowledge");
     setTaskMessage("");
     try {
@@ -78,10 +106,12 @@ function TaskPlanningPanel({
         userInstruction: instruction,
         knowledgeOptions,
       });
+      if (requestVersion !== requestVersionRef.current || requestOutlineItems !== outlineItemsRef.current) return;
       setKnowledgeTest(result);
       setTaskStatus("idle");
       setTaskMessage(`知识库测试完成：已选 ${result.selectedBases?.length || 0} 个库，召回 ${result.snippetCount || 0} 条资料`);
     } catch (error) {
+      if (requestVersion !== requestVersionRef.current || requestOutlineItems !== outlineItemsRef.current) return;
       setTaskStatus("error");
       setTaskMessage(error?.message || "知识库测试失败");
     }
@@ -103,7 +133,9 @@ function TaskPlanningPanel({
   const generatingDisabled = busy || !hasOutline;
   const aiGenerating = taskStatus === "generating";
   const testingKnowledge = taskStatus === "testing-knowledge";
+  const taskBusy = aiGenerating || testingKnowledge;
   const hasPreview = preview.categories.length > 0;
+  const displayedCategories = generatedPlan?.categories || preview.categories;
   const selectedKbCount = knowledgeOptions?.bases?.length || 0;
 
   return (
@@ -115,19 +147,19 @@ function TaskPlanningPanel({
             <span>完整大纲作全局架构约束，当前标题加标题下原文作为生成单元</span>
           </div>
           <div className="solution-task-actions">
-            <button className="text-button" type="button" onClick={onRefreshOutline} disabled={busy}>
+            <button className="text-button" type="button" onClick={refreshOutline} disabled={busy || taskBusy}>
               {status === "loading-outline" ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
               读取方案内容
             </button>
-            <button className="tool-button primary" type="button" onClick={generatePreview} disabled={generatingDisabled}>
+            <button className="tool-button primary" type="button" onClick={generatePreview} disabled={generatingDisabled || taskBusy}>
               <Wand2 size={15} />
               生成输入预览
             </button>
-            <button className="text-button" type="button" onClick={testKnowledge} disabled={busy || testingKnowledge || (!hasPreview && !hasOutline)}>
+            <button className="text-button" type="button" onClick={testKnowledge} disabled={busy || taskBusy || (!hasPreview && !hasOutline)}>
               {testingKnowledge ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
               测试知识库
             </button>
-            <button className="tool-button primary" type="button" onClick={generateAiPlan} disabled={busy || aiGenerating || (!hasPreview && !hasOutline)}>
+            <button className="tool-button primary" type="button" onClick={generateAiPlan} disabled={busy || taskBusy || (!hasPreview && !hasOutline)}>
               {aiGenerating ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
               AI生成规划
             </button>
@@ -199,7 +231,7 @@ function TaskPlanningPanel({
         ) : null}
       </section>
 
-      {preview.categories.length === 0 ? (
+      {displayedCategories.length === 0 ? (
         <section className="solution-block">
           <div className="empty-state compact">
             {hasOutline ? "点击生成输入预览，查看后续传给 AI 的任务规划结构。" : "请先读取左侧文档大纲。"}
@@ -207,7 +239,7 @@ function TaskPlanningPanel({
         </section>
       ) : (
         <div className="solution-task-category-list">
-          {preview.categories.map((category) => {
+          {displayedCategories.map((category) => {
             const collapsed = collapsedCategoryIds.includes(category.id);
             return (
               <section className="solution-task-category" key={category.id}>
