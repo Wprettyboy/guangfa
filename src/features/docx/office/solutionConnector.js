@@ -266,27 +266,24 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
       return paragraphs.length === previousParagraphCount + insertedCount
         && isSameParagraph(paragraphs[rootIndex + insertedCount], oldRoot);
     }
-    function verifyContentAtParagraphIndex(doc, paragraphIndex, firstInserted, oldRoot, previousParagraphCount, insertedCount) {
+    function verifyContentAtParagraphIndex(doc, paragraphIndex, insertedParagraphs, oldRoot, previousParagraphCount) {
       var paragraphs = getAllParagraphs(doc);
-      if (paragraphs.length !== previousParagraphCount + insertedCount) return false;
-      var candidate = paragraphs[paragraphIndex];
-      var shiftedOldRoot = paragraphs[paragraphIndex + insertedCount];
-      if (!candidate || isSameParagraph(candidate, oldRoot) || !isSameParagraph(shiftedOldRoot, oldRoot)) return false;
-      if (isSameParagraph(candidate, firstInserted)) return true;
-      var expected = getParagraphText(firstInserted);
-      return Boolean(expected && getParagraphText(candidate) === expected);
+      if (paragraphs.length !== previousParagraphCount + insertedParagraphs.length) return false;
+      for (var index = 0; index < insertedParagraphs.length; index += 1) {
+        if (!isSameParagraph(paragraphs[paragraphIndex + index], insertedParagraphs[index])) return false;
+      }
+      return isSameParagraph(paragraphs[paragraphIndex + insertedParagraphs.length], oldRoot);
     }
-    function verifySubtreeReplacement(doc, paragraphIndex, firstInserted, previousParagraphCount, insertedCount, removedCount, target) {
+    function verifySubtreeReplacement(doc, paragraphIndex, insertedParagraphs, boundaryParagraph, previousParagraphCount, removedCount) {
       var paragraphs = getAllParagraphs(doc);
-      if (paragraphs.length !== previousParagraphCount + insertedCount - removedCount) return false;
-      var candidate = paragraphs[paragraphIndex];
-      if (!candidate || (!isSameParagraph(candidate, firstInserted) && getParagraphText(candidate) !== getParagraphText(firstInserted))) return false;
-      var boundaryIndex = paragraphIndex + insertedCount;
-      if (target.subtreeEndRef === null) return boundaryIndex === paragraphs.length;
-      var endRef = target.subtreeEndRef || null;
-      var expected = normalizeText(endRef && (endRef.title || endRef.text));
-      var boundary = paragraphs[boundaryIndex];
-      return Boolean(boundary && expected && getParagraphText(boundary) === expected);
+      if (paragraphs.length !== previousParagraphCount + insertedParagraphs.length - removedCount) return false;
+      for (var index = 0; index < insertedParagraphs.length; index += 1) {
+        if (!isSameParagraph(paragraphs[paragraphIndex + index], insertedParagraphs[index])) return false;
+      }
+      var boundaryIndex = paragraphIndex + insertedParagraphs.length;
+      return boundaryParagraph
+        ? isSameParagraph(paragraphs[boundaryIndex], boundaryParagraph)
+        : boundaryIndex === paragraphs.length;
     }
     function prepareCurrentInsertPosition(doc) {
       if (!doc || typeof doc.InsertContent !== "function" || typeof Api.CreateParagraph !== "function") return { ok: false, inserted: false };
@@ -350,13 +347,14 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
             return { ok: false, source: "connector-callCommand", requestId: payload.requestId, error: "保存的章节子树范围已失效：" + getTargetTitle(replaceTarget) };
           }
           var oldRoot = allParagraphs[headingIndex];
+          var boundaryParagraph = allParagraphs[subtreeRange.endIndex] || null;
           var previousParagraphCount = allParagraphs.length;
           var subtreeInserted = insertContentAtParagraph(doc, oldRoot, headingIndex, previousParagraphCount, content);
           mutation.inserted = subtreeInserted.inserted || 0;
           if (!subtreeInserted.ok) {
             return { ok: false, partial: Boolean(subtreeInserted.partial), source: "connector-callCommand", requestId: payload.requestId, inserted: mutation.inserted, error: subtreeInserted.error || "未能替换目标章节：" + getTargetTitle(replaceTarget) };
           }
-          if (!verifyContentAtParagraphIndex(doc, headingIndex, content[0], oldRoot, previousParagraphCount, mutation.inserted)) {
+          if (!verifyContentAtParagraphIndex(doc, headingIndex, content, oldRoot, previousParagraphCount)) {
             var verificationRollback = rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, oldRoot);
             mutation.inserted = verificationRollback ? 0 : mutation.inserted;
             return { ok: false, partial: !verificationRollback, source: "connector-callCommand", requestId: payload.requestId, inserted: mutation.inserted, error: "OnlyOffice 未确认新章节写入原章节位置：" + getTargetTitle(replaceTarget) + (verificationRollback ? "，已回滚" : "，且回滚失败") };
@@ -371,7 +369,7 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
             mutation.inserted = deleteFailureRollback ? 0 : mutation.inserted;
             return { ok: false, partial: !deleteFailureRollback, source: "connector-callCommand", requestId: payload.requestId, inserted: mutation.inserted, cleared: mutation.cleared, error: (subtreeDeleted.error || "新章节已写入，但原章节子树未能完整删除") + (deleteFailureRollback ? "，新章节已回滚" : "") };
           }
-          if (!verifySubtreeReplacement(doc, headingIndex, content[0], previousParagraphCount, mutation.inserted, mutation.cleared, replaceTarget)) {
+          if (!verifySubtreeReplacement(doc, headingIndex, content, boundaryParagraph, previousParagraphCount, mutation.cleared)) {
             return { ok: false, partial: true, source: "connector-callCommand", requestId: payload.requestId, inserted: mutation.inserted, cleared: mutation.cleared, error: "OnlyOffice 未确认章节子树替换后的最终位置：" + getTargetTitle(replaceTarget) };
           }
           return { ok: true, source: "connector-replace-heading-subtree", requestId: payload.requestId, count: content.length, cleared: mutation.cleared, targetTitle: getTargetTitle(replaceTarget) };

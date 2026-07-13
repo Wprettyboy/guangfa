@@ -112,12 +112,15 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   let actionFinishes = 0;
   let cachedMainParagraphs = null;
   let paragraphCacheClears = 0;
+  let numberedStyleApplications = 0;
   let resolveOutline;
   let resolveInsert;
   const outlined = new Promise((resolve) => { resolveOutline = resolve; });
   const inserted = new Promise((resolve) => { resolveInsert = resolve; });
+  const numberedStyle = { numbered: true };
   const createParagraph = (text = "") => {
     const paragraph = {
+      numbered: false,
       text,
       AddText(value) {
         this.text += String(value || "");
@@ -130,24 +133,40 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
         return true;
       },
       GetParaPr() {
-        return { GetStyle: () => null, SetStyle: () => true };
+        return {
+          GetStyle: () => (paragraph.numbered ? numberedStyle : null),
+          SetStyle: (style) => paragraph.SetStyle(style),
+        };
       },
       GetIndex() {
         return mainParagraphs.indexOf(paragraph);
       },
-      GetText() {
-        return this.text;
+      GetText(options) {
+        if (!options?.Numbering || !paragraph.numbered) return this.text;
+        const paragraphIndex = mainParagraphs.indexOf(paragraph);
+        const number = mainParagraphs.slice(0, paragraphIndex + 1).filter((item) => item.numbered).length;
+        return `${number}. ${this.text}`;
       },
       private_GetImpl() {
         return paragraph;
       },
-      SetStyle() {
+      SetStyle(style) {
+        paragraph.numbered = Boolean(style?.numbered);
+        if (paragraph.numbered) numberedStyleApplications += 1;
         return true;
       },
     };
     return paragraph;
   };
   const mainParagraphs = ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph);
+  mainParagraphs[1].numbered = true;
+  mainParagraphs[4].numbered = true;
+  const wrapParagraph = (paragraph) => new Proxy(paragraph, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
   const headerParagraph = createParagraph("Header");
   const footnoteParagraph = createParagraph("Footnote");
   const logicDocument = {
@@ -180,10 +199,10 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
       return true;
     },
     GetAllParagraphs() {
-      return [...this.paragraphs];
+      return this.paragraphs.map(wrapParagraph);
     },
-    GetStyle() {
-      return null;
+    GetStyle(name) {
+      return name === "Heading 2" ? numberedStyle : null;
     },
   };
   const parent = {
@@ -253,7 +272,7 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
       requestId: "builder-api-subtree",
       text: "New root\nNew body",
       paragraphs: [
-        { type: "heading", text: "New root" },
+        { type: "heading", text: "New root", styleName: "Heading 2" },
         { type: "body", text: "New body" },
       ],
       replaceTarget: {
@@ -286,7 +305,7 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
       action: "insert-solution-writing-text",
       requestId: "builder-api-end-subtree",
       text: "Final chapter",
-      paragraphs: [{ type: "heading", text: "Final chapter" }],
+      paragraphs: [{ type: "heading", text: "Final chapter", styleName: "Heading 2" }],
       replaceTarget: {
         scope: "subtree",
         title: endTarget.styleRef.title,
@@ -302,6 +321,7 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   assert.equal(actionStarts, 2);
   assert.equal(actionFinishes, 2);
   assert.ok(paragraphCacheClears > 0);
+  assert.equal(numberedStyleApplications, 2);
 });
 
 test("solution connector replaces only the selected template subtree", async () => {
@@ -316,8 +336,11 @@ test("solution connector replaces only the selected template subtree", async () 
   let footnoteParagraph = null;
   let cachedMainParagraphs = null;
   let paragraphCacheClears = 0;
+  let numberedStyleApplications = 0;
+  const numberedStyle = { numbered: true };
   const createParagraph = (text = "") => {
     const paragraph = {
+      numbered: false,
       text,
       AddText(value) {
         this.text += String(value || "");
@@ -330,10 +353,16 @@ test("solution connector replaces only the selected template subtree", async () 
         return true;
       },
       GetParaPr() {
-        return { GetStyle: () => null, SetStyle: () => true };
+        return {
+          GetStyle: () => (paragraph.numbered ? numberedStyle : null),
+          SetStyle: (style) => paragraph.SetStyle(style),
+        };
       },
-      GetText() {
-        return this.text;
+      GetText(options) {
+        if (!options?.Numbering || !paragraph.numbered) return this.text;
+        const paragraphIndex = mainParagraphs.indexOf(paragraph);
+        const number = mainParagraphs.slice(0, paragraphIndex + 1).filter((item) => item.numbered).length;
+        return `${number}. ${this.text}`;
       },
       private_GetImpl() {
         return paragraph;
@@ -341,15 +370,25 @@ test("solution connector replaces only the selected template subtree", async () 
       GetIndex() {
         return mainParagraphs.indexOf(paragraph);
       },
-      SetStyle() {
+      SetStyle(style) {
+        paragraph.numbered = Boolean(style?.numbered);
+        if (paragraph.numbered) numberedStyleApplications += 1;
         return true;
       },
     };
     return paragraph;
   };
+  const wrapParagraph = (paragraph) => new Proxy(paragraph, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
   const resetDocument = () => {
     addElementCallCount = 0;
     mainParagraphs = ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph);
+    mainParagraphs[1].numbered = true;
+    mainParagraphs[4].numbered = true;
     headerParagraph = createParagraph("Header");
     footnoteParagraph = createParagraph("Footnote");
     cachedMainParagraphs = null;
@@ -379,10 +418,10 @@ test("solution connector replaces only the selected template subtree", async () 
         return true;
       },
       GetAllParagraphs() {
-        return [...this.paragraphs];
+        return this.paragraphs.map(wrapParagraph);
       },
-      GetStyle() {
-        return null;
+      GetStyle(name) {
+        return name === "Heading 2" ? numberedStyle : null;
       },
       InsertContent(content) {
         mainParagraphs.push(...content);
@@ -406,9 +445,9 @@ test("solution connector replaces only the selected template subtree", async () 
   registerOnlyOfficeEditor(editor);
   const replaceTarget = {
     scope: "subtree",
-    title: "Template root",
-    styleRef: { paragraphIndex: 1, title: "Template root" },
-    subtreeEndRef: { paragraphIndex: 4, title: "Next chapter" },
+    title: "1. Template root",
+    styleRef: { paragraphIndex: 1, title: "1. Template root" },
+    subtreeEndRef: { paragraphIndex: 4, title: "2. Next chapter" },
     subtreeParagraphCount: 3,
   };
 
@@ -416,7 +455,7 @@ test("solution connector replaces only the selected template subtree", async () 
     const result = await insertSolutionWritingWithConnector({
       text: "New module\nNew planning body",
       paragraphs: [
-        { type: "module-heading", text: "New module" },
+        { type: "module-heading", text: "New module", styleName: "Heading 2" },
         { type: "body", text: "New planning body" },
       ],
       requestId: "subtree-regression",
@@ -429,13 +468,13 @@ test("solution connector replaces only the selected template subtree", async () 
 
     const endResult = await insertSolutionWritingWithConnector({
       text: "Final chapter",
-      paragraphs: [{ type: "module-heading", text: "Final chapter" }],
+      paragraphs: [{ type: "module-heading", text: "Final chapter", styleName: "Heading 2" }],
       requestId: "subtree-document-end",
       timeoutMs: 1000,
       replaceTarget: {
         scope: "subtree",
-        title: "Next chapter",
-        styleRef: { paragraphIndex: 3, title: "Next chapter" },
+        title: "2. Next chapter",
+        styleRef: { paragraphIndex: 3, title: "2. Next chapter" },
         subtreeEndRef: null,
         subtreeParagraphCount: 2,
       },
@@ -523,6 +562,7 @@ test("solution connector replaces only the selected template subtree", async () 
     assert.equal(mismatchedTitleResult.ok, false);
     assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
     assert.ok(paragraphCacheClears > 0);
+    assert.equal(numberedStyleApplications, 2);
   } finally {
     clearOnlyOfficeEditor(editor);
     if (previousWindow === undefined) delete globalThis.window;

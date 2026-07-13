@@ -1646,9 +1646,25 @@
           return { ok: true, cleared: cleared };
         }
 
+        function getParagraphImpl(paragraph) {
+          try {
+            return paragraph && typeof paragraph.private_GetImpl === "function" ? paragraph.private_GetImpl() : null;
+          } catch (error) {
+            return null;
+          }
+        }
+
+        function isSameParagraph(left, right) {
+          if (!left || !right) return false;
+          if (left === right) return true;
+          var leftImpl = getParagraphImpl(left);
+          var rightImpl = getParagraphImpl(right);
+          return Boolean(leftImpl && rightImpl && leftImpl === rightImpl);
+        }
+
         function getDocumentContentIndex(paragraph, fallbackIndex) {
           try {
-            var impl = paragraph && typeof paragraph.private_GetImpl === "function" ? paragraph.private_GetImpl() : null;
+            var impl = getParagraphImpl(paragraph);
             var index = impl && typeof impl.GetIndex === "function" ? impl.GetIndex() : null;
             if (index !== null && index !== undefined && Number.isInteger(Number(index)) && Number(index) >= 0) return Number(index);
           } catch (error) {}
@@ -1680,11 +1696,11 @@
           for (var index = 0; index < content.length; index += 1) {
             try {
               if (doc.AddElement(insertIndex + index, content[index]) === false) {
-                var returnedFailureRollback = rollbackInsertedParagraphs(doc, content.slice(0, index), previousParagraphCount, headingIndex, getParagraphText(headingParagraph));
+                var returnedFailureRollback = rollbackInsertedParagraphs(doc, content.slice(0, index), previousParagraphCount, headingIndex, headingParagraph);
                 return { ok: false, inserted: returnedFailureRollback ? 0 : index, partial: !returnedFailureRollback, error: "OnlyOffice 标题位置插入返回失败" + (returnedFailureRollback ? "，已回滚" : "，且回滚失败") };
               }
             } catch (error) {
-              var thrownFailureRollback = rollbackInsertedParagraphs(doc, content.slice(0, index), previousParagraphCount, headingIndex, getParagraphText(headingParagraph));
+              var thrownFailureRollback = rollbackInsertedParagraphs(doc, content.slice(0, index), previousParagraphCount, headingIndex, headingParagraph);
               var insertError = error && error.message ? error.message : "OnlyOffice 标题位置插入失败";
               return { ok: false, inserted: thrownFailureRollback ? 0 : index, partial: !thrownFailureRollback, error: insertError + (thrownFailureRollback ? "，已回滚" : "，且回滚失败") };
             }
@@ -1692,7 +1708,7 @@
           return { ok: true, inserted: content.length };
         }
 
-        function rollbackInsertedParagraphs(doc, paragraphs, expectedParagraphCount, rootIndex, rootTitle) {
+        function rollbackInsertedParagraphs(doc, paragraphs, expectedParagraphCount, rootIndex, oldRoot) {
           for (var index = paragraphs.length - 1; index >= 0; index -= 1) {
             try {
               if (!paragraphs[index] || typeof paragraphs[index].Delete !== "function" || paragraphs[index].Delete() === false) return false;
@@ -1702,16 +1718,13 @@
           }
           var current = getAllParagraphs(doc);
           return current.length === expectedParagraphCount
-            && current[rootIndex]
-            && getParagraphText(current[rootIndex]) === rootTitle;
+            && isSameParagraph(current[rootIndex], oldRoot);
         }
 
-        function isOldSubtreeIntactAfterInsert(doc, target, headingIndex, previousParagraphCount, insertedCount) {
+        function isOldSubtreeIntactAfterInsert(doc, headingIndex, oldRoot, previousParagraphCount, insertedCount) {
           var paragraphs = getAllParagraphs(doc);
-          var oldRoot = paragraphs[headingIndex + insertedCount];
           return paragraphs.length === previousParagraphCount + insertedCount
-            && oldRoot
-            && getParagraphText(oldRoot) === getTargetTitle(target);
+            && isSameParagraph(paragraphs[headingIndex + insertedCount], oldRoot);
         }
 
         function verifyInsertedAfterHeading(doc, target, rows) {
@@ -1724,50 +1737,25 @@
           return Boolean(insertedParagraph && getParagraphText(insertedParagraph) === expected);
         }
 
-        function verifyInsertedAtHeading(doc, target, headingIndex, rows, insertedCount, previousParagraphCount) {
-          var expected = getFirstInsertText(rows);
-          if (!expected) return false;
-          var firstTextOffset = -1;
-          for (var index = 0; index < rows.length; index += 1) {
-            if (normalizeText(rows[index] && rows[index].text)) {
-              firstTextOffset = index;
-              break;
-            }
-          }
-          if (firstTextOffset < 0) return false;
+        function verifyInsertedAtHeading(doc, headingIndex, insertedParagraphs, oldRoot, previousParagraphCount) {
           var paragraphs = getAllParagraphs(doc);
-          if (paragraphs.length !== previousParagraphCount + insertedCount) return false;
-          var insertedParagraph = paragraphs[headingIndex + firstTextOffset];
-          var oldRootParagraph = paragraphs[headingIndex + insertedCount];
-          return Boolean(
-            insertedParagraph
-            && getParagraphText(insertedParagraph) === expected
-            && oldRootParagraph
-            && getParagraphText(oldRootParagraph) === getTargetTitle(target)
-          );
+          if (paragraphs.length !== previousParagraphCount + insertedParagraphs.length) return false;
+          for (var index = 0; index < insertedParagraphs.length; index += 1) {
+            if (!isSameParagraph(paragraphs[headingIndex + index], insertedParagraphs[index])) return false;
+          }
+          return isSameParagraph(paragraphs[headingIndex + insertedParagraphs.length], oldRoot);
         }
 
-        function verifySubtreeReplacement(doc, target, headingIndex, rows, insertedCount, previousParagraphCount, removedCount) {
-          var expected = getFirstInsertText(rows);
-          if (!expected) return false;
-          var firstTextOffset = -1;
-          for (var index = 0; index < rows.length; index += 1) {
-            if (normalizeText(rows[index] && rows[index].text)) {
-              firstTextOffset = index;
-              break;
-            }
-          }
-          if (firstTextOffset < 0) return false;
+        function verifySubtreeReplacement(doc, headingIndex, insertedParagraphs, boundaryParagraph, previousParagraphCount, removedCount) {
           var paragraphs = getAllParagraphs(doc);
-          if (paragraphs.length !== previousParagraphCount + insertedCount - removedCount) return false;
-          var insertedParagraph = paragraphs[headingIndex + firstTextOffset];
-          if (!insertedParagraph || getParagraphText(insertedParagraph) !== expected) return false;
-          var boundaryIndex = headingIndex + insertedCount;
-          if (target.subtreeEndsAtDocumentEnd) return boundaryIndex === paragraphs.length;
-          var endRef = target.subtreeEndRef || null;
-          var boundaryExpected = normalizeText(endRef && (endRef.title || endRef.text) || "");
-          var boundary = paragraphs[boundaryIndex];
-          return Boolean(boundary && boundaryExpected && getParagraphText(boundary) === boundaryExpected);
+          if (paragraphs.length !== previousParagraphCount + insertedParagraphs.length - removedCount) return false;
+          for (var index = 0; index < insertedParagraphs.length; index += 1) {
+            if (!isSameParagraph(paragraphs[headingIndex + index], insertedParagraphs[index])) return false;
+          }
+          var boundaryIndex = headingIndex + insertedParagraphs.length;
+          return boundaryParagraph
+            ? isSameParagraph(paragraphs[boundaryIndex], boundaryParagraph)
+            : boundaryIndex === paragraphs.length;
         }
 
         function getReferenceParagraph(doc, item) {
@@ -1939,15 +1927,17 @@
                 Asc.scope.gfSolutionWritingResult = { ok: false, error: "保存的标题子树范围已失效：" + getTargetTitle(replaceTarget) };
                 return;
               }
+              var oldRootParagraph = allParagraphs[headingIndex];
+              var boundaryParagraph = allParagraphs[headingIndex + oldSubtreeParagraphs.length] || null;
               var previousParagraphCount = allParagraphs.length;
-              var subtreeInserted = insertContentAtHeading(doc, allParagraphs[headingIndex], headingIndex, previousParagraphCount, content);
+              var subtreeInserted = insertContentAtHeading(doc, oldRootParagraph, headingIndex, previousParagraphCount, content);
               mutation.inserted = subtreeInserted.inserted || 0;
               if (!subtreeInserted.ok) {
                 Asc.scope.gfSolutionWritingResult = { ok: false, partial: Boolean(subtreeInserted.partial), inserted: mutation.inserted, error: subtreeInserted.error || "未能写入目标标题子树：" + getTargetTitle(replaceTarget) };
                 return;
               }
-              if (!verifyInsertedAtHeading(doc, replaceTarget, headingIndex, source, content.length, previousParagraphCount)) {
-                var verificationRollback = rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, getTargetTitle(replaceTarget));
+              if (!verifyInsertedAtHeading(doc, headingIndex, content, oldRootParagraph, previousParagraphCount)) {
+                var verificationRollback = rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, oldRootParagraph);
                 mutation.inserted = verificationRollback ? 0 : mutation.inserted;
                 Asc.scope.gfSolutionWritingResult = { ok: false, partial: !verificationRollback, inserted: mutation.inserted, error: "OnlyOffice 未确认内容写入目标标题位置：" + getTargetTitle(replaceTarget) + (verificationRollback ? "，已回滚" : "，且回滚失败") };
                 return;
@@ -1955,15 +1945,15 @@
               var subtreeCleared = deleteTargetSubtreeParagraphs(oldSubtreeParagraphs);
               mutation.cleared = subtreeCleared.cleared || 0;
               if (!subtreeCleared.ok) {
-                var oldSubtreeIntact = mutation.cleared === 0 && isOldSubtreeIntactAfterInsert(doc, replaceTarget, headingIndex, previousParagraphCount, mutation.inserted);
+                var oldSubtreeIntact = mutation.cleared === 0 && isOldSubtreeIntactAfterInsert(doc, headingIndex, oldRootParagraph, previousParagraphCount, mutation.inserted);
                 var deleteFailureRollback = oldSubtreeIntact
-                  ? rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, getTargetTitle(replaceTarget))
+                  ? rollbackInsertedParagraphs(doc, content, previousParagraphCount, headingIndex, oldRootParagraph)
                   : false;
                 mutation.inserted = deleteFailureRollback ? 0 : mutation.inserted;
                 Asc.scope.gfSolutionWritingResult = { ok: false, partial: !deleteFailureRollback, inserted: mutation.inserted, cleared: mutation.cleared, error: (subtreeCleared.error || "新内容已写入，但原标题子树未能完整清理") + (deleteFailureRollback ? "，新内容已回滚" : "") };
                 return;
               }
-              if (!verifySubtreeReplacement(doc, replaceTarget, headingIndex, source, mutation.inserted, previousParagraphCount, mutation.cleared)) {
+              if (!verifySubtreeReplacement(doc, headingIndex, content, boundaryParagraph, previousParagraphCount, mutation.cleared)) {
                 Asc.scope.gfSolutionWritingResult = { ok: false, partial: true, inserted: mutation.inserted, cleared: mutation.cleared, error: "OnlyOffice 未确认标题子树替换后的最终位置：" + getTargetTitle(replaceTarget) };
                 return;
               }
