@@ -31,9 +31,16 @@ function insertSolutionWritingWithConnector({ text, paragraphs, requestId, timeo
       );
     }
     function getAllParagraphs(doc) {
+      var logicDocument = doc && doc.Document;
+      if (!logicDocument || typeof logicDocument.ClearListsCache !== "function") return [];
+      try {
+        logicDocument.ClearListsCache();
+      } catch (error) {
+        return [];
+      }
       var apiParagraphs = callWithArgs(doc, "GetAllParagraphs", []);
-      var logicParagraphs = doc && doc.Document
-        ? callWithArgs(doc.Document, "GetAllParagraphs", [{ OnlyMainDocument: true, All: true }])
+      var logicParagraphs = logicDocument
+        ? callWithArgs(logicDocument, "GetAllParagraphs", [{ OnlyMainDocument: true, All: true }])
         : null;
       if (!Array.isArray(apiParagraphs) || !Array.isArray(logicParagraphs)) return [];
       var apiParagraphsByImpl = new Map();

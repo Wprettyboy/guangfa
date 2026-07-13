@@ -1529,9 +1529,12 @@
 
         function getAllParagraphs(doc) {
           try {
+            var logicDocument = doc && doc.Document;
+            if (!logicDocument || typeof logicDocument.ClearListsCache !== "function") return [];
+            logicDocument.ClearListsCache();
             var apiParagraphs = doc && typeof doc.GetAllParagraphs === "function" ? doc.GetAllParagraphs() : null;
-            var logicParagraphs = doc && doc.Document && typeof doc.Document.GetAllParagraphs === "function"
-              ? doc.Document.GetAllParagraphs({ OnlyMainDocument: true, All: true })
+            var logicParagraphs = typeof logicDocument.GetAllParagraphs === "function"
+              ? logicDocument.GetAllParagraphs({ OnlyMainDocument: true, All: true })
               : null;
             if (!Array.isArray(apiParagraphs) || !Array.isArray(logicParagraphs)) return [];
             var apiParagraphsByImpl = new Map();

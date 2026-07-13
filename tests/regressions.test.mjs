@@ -110,6 +110,8 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   let documentApi = null;
   let actionStarts = 0;
   let actionFinishes = 0;
+  let cachedMainParagraphs = null;
+  let paragraphCacheClears = 0;
   let resolveOutline;
   let resolveInsert;
   const outlined = new Promise((resolve) => { resolveOutline = resolve; });
@@ -148,13 +150,31 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   const mainParagraphs = ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph);
   const headerParagraph = createParagraph("Header");
   const footnoteParagraph = createParagraph("Footnote");
+  const logicDocument = {
+    ClearListsCache() {
+      cachedMainParagraphs = null;
+      paragraphCacheClears += 1;
+    },
+    FinalizeAction() {
+      actionFinishes += 1;
+    },
+    GetAllParagraphs(options) {
+      if (!options?.OnlyMainDocument) return [...documentApi.paragraphs];
+      if (cachedMainParagraphs === null) cachedMainParagraphs = [...mainParagraphs];
+      return cachedMainParagraphs;
+    },
+    Recalculate() {},
+    StartAction() {
+      actionStarts += 1;
+    },
+    UpdateInterface() {},
+    UpdateSelection() {},
+  };
   documentApi = {
     get paragraphs() {
       return [headerParagraph, ...mainParagraphs, footnoteParagraph];
     },
-    Document: {
-      GetAllParagraphs: () => [...mainParagraphs],
-    },
+    Document: logicDocument,
     AddElement(index, paragraph) {
       mainParagraphs.splice(index, 0, paragraph);
       return true;
@@ -165,20 +185,6 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
     GetStyle() {
       return null;
     },
-  };
-  const logicDocument = {
-    FinalizeAction() {
-      actionFinishes += 1;
-    },
-    GetAllParagraphs(options) {
-      return options?.OnlyMainDocument ? [...mainParagraphs] : [...documentApi.paragraphs];
-    },
-    Recalculate() {},
-    StartAction() {
-      actionStarts += 1;
-    },
-    UpdateInterface() {},
-    UpdateSelection() {},
   };
   const parent = {
     postMessage(message) {
@@ -295,6 +301,7 @@ test("OnlyOffice probe replaces a precise subtree through the loaded Builder API
   assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "New root", "New body", "Final chapter", "Footnote"]);
   assert.equal(actionStarts, 2);
   assert.equal(actionFinishes, 2);
+  assert.ok(paragraphCacheClears > 0);
 });
 
 test("solution connector replaces only the selected template subtree", async () => {
@@ -304,6 +311,11 @@ test("solution connector replaces only the selected template subtree", async () 
   let addElementFailureAt = -1;
   let addElementCallCount = 0;
   let deleteFailureText = "";
+  let mainParagraphs = [];
+  let headerParagraph = null;
+  let footnoteParagraph = null;
+  let cachedMainParagraphs = null;
+  let paragraphCacheClears = 0;
   const createParagraph = (text = "") => {
     const paragraph = {
       text,
@@ -312,9 +324,9 @@ test("solution connector replaces only the selected template subtree", async () 
       },
       Delete() {
         if (paragraph.text === deleteFailureText) return false;
-        const index = documentApi.paragraphs.indexOf(paragraph);
+        const index = mainParagraphs.indexOf(paragraph);
         if (index < 0) return false;
-        documentApi.paragraphs.splice(index, 1);
+        mainParagraphs.splice(index, 1);
         return true;
       },
       GetParaPr() {
@@ -327,7 +339,7 @@ test("solution connector replaces only the selected template subtree", async () 
         return paragraph;
       },
       GetIndex() {
-        return documentApi.paragraphs.indexOf(paragraph);
+        return mainParagraphs.indexOf(paragraph);
       },
       SetStyle() {
         return true;
@@ -337,11 +349,24 @@ test("solution connector replaces only the selected template subtree", async () 
   };
   const resetDocument = () => {
     addElementCallCount = 0;
+    mainParagraphs = ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph);
+    headerParagraph = createParagraph("Header");
+    footnoteParagraph = createParagraph("Footnote");
+    cachedMainParagraphs = null;
     documentApi = {
-      paragraphs: ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"].map(createParagraph),
+      get paragraphs() {
+        return [headerParagraph, ...mainParagraphs, footnoteParagraph];
+      },
       Document: {
+        ClearListsCache() {
+          cachedMainParagraphs = null;
+          paragraphCacheClears += 1;
+        },
         GetAllParagraphs() {
-          return documentApi.paragraphs.map((paragraph) => paragraph.private_GetImpl());
+          if (cachedMainParagraphs === null) {
+            cachedMainParagraphs = mainParagraphs.map((paragraph) => paragraph.private_GetImpl());
+          }
+          return cachedMainParagraphs;
         },
       },
       AddElement(index, paragraph) {
@@ -350,7 +375,7 @@ test("solution connector replaces only the selected template subtree", async () 
           return false;
         }
         addElementCallCount += 1;
-        this.paragraphs.splice(index, 0, paragraph);
+        mainParagraphs.splice(index, 0, paragraph);
         return true;
       },
       GetAllParagraphs() {
@@ -360,7 +385,7 @@ test("solution connector replaces only the selected template subtree", async () 
         return null;
       },
       InsertContent(content) {
-        this.paragraphs.push(...content);
+        mainParagraphs.push(...content);
         return true;
       },
     };
@@ -400,7 +425,23 @@ test("solution connector replaces only the selected template subtree", async () 
     });
     assert.equal(result.ok, true);
     assert.equal(result.source, "connector-replace-heading-subtree");
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "New module", "New planning body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "New module", "New planning body", "Next chapter", "After", "Footnote"]);
+
+    const endResult = await insertSolutionWritingWithConnector({
+      text: "Final chapter",
+      paragraphs: [{ type: "module-heading", text: "Final chapter" }],
+      requestId: "subtree-document-end",
+      timeoutMs: 1000,
+      replaceTarget: {
+        scope: "subtree",
+        title: "Next chapter",
+        styleRef: { paragraphIndex: 3, title: "Next chapter" },
+        subtreeEndRef: null,
+        subtreeParagraphCount: 2,
+      },
+    });
+    assert.equal(endResult.ok, true);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "New module", "New planning body", "Final chapter", "Footnote"]);
 
     resetDocument();
     const invalidResult = await insertSolutionWritingWithConnector({
@@ -411,7 +452,7 @@ test("solution connector replaces only the selected template subtree", async () 
       replaceTarget: { ...replaceTarget, subtreeEndRef: { paragraphIndex: 5, title: "Next chapter" } },
     });
     assert.equal(invalidResult.ok, false);
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
 
     resetDocument();
     addElementFailureAt = 1;
@@ -427,7 +468,7 @@ test("solution connector replaces only the selected template subtree", async () 
     });
     assert.equal(rolledBackResult.ok, false);
     assert.equal(rolledBackResult.partial, false);
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
     addElementFailureAt = -1;
 
     resetDocument();
@@ -444,7 +485,7 @@ test("solution connector replaces only the selected template subtree", async () 
     });
     assert.equal(deleteRolledBackResult.ok, false);
     assert.equal(deleteRolledBackResult.partial, false);
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
     deleteFailureText = "";
 
     const titleOnlyResult = await insertSolutionWritingWithConnector({
@@ -460,7 +501,7 @@ test("solution connector replaces only the selected template subtree", async () 
       },
     });
     assert.equal(titleOnlyResult.ok, false);
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
 
     const emptyTargetResult = await insertSolutionWritingWithConnector({
       text: "Must not fall back to the cursor",
@@ -470,7 +511,7 @@ test("solution connector replaces only the selected template subtree", async () 
       replaceTarget: {},
     });
     assert.equal(emptyTargetResult.ok, false);
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
 
     const mismatchedTitleResult = await insertSolutionWritingWithConnector({
       text: "Must not use inconsistent target metadata",
@@ -480,7 +521,8 @@ test("solution connector replaces only the selected template subtree", async () 
       replaceTarget: { ...replaceTarget, title: "Different root" },
     });
     assert.equal(mismatchedTitleResult.ok, false);
-    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Before", "Template root", "Template child", "Old body", "Next chapter", "After"]);
+    assert.deepEqual(documentApi.paragraphs.map((paragraph) => paragraph.text), ["Header", "Before", "Template root", "Template child", "Old body", "Next chapter", "After", "Footnote"]);
+    assert.ok(paragraphCacheClears > 0);
   } finally {
     clearOnlyOfficeEditor(editor);
     if (previousWindow === undefined) delete globalThis.window;

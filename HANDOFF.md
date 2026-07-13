@@ -191,7 +191,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - OnlyOffice 9.4 的 `CDocumentOutline.Elements[index]` 是 `{ Paragraph, Lvl }` 包装项；Probe 必须使用其 `.Paragraph` 与 `LogicDocument.GetAllParagraphs()` 做对象身份匹配。直接拿包装项匹配会让全部 `styleRef` 和子树元数据为空。
 - 当前社区版外层 `api.js` 不提供 `DocsAPI.DocEditor.createConnector()`，编辑器主窗口也不是插件上下文，不能调用 `Asc.Editor.callCommand()`；注入层通过本地 SDK 已加载的 `AscBuilder.Api.GetDocument/CreateParagraph` 执行同一套精确替换命令，并用 `LogicDocument.StartAction/FinalizeAction` 包住历史动作。只有索引、标题、子树数量和结束边界全部校验通过才写入，逻辑文档当前光标 fallback 仍保持关闭。
 - `ApiDocument.GetAllParagraphs()` 无参调用会按“页眉页脚、主文档、脚注尾注”返回全量段落，不能直接使用大纲读取保存的主文档索引。Probe 与 Connector 写入命令现在从 `ApiDocument.Document.GetAllParagraphs({ OnlyMainDocument: true, All: true })` 取得主文档 Paragraph，再按 `ApiParagraph.private_GetImpl()` 对象身份映射回同序 API wrapper；任一对象缺失即失败关闭，不使用固定偏移或标题扫描。
-- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=121`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=122`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
 
 ### 安全与失败语义加固
 
@@ -246,6 +246,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 4. Connector 属于 OnlyOffice Automation API，部分部署版本可能不可用；调用方必须先探测能力并保留明确降级路径，不允许静默假装成功。
 5. 需要“沿用原文标题/正文样式”时，优先保存参考段落定位信息，在写入命令同一 Office 上下文里重新定位参考段落，并用 `referenceParagraph.GetParaPr().GetStyle()` + `targetParagraph.GetParaPr().SetStyle(style)` 复制真实段落样式；只有参考段落缺失时才退回样式名匹配。
 6. 需要把导航大纲项精确映射到正文段落时，兼容注入层使用 `CDocumentOutline.Elements[item.index].Paragraph` 保存的真实 `Paragraph` 对象，与 `LogicDocument.GetAllParagraphs()` 按对象身份取得 `paragraphIndex`；`Elements[item.index]` 本身是 `{ Paragraph, Lvl }` 包装项。对象或下一条大纲边界映射失败时返回空引用和空正文范围，不得按标题文本扫描补偿。
+7. `CDocument.GetAllParagraphs({ OnlyMainDocument: true, All: true })` 会复用 `AllParagraphsList`；同一历史动作内的 `ApiDocumentContent.AddElement()`、内部 `AddToContent`、删除、重算和结束动作不会自动使该缓存失效。每次结构写入后的权威主文档重读都必须先同步调用 `CDocument.ClearListsCache()`，再按 Paragraph 对象身份映射；`ClearListsCache()` 缺失或调用失败时必须失败关闭，不得延时重试、按标题搜索或回退旧列表。
 
 #### 通信约定
 
@@ -391,7 +392,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
-- 当前有效缓存号：outline `gf=121`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
+- 当前有效缓存号：outline `gf=122`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 ### OnlyOffice 原生 AI 接本地模型
