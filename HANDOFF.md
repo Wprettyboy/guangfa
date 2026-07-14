@@ -416,6 +416,14 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - 当前有效缓存号：outline `gf=123`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
+#### OnlyOffice 字体同步
+
+- `scripts/start-onlyoffice.ps1` 先复制既有 `C:\Windows\Fonts` 中文字体，再按 Windows 字体注册表精确名称解析 HKCU/HKLM 字体路径；支持当前用户字体注册表返回的绝对路径，不按相似名称猜测字体文件。
+- 当前额外同步的字体族：`仿宋_GB2312`、`方正书宋简体`、`方正仿宋简体`、`方正大标宋简体`、`方正大黑简体`、`方正宋一简体`、`方正宋三简体`、`方正宋黑简体`、`方正超粗黑_GBK`。
+- 字体复制到容器 `/usr/share/fonts/truetype/guangfa` 后，脚本统一执行 `fc-cache -f` 和 `/usr/bin/documentserver-generate-allfonts.sh`，随后按原流程重启 DocumentServer；字体变更不需要调整 OnlyOffice 注入脚本缓存号。
+- OnlyOffice 的 SDK 字体清单使用 TTF 内部英文 family 名称：`仿宋_GB2312 -> FangSong_GB2312`、`方正书宋简体 -> FZShuSong-Z01S`、`方正仿宋简体 -> FZFangSong-Z02S`、`方正大标宋简体 -> FZDaBiaoSong-B06S`、`方正大黑简体 -> FZDaHei-B02S`、`方正宋一简体 -> FZSongYi-Z13S`、`方正宋三简体 -> FZSong III-Z05S`、`方正宋黑简体 -> FZSongHei-B07S`、`方正超粗黑_GBK -> FZChaoCuHei-M10`；中文名称仍可由 fontconfig 精确解析到同一字体文件。
+- 验证字体时使用 `docker exec guangfa-onlyoffice fc-match "中文字体名称"` 检查实际 TTF 路径，并检查 `/var/www/onlyoffice/documentserver/sdkjs/common/AllFonts.js` 包含对应英文内部 family；最后确认 `http://127.0.0.1:8080/healthcheck` 返回 200。
+
 ### OnlyOffice 原生 AI 接本地模型
 
 已完成配置：

@@ -68,6 +68,38 @@ if ($existing -eq $name) {
   docker run -d --name $name -p 127.0.0.1:8080:80 -e JWT_ENABLED=false --restart unless-stopped $image | Out-Null
 }
 
+function Get-RegisteredFontPath {
+  param([Parameter(Mandatory = $true)][string]$RegistryName)
+
+  $registrations = @(
+    @{
+      Path = "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
+      Directory = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
+    },
+    @{
+      Path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
+      Directory = "C:\Windows\Fonts"
+    }
+  )
+
+  foreach ($registration in $registrations) {
+    $registryKey = Get-Item -LiteralPath $registration.Path -ErrorAction SilentlyContinue
+    if (!$registryKey) { continue }
+
+    $registeredPath = $registryKey.GetValue($RegistryName)
+    if (!$registeredPath) { continue }
+
+    $fontPath = if ([IO.Path]::IsPathRooted($registeredPath)) {
+      $registeredPath
+    } else {
+      Join-Path $registration.Directory $registeredPath
+    }
+    if (Test-Path -LiteralPath $fontPath) { return $fontPath }
+  }
+
+  return $null
+}
+
 $fontDir = "/usr/share/fonts/truetype/guangfa"
 $fontFiles = @(
   "simfang.ttf",
@@ -89,7 +121,30 @@ foreach ($fontFile in $fontFiles) {
     docker cp $fontPath "${name}:$fontDir/$fontFile" | Out-Null
   }
 }
-docker exec $name bash -lc "fc-cache -f '$fontDir' && /usr/bin/documentserver-generate-allfonts.sh"
+$registeredFontNames = ConvertFrom-Json @'
+[
+  "\u4eff\u5b8b_GB2312 (TrueType)",
+  "\u65b9\u6b63\u4e66\u5b8b\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u4eff\u5b8b\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u5927\u6807\u5b8b\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u5927\u9ed1\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u5b8b\u4e00\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u5b8b\u4e09\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u5b8b\u9ed1\u7b80\u4f53 (TrueType)",
+  "\u65b9\u6b63\u8d85\u7c97\u9ed1_GBK (TrueType)"
+]
+'@
+foreach ($registeredFontName in $registeredFontNames) {
+  $fontPath = Get-RegisteredFontPath $registeredFontName
+  if (!$fontPath) {
+    Write-Warning "Registered font was not found: $registeredFontName"
+    continue
+  }
+
+  $fontFile = Split-Path $fontPath -Leaf
+  docker cp $fontPath "${name}:$fontDir/$fontFile" | Out-Null
+}
+docker exec $name bash -lc "chmod 644 '$fontDir'/* && fc-cache -f '$fontDir' && /usr/bin/documentserver-generate-allfonts.sh"
 
 $outlineProbe = Join-Path $PSScriptRoot "onlyoffice-outline-probe.js"
 if (Test-Path $outlineProbe) {

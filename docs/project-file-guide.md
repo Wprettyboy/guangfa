@@ -129,7 +129,7 @@
 | `scripts/start-local-embedding.ps1` | Embedding 启动脚本。创建 Python 虚拟环境，可选安装 CPU 依赖，选择本地/镜像 BGE-M3 后运行服务。 |
 | `scripts/start-local-qwen36-cpu.ps1` | Qwen CPU/Vulkan 启动脚本。校验 llama.cpp 与 GGUF，以较小上下文在 8129 提供 OpenAI 兼容接口。 |
 | `scripts/start-local-qwen36-rocm.ps1` | Qwen AMD ROCm 启动脚本。配置 ROCm DLL、上下文和 GPU 层数，在 8129 启动本地模型；一键启动默认走此路径。 |
-| `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、启动仅本机可访问的 DocumentServer、安装中文字体和桥接脚本、写入本地 AI 配置、打补丁并健康检查。 |
+| `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、启动仅本机可访问的 DocumentServer、从系统字体目录及 Windows 字体注册表精确同步中文字体和方正字体、安装桥接脚本、写入本地 AI 配置、打补丁并健康检查。 |
 | `scripts/start-plantuml.ps1` | PlantUML 部署启动。启动容器并映射 8090，复制中文字体、刷新缓存并验证服务。 |
 | `scripts/test-qwen-vulkan-variants.ps1` | Qwen Vulkan 参数诊断。轮换 Flash Attention、卸载和 GPU 层数配置，检查健康、聊天结果、耗时和错误。 |
 
