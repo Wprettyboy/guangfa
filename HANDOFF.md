@@ -6,6 +6,8 @@
 
 本项目根目录：`C:\Users\23811\Desktop\广发new`
 
+完整的目录结构和逐文件功能说明见 `docs/project-file-guide.md`；查找业务入口、OnlyOffice 接口、服务端职责或测试覆盖时先查该文档。
+
 当前已是可用 git 仓库，远端为 `https://github.com/Wprettyboy/guangfa.git`。当前工作分支为 `feature/refactor-main`，跟踪 `origin/feature/refactor-main`。改代码前先读文件，避免误改用户未提交内容。
 
 不要把 `.env.local` 里的云端 API Key 发到聊天窗口或文档里。
