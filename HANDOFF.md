@@ -418,10 +418,11 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 #### OnlyOffice 字体同步
 
-- `scripts/start-onlyoffice.ps1` 先复制既有 `C:\Windows\Fonts` 中文字体，再按 Windows 字体注册表精确名称解析 HKCU/HKLM 字体路径；支持当前用户字体注册表返回的绝对路径，不按相似名称猜测字体文件。
-- 当前额外同步的字体族：`仿宋_GB2312`、`方正书宋简体`、`方正仿宋简体`、`方正大标宋简体`、`方正大黑简体`、`方正宋一简体`、`方正宋三简体`、`方正宋黑简体`、`方正超粗黑_GBK`。
+- `scripts/start-onlyoffice.ps1` 先复制既有 `C:\Windows\Fonts` 中文字体，再从 `%LOCALAPPDATA%\Microsoft\Windows\Fonts` 复制已核验的精确用户字体文件名；不依赖可能随字体安装器变化的 HKCU 注册项，也不按相似名称猜测字体文件。
+- 当前额外同步的字体族：`仿宋_GB2312`、`楷体_GB2312`、`方正书宋简体`、`方正仿宋简体`、`方正大标宋简体`、`方正大黑简体`、`方正宋一简体`、`方正宋三简体`、`方正宋黑简体`、`方正超粗黑_GBK`、`方正小标宋简体`。
 - 字体复制到容器 `/usr/share/fonts/truetype/guangfa` 后，脚本统一执行 `fc-cache -f` 和 `/usr/bin/documentserver-generate-allfonts.sh`，随后按原流程重启 DocumentServer；字体变更不需要调整 OnlyOffice 注入脚本缓存号。
-- OnlyOffice 的 SDK 字体清单使用 TTF 内部英文 family 名称：`仿宋_GB2312 -> FangSong_GB2312`、`方正书宋简体 -> FZShuSong-Z01S`、`方正仿宋简体 -> FZFangSong-Z02S`、`方正大标宋简体 -> FZDaBiaoSong-B06S`、`方正大黑简体 -> FZDaHei-B02S`、`方正宋一简体 -> FZSongYi-Z13S`、`方正宋三简体 -> FZSong III-Z05S`、`方正宋黑简体 -> FZSongHei-B07S`、`方正超粗黑_GBK -> FZChaoCuHei-M10`；中文名称仍可由 fontconfig 精确解析到同一字体文件。
+- OnlyOffice 的 SDK 字体清单使用 TTF 内部英文 family 名称：`仿宋_GB2312 -> FangSong_GB2312`、`楷体_GB2312 -> KaiTi_GB2312`、`方正书宋简体 -> FZShuSong-Z01S`、`方正仿宋简体 -> FZFangSong-Z02S`、`方正大标宋简体 -> FZDaBiaoSong-B06S`、`方正大黑简体 -> FZDaHei-B02S`、`方正宋一简体 -> FZSongYi-Z13S`、`方正宋三简体 -> FZSong III-Z05S`、`方正宋黑简体 -> FZSongHei-B07S`、`方正超粗黑_GBK -> FZChaoCuHei-M10`、`方正小标宋简体 -> FZXiaoBiaoSong-B05S`；中文名称仍可由 fontconfig 精确解析到同一字体文件。
+- `scripts/onlyoffice-font-aliases.conf` 把没有独立字体文件的 `黑体_GB2312` 强别名到 Windows 标准黑体 `SimHei` / `simhei.ttf`。OnlyOffice 字体列表仍显示内部名 `SimHei`，别名用于保证文档字体解析；“方正小标宋简体二号”中的“二号”是 `22pt` 字号，不属于字体族名称。
 - 验证字体时使用 `docker exec guangfa-onlyoffice fc-match "中文字体名称"` 检查实际 TTF 路径，并检查 `/var/www/onlyoffice/documentserver/sdkjs/common/AllFonts.js` 包含对应英文内部 family；最后确认 `http://127.0.0.1:8080/healthcheck` 返回 200。
 
 ### OnlyOffice 原生 AI 接本地模型

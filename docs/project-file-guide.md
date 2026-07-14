@@ -118,6 +118,7 @@
 | `scripts/import-samr-contract-samples.py` | 市监总局合同样例下载与模板导入。选择代表模板、识别格式、保存文件，并将支持的模板以 Base64 和分类元数据入库。 |
 | `scripts/local_embedding_server.py` | 本地 BGE-M3 向量服务。用 FastAPI 提供 `/health` 和 OpenAI 兼容 `/v1/embeddings`，处理批量输入、设备选择、归一化和维度调整。 |
 | `scripts/make_format_audit_fixture.py` | 格式审核样例生成器。使用 `python-docx` 创建各种故意错误并输出根目录测试 DOCX。 |
+| `scripts/onlyoffice-font-aliases.conf` | OnlyOffice 容器 Fontconfig 别名配置。将没有独立字体文件的 `黑体_GB2312` 精确映射到标准黑体 `SimHei`。 |
 | `scripts/onlyoffice-layout-format.js` | OnlyOffice 排版体检/修复注入脚本。读取段落与 section，分析格式并执行页面、正文、标题、落款修复，通过排版消息与前端交互。 |
 | `scripts/onlyoffice-outline-probe.js` | OnlyOffice 核心注入桥。读取大纲/样式/选区/页码，管理普通字段和复杂填充书签，执行字段、金额、选项、方案正文/子树替换，控制保存/修订，并插入表格和图片。 |
 | `scripts/onlyoffice-placeholder-fields.js` | 占位变量注入脚本。用 `GF_PH_` 书签插入变量标签，支持跳转、选择、删除和按值替换。 |
@@ -129,7 +130,7 @@
 | `scripts/start-local-embedding.ps1` | Embedding 启动脚本。创建 Python 虚拟环境，可选安装 CPU 依赖，选择本地/镜像 BGE-M3 后运行服务。 |
 | `scripts/start-local-qwen36-cpu.ps1` | Qwen CPU/Vulkan 启动脚本。校验 llama.cpp 与 GGUF，以较小上下文在 8129 提供 OpenAI 兼容接口。 |
 | `scripts/start-local-qwen36-rocm.ps1` | Qwen AMD ROCm 启动脚本。配置 ROCm DLL、上下文和 GPU 层数，在 8129 启动本地模型；一键启动默认走此路径。 |
-| `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、启动仅本机可访问的 DocumentServer、从系统字体目录及 Windows 字体注册表精确同步中文字体和方正字体、安装桥接脚本、写入本地 AI 配置、打补丁并健康检查。 |
+| `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、启动仅本机可访问的 DocumentServer、从系统及当前用户字体目录按精确文件名同步中文字体和方正字体、安装字体别名与桥接脚本、写入本地 AI 配置、打补丁并健康检查。 |
 | `scripts/start-plantuml.ps1` | PlantUML 部署启动。启动容器并映射 8090，复制中文字体、刷新缓存并验证服务。 |
 | `scripts/test-qwen-vulkan-variants.ps1` | Qwen Vulkan 参数诊断。轮换 Flash Attention、卸载和 GPU 层数配置，检查健康、聊天结果、耗时和错误。 |
 
