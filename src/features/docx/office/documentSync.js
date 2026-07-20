@@ -36,8 +36,15 @@ async function resolveOfficeDocumentBuffer(officeDocId, baselineBuffer, options 
 
 async function fetchOfficeDocumentBuffer(officeDocId) {
   if (!officeDocId) return null;
-  const response = await fetch(`/api/office/documents/${officeDocId}/file?t=${Date.now()}`, { cache: "no-store" });
-  return response.ok ? response.arrayBuffer() : null;
+  try {
+    return await apiRequest(`/api/office/documents/${officeDocId}/file?t=${Date.now()}`, {
+      cache: "no-store",
+      responseType: "arrayBuffer",
+      fallbackMessage: "OnlyOffice 文档读取失败",
+    });
+  } catch {
+    return null;
+  }
 }
 
 function arrayBuffersEqual(left, right) {
@@ -61,3 +68,4 @@ export {
   resolveOfficeDocumentBuffer,
   waitForChangedOfficeDocumentBuffer,
 };
+import { apiRequest } from "../../../services/apiClient.js";

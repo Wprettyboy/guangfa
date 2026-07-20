@@ -37,14 +37,37 @@ if (!(Test-DockerReady)) {
 $root = Split-Path $PSScriptRoot -Parent
 $localAiBaseUrl = "http://127.0.0.1:8129/v1"
 $localAiModel = "qwen3.6-35b-a3b"
-$localAiApiKey = "sk-local"
+$onlyOfficeAiClientApiKey = "sk-local"
+$onlyOfficeJwtSecret = ""
 $envFile = Join-Path $root ".env.local"
 if (Test-Path $envFile) {
   foreach ($line in Get-Content $envFile) {
     if ($line -match "^\s*LOCAL_LLM_BASE_URL\s*=\s*(.+?)\s*$") { $localAiBaseUrl = $Matches[1] }
     if ($line -match "^\s*LOCAL_LLM_MODEL\s*=\s*(.+?)\s*$") { $localAiModel = $Matches[1] }
-    if ($line -match "^\s*LOCAL_LLM_API_KEY\s*=\s*(.+?)\s*$" -and $Matches[1]) { $localAiApiKey = $Matches[1] }
+    if ($line -match "^\s*ONLYOFFICE_AI_CLIENT_API_KEY\s*=\s*(.+?)\s*$" -and $Matches[1]) { $onlyOfficeAiClientApiKey = $Matches[1] }
+    if ($line -match "^\s*ONLYOFFICE_JWT_SECRET\s*=\s*(.+?)\s*$" -and $Matches[1]) { $onlyOfficeJwtSecret = $Matches[1].Trim('"') }
   }
+}
+if (!$onlyOfficeJwtSecret) {
+  $secretBytes = New-Object byte[] 48
+  $random = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $random.GetBytes($secretBytes) } finally { $random.Dispose() }
+  $onlyOfficeJwtSecret = [Convert]::ToBase64String($secretBytes)
+  if (Test-Path $envFile) {
+    $envContent = [IO.File]::ReadAllText($envFile)
+    if ($envContent -match "(?m)^ONLYOFFICE_JWT_SECRET=") {
+      $envContent = [regex]::Replace($envContent, "(?m)^ONLYOFFICE_JWT_SECRET=.*$", "ONLYOFFICE_JWT_SECRET=$onlyOfficeJwtSecret")
+      [IO.File]::WriteAllText($envFile, $envContent, [Text.UTF8Encoding]::new($false))
+    } else {
+      [IO.File]::AppendAllText($envFile, "`nONLYOFFICE_JWT_SECRET=$onlyOfficeJwtSecret`n", [Text.UTF8Encoding]::new($false))
+    }
+  } else {
+    [IO.File]::WriteAllText($envFile, "ONLYOFFICE_JWT_SECRET=$onlyOfficeJwtSecret`n", [Text.UTF8Encoding]::new($false))
+  }
+  Write-Host "Generated ONLYOFFICE_JWT_SECRET in .env.local"
+}
+if ($onlyOfficeJwtSecret.Length -lt 32) {
+  throw "ONLYOFFICE_JWT_SECRET must contain at least 32 characters."
 }
 $officeAiBaseUrl = $localAiBaseUrl -replace "^http://(?:127\.0\.0\.1|localhost)(:\d+)", 'http://host.docker.internal$1'
 
@@ -57,7 +80,12 @@ if ($existing -eq $name) {
   $bindingIsLocal = $bindings.Count -eq 1 `
     -and $bindings[0].HostIp -in @("127.0.0.1", "::1") `
     -and $bindings[0].HostPort -eq "8080"
-  if (!$bindingIsLocal) {
+  $containerEnv = @($inspection[0].Config.Env)
+  $jwtConfigMatches = $containerEnv -contains "JWT_ENABLED=true" `
+    -and $containerEnv -contains "JWT_SECRET=$onlyOfficeJwtSecret" `
+    -and $containerEnv -contains "JWT_HEADER=Authorization" `
+    -and $containerEnv -contains "JWT_IN_BODY=true"
+  if (!$bindingIsLocal -or !$jwtConfigMatches) {
     docker rm -f $name | Out-Null
     $existing = ""
   }
@@ -65,7 +93,12 @@ if ($existing -eq $name) {
 if ($existing -eq $name) {
   docker start $name | Out-Null
 } else {
-  docker run -d --name $name -p 127.0.0.1:8080:80 -e JWT_ENABLED=false --restart unless-stopped $image | Out-Null
+  docker run -d --name $name -p 127.0.0.1:8080:80 `
+    -e JWT_ENABLED=true `
+    -e JWT_SECRET="$onlyOfficeJwtSecret" `
+    -e JWT_HEADER=Authorization `
+    -e JWT_IN_BODY=true `
+    --restart unless-stopped $image | Out-Null
 }
 
 $windowsFontDir = "C:\Windows\Fonts"
@@ -140,7 +173,8 @@ if (Test-Path $layoutProbe) {
 docker exec `
   -e LOCAL_AI_BASE_URL="$officeAiBaseUrl" `
   -e LOCAL_AI_MODEL="$localAiModel" `
-  -e LOCAL_AI_API_KEY="$localAiApiKey" `
+  -e ONLYOFFICE_AI_CLIENT_API_KEY="$onlyOfficeAiClientApiKey" `
+  -e ONLYOFFICE_JWT_SECRET="$onlyOfficeJwtSecret" `
   $name bash -lc @'
 python3 - <<'PY'
 import json
@@ -150,11 +184,22 @@ with open(path, encoding='utf-8') as f:
     data=json.load(f)
 co=data.setdefault('services',{}).setdefault('CoAuthoring',{})
 co.setdefault('request-filtering-agent',{})['allowPrivateIPAddress']=True
-co.setdefault('request-filtering-agent',{})['allowMetaIPAddress']=True
+co.setdefault('request-filtering-agent',{})['allowMetaIPAddress']=False
+jwt_secret=os.environ['ONLYOFFICE_JWT_SECRET']
+token=co.setdefault('token',{})
+token['enable']={'browser':True,'request':{'inbox':True,'outbox':True}}
+token['browser']={'secretFromInbox':True}
+token['inbox']={'header':'Authorization','prefix':'Bearer ','inBody':True}
+token['outbox']={'header':'Authorization','prefix':'Bearer ','algorithm':'HS256','expires':'5m','inBody':True,'urlExclusionRegex':'[?&]accessToken='}
+token['session']={'algorithm':'HS256','expires':'30d'}
+token['verifyOptions']={'clockTolerance':60}
+secret=co.setdefault('secret',{})
+for target in ('browser','inbox','outbox','session'):
+    secret[target]={'string':jwt_secret,'file':''}
 base_url=os.environ.get('LOCAL_AI_BASE_URL','http://host.docker.internal:8129/v1').rstrip('/')
 provider_url=base_url[:-3] if base_url.lower().endswith('/v1') else base_url
 model=os.environ.get('LOCAL_AI_MODEL','qwen3.6-35b-a3b')
-api_key=os.environ.get('LOCAL_AI_API_KEY') or 'sk-local'
+api_key=os.environ.get('ONLYOFFICE_AI_CLIENT_API_KEY') or 'sk-local'
 data['aiSettings']={
   'version':3,
   'timeout':'5m',

@@ -1,17 +1,37 @@
 import { readFile, writeFile } from "node:fs/promises";
-import JSZip from "jszip";
+import { loadSafeDocx, readSafeZipEntry } from "../document-security.js";
 import { convertDocxToPdf } from "./docx-convert.js";
 import { extractPdfPages } from "./pdf-text.js";
+
+const parseTimeoutMs = clampNumber(Number(process.env.KNOWLEDGE_PARSE_TIMEOUT_MS || 60000), 5000, 120000);
 
 async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, fileExt, fileName }) {
   const ext = String(fileExt || "").toLowerCase();
   if (ext === "docx") {
-    return parseDocxDocument({ documentId, sourcePath, pdfPath, textPath, fileName });
+    return withTimeout(
+      parseDocxDocument({ documentId, sourcePath, pdfPath, textPath, fileName }),
+      parseTimeoutMs,
+      "DOCX 解析超时",
+    );
+  }
+  if (ext === "pdf") {
+    return withTimeout(parsePdfDocument({ sourcePath, textPath }), parseTimeoutMs, "PDF 解析超时");
+  }
+  if (ext !== "txt") {
+    const error = new Error("不支持的资料类型");
+    error.statusCode = 415;
+    throw error;
   }
   const text = await readFile(sourcePath, "utf8");
   const pages = [{ page: 1, text: normalizeDocumentText(text) }].filter((page) => page.text);
   await writeFile(textPath, pages.map((page) => page.text).join("\n\n"), "utf8");
   return { pages, parser: "plain-text", warning: "" };
+}
+
+async function parsePdfDocument({ sourcePath, textPath }) {
+  const pages = await extractPdfPages(sourcePath, { deadlineAt: Date.now() + parseTimeoutMs });
+  await writeFile(textPath, pages.map((page) => `第${page.page}页\n${page.text}`).join("\n\n"), "utf8");
+  return { pages, parser: "pdfjs", warning: "" };
 }
 
 async function parseDocxDocument({ documentId, sourcePath, pdfPath, textPath, fileName }) {
@@ -35,16 +55,36 @@ async function parseDocxDocument({ documentId, sourcePath, pdfPath, textPath, fi
 }
 
 async function readDocxCleanText(sourcePath) {
-  const zip = await JSZip.loadAsync(await readFile(sourcePath));
-  const documentXml = await zip.file("word/document.xml")?.async("text");
+  const zip = await loadSafeDocx(await readFile(sourcePath));
+  const documentXml = await readSafeZipEntry(zip, "word/document.xml", 32 * 1024 * 1024);
   if (!documentXml) return "";
-  return documentXml
+  return documentXml.toString("utf8")
     .split(/<\/w:p>/)
     .map(cleanDocxParagraphXml)
     .filter(Boolean)
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(message);
+        error.statusCode = 408;
+        reject(error);
+      }, timeoutMs);
+      timer.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function cleanDocxParagraphXml(paragraphXml) {

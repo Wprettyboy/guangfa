@@ -4,6 +4,8 @@ import {
   shouldRunAiOutlineAudit,
 } from "./config.js";
 import { readDocxStructure } from "../structure/docxStructure.js";
+import { apiRequest } from "../../../services/apiClient.js";
+
 async function enhanceAuditWithAiOutline(auditResult, file, config, onlyOfficeOutline, userInstruction = "") {
   const enabledSet = new Set(config.enabled || []);
   const aiOutlineEnabled = shouldRunAiOutlineAudit(config);
@@ -19,18 +21,17 @@ async function enhanceAuditWithAiOutline(auditResult, file, config, onlyOfficeOu
 
   let data = {};
   try {
-    const response = await fetch("/api/ai/format-outline-plan", {
+    data = await apiRequest("/api/ai/format-outline-plan", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      json: {
         candidates,
         onlyOfficeOutline: normalizeOnlyOfficeOutlineForAi(onlyOfficeOutline),
         auditRules: getUniversalOutlineAuditRules(),
         userInstruction,
-      }),
+      },
+      timeoutMs: 180_000,
+      fallbackMessage: "AI 标题/大纲审查失败",
     });
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "AI 标题/大纲审查失败");
   } catch (error) {
     return {
       ...auditResult,

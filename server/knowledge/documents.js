@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createEmbedding, createEmbeddings, isEmbeddingConfigured } from "../embedding.js";
+import { validateKnowledgeDocument } from "../document-security.js";
 import { buildKnowledgeChunks, buildKnowledgeParagraphs } from "./chunker.js";
 import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js";
 import { parseKnowledgeDocument } from "./parser.js";
@@ -13,6 +14,15 @@ import { resolveChunkSource } from "./source-resolver.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const filesDir = path.join(knowledgeDir, "files");
+const activeKnowledgeDocumentIds = new Set();
+const knowledgeDocumentSelectSql = `
+  SELECT id, kb_id AS kbId, name, file_name AS fileName, file_ext AS fileExt, mime_type AS mimeType,
+    file_size AS size, file_hash AS fileHash,
+    file_path AS filePath, pdf_path AS pdfPath, text_path AS textPath,
+    status, index_mode AS indexMode, page_count AS pageCount, paragraph_count AS paragraphCount,
+    chunk_count AS chunkCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
+  FROM knowledge_documents
+`;
 
 async function listKnowledgeBases() {
   const database = await getKnowledgeDatabase();
@@ -31,29 +41,31 @@ async function createKnowledgeBase(payload = {}) {
   const projectId = scope === "project" ? payload.projectId || defaultProjectId : "";
   const name = String(payload.name || "").trim() || (scope === "global" ? "全局知识库" : "项目知识库");
   const now = Date.now();
-  const existing = database.prepare(`
-    SELECT id, name, scope, project_id AS projectId, description, created_at AS createdAt, updated_at AS updatedAt
-    FROM knowledge_bases
-    WHERE deleted_at IS NULL AND name = ? AND scope = ? AND COALESCE(project_id, '') = ?
-  `).get(name, scope, projectId);
-  if (existing) return hydrateKnowledgeBase(database, existing);
-  const base = {
-    id: `KB-${now}-${Math.random().toString(36).slice(2, 7)}`,
-    name,
-    scope,
-    projectId,
-    description: String(payload.description || ""),
-    createdAt: now,
-    updatedAt: now,
-  };
-  database.prepare(`
-    INSERT INTO knowledge_bases (id, name, scope, project_id, description, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(base.id, base.name, base.scope, base.projectId, base.description, base.createdAt, base.updatedAt);
-  return hydrateKnowledgeBase(database, base);
+  return runTransaction(database, () => {
+    const existing = database.prepare(`
+      SELECT id, name, scope, project_id AS projectId, description, created_at AS createdAt, updated_at AS updatedAt
+      FROM knowledge_bases
+      WHERE deleted_at IS NULL AND name = ? AND scope = ? AND COALESCE(project_id, '') = ?
+    `).get(name, scope, projectId);
+    if (existing) return hydrateKnowledgeBase(database, existing);
+    const base = {
+      id: `KB-${now}-${randomUUID().slice(0, 12)}`,
+      name,
+      scope,
+      projectId,
+      description: String(payload.description || ""),
+      createdAt: now,
+      updatedAt: now,
+    };
+    database.prepare(`
+      INSERT INTO knowledge_bases (id, name, scope, project_id, description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(base.id, base.name, base.scope, base.projectId, base.description, base.createdAt, base.updatedAt);
+    return hydrateKnowledgeBase(database, base);
+  });
 }
 
-async function addKnowledgeDocument(kbId, payload = {}) {
+async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
   const database = await getKnowledgeDatabase();
   const kb = getKnowledgeBaseRow(database, kbId);
   if (!kb) throwHttpError("知识库不存在", 404);
@@ -63,89 +75,138 @@ async function addKnowledgeDocument(kbId, payload = {}) {
   const now = Date.now();
   const documentId = `DOC-${now}-${randomUUID().slice(0, 8)}`;
   const fileName = sanitizeFileName(payload.fileName || payload.name || "未命名资料");
-  const fileExt = path.extname(fileName).replace(/^\./, "").toLowerCase() || "txt";
+  const validatedFile = await validateKnowledgeDocument(fileBuffer, { fileName, mimeType: payload.fileType });
+  const fileExt = validatedFile.extension;
+  const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
+  const scopedIdempotencyKey = normalizeScopedIdempotencyKey(
+    options.idempotencyKey ?? payload.idempotencyKey,
+    options.principal,
+  );
   const documentDir = path.join(filesDir, documentId);
-  await mkdir(documentDir, { recursive: true });
   const sourcePath = path.join(documentDir, `source.${fileExt}`);
   const pdfPath = path.join(documentDir, "source.pdf");
   const textPath = path.join(documentDir, "source.txt");
-  await writeFile(sourcePath, fileBuffer);
-
-  const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
-  insertDocumentShell(database, {
-    id: documentId,
-    kbId,
-    name: String(payload.name || fileName).trim() || fileName,
-    fileName,
-    fileExt,
-    mimeType: payload.fileType || "",
-    fileSize: payload.size || `${fileBuffer.byteLength} B`,
-    fileHash,
-    filePath: sourcePath,
-    pdfPath,
-    textPath,
-    now,
-  });
-
-  let chunks = [];
-  let status = "索引中";
-  let indexMode = "keyword";
-  let error = "";
   try {
-    const parsed = await parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, fileExt, fileName });
-    const paragraphs = buildKnowledgeParagraphs(parsed.pages);
-    chunks = buildKnowledgeChunks({
-      documentId,
-      kbId,
-      documentName: fileName,
-      scope: kb.scope,
-      projectId: kb.projectId || defaultProjectId,
-      paragraphs,
-      createdAt: now,
-    });
-    writeParsedDocument(database, { documentId, kbId, pages: parsed.pages, paragraphs, chunks, now });
-    if (isEmbeddingConfigured() && chunks.length > 0) {
-      const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-      await insertKnowledgeZvecChunks(chunks, embeddings);
-      status = "已索引";
-      indexMode = "hybrid";
-    } else {
-      status = "关键词可用";
-      error = "未配置 embedding，当前资料仅支持关键词/全文检索。";
-    }
-    if (parsed.warning) {
-      status = status === "已索引" ? "已索引" : status;
-      error = parsed.warning;
-    }
-  } catch (parseError) {
-    status = "解析失败";
-    error = parseError?.message || "资料解析失败";
+    await mkdir(documentDir, { recursive: true });
+    await writeFile(sourcePath, fileBuffer);
+  } catch (error) {
+    await rm(documentDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
   }
-  updateDocumentIndexState(database, {
-    documentId,
-    status,
-    indexMode,
-    pageCount: countDocumentRows(database, "knowledge_document_pages", documentId),
-    paragraphCount: countDocumentRows(database, "knowledge_document_paragraphs", documentId),
-    chunkCount: chunks.length,
-    error,
-  });
-  touchKnowledgeBase(database, kbId);
-  return hydrateKnowledgeDocument(database, getKnowledgeDocumentRow(database, documentId));
+
+  let reservation;
+  try {
+    reservation = reserveKnowledgeDocument(database, {
+      id: documentId,
+      kbId,
+      name: String(payload.name || fileName).trim() || fileName,
+      fileName,
+      fileExt,
+      mimeType: validatedFile.mimeType,
+      fileSize: payload.size || `${fileBuffer.byteLength} B`,
+      fileHash,
+      filePath: sourcePath,
+      pdfPath,
+      textPath,
+      scopedIdempotencyKey,
+      now,
+    });
+  } catch (error) {
+    await rm(documentDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+  if (!reservation.created) {
+    await rm(documentDir, { recursive: true, force: true }).catch(() => {});
+    return { ...hydrateKnowledgeDocument(database, reservation.row), idempotentReplay: true };
+  }
+  activeKnowledgeDocumentIds.add(documentId);
+  try {
+    if (reservation.replaced) {
+      await Promise.all([
+        deleteKnowledgeZvecChunks({ documentId: reservation.replaced.id, kbId }).catch(() => {}),
+        rm(path.join(filesDir, reservation.replaced.id), { recursive: true, force: true }).catch(() => {}),
+      ]);
+    }
+
+    let chunks = [];
+    let status = "解析失败";
+    let indexMode = "keyword";
+    let error = "";
+    let parsed = null;
+    try {
+      parsed = await parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, fileExt, fileName });
+      const paragraphs = buildKnowledgeParagraphs(parsed.pages);
+      chunks = buildKnowledgeChunks({
+        documentId,
+        kbId,
+        documentName: fileName,
+        scope: kb.scope,
+        projectId: kb.projectId || defaultProjectId,
+        paragraphs,
+        createdAt: now,
+      });
+      writeParsedDocument(database, { documentId, kbId, pages: parsed.pages, paragraphs, chunks, now });
+      status = "关键词可用";
+      error = parsed.warning || "未配置 embedding，当前资料仅支持关键词/全文检索。";
+    } catch (parseError) {
+      parsed = null;
+      error = parseError?.message || "资料解析失败";
+    }
+
+    if (parsed && isEmbeddingConfigured() && chunks.length > 0) {
+      try {
+        const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
+        await insertKnowledgeZvecChunks(chunks, embeddings);
+        status = "已索引";
+        indexMode = "hybrid";
+        error = parsed.warning || "";
+      } catch (embeddingError) {
+        status = "关键词可用";
+        error = `向量索引不可用：${embeddingError?.message || "未知错误"}`;
+      }
+    }
+
+    const completedDocument = runTransaction(database, () => {
+      if (!getKnowledgeDocumentRow(database, documentId)) return false;
+      updateDocumentIndexState(database, {
+        documentId,
+        status,
+        indexMode,
+        pageCount: countDocumentRows(database, "knowledge_document_pages", documentId),
+        paragraphCount: countDocumentRows(database, "knowledge_document_paragraphs", documentId),
+        chunkCount: chunks.length,
+        error,
+      });
+      touchKnowledgeBase(database, kbId);
+      return hydrateKnowledgeDocument(database, getKnowledgeDocumentRow(database, documentId));
+    });
+    if (!completedDocument) {
+      await Promise.all([
+        deleteKnowledgeZvecChunks({ chunkIds: chunks.map((chunk) => chunk.id), documentId, kbId }).catch(() => {}),
+        rm(documentDir, { recursive: true, force: true }).catch(() => {}),
+      ]);
+      throwHttpError("资料在上传处理过程中已被删除", 409);
+    }
+    return { ...completedDocument, idempotentReplay: false };
+  } finally {
+    activeKnowledgeDocumentIds.delete(documentId);
+  }
 }
 
 async function deleteKnowledgeDocument(kbId, documentId) {
   const database = await getKnowledgeDatabase();
-  const row = getKnowledgeDocumentRow(database, documentId);
-  if (!row || row.kbId !== kbId) return { ok: true, deletedChunks: 0 };
-  const chunks = database.prepare("SELECT id FROM knowledge_chunks WHERE document_id = ?").all(documentId);
-  runTransaction(database, () => {
+  const chunks = runTransaction(database, () => {
+    const row = getKnowledgeDocumentRow(database, documentId);
+    if (!row || row.kbId !== kbId) return null;
+    const rows = database.prepare("SELECT id FROM knowledge_chunks WHERE document_id = ?").all(documentId);
     database.prepare("DELETE FROM knowledge_chunks WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_paragraphs WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_pages WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_documents WHERE id = ?").run(documentId);
     touchKnowledgeBase(database, kbId);
+    return rows;
   });
+  if (!chunks) return { ok: true, deletedChunks: 0 };
   await deleteKnowledgeZvecChunks({ chunkIds: chunks.map((chunk) => chunk.id), documentId, kbId }).catch(() => {});
   await rm(path.join(filesDir, documentId), { recursive: true, force: true }).catch(() => {});
   return { ok: true, deletedChunks: chunks.length };
@@ -153,9 +214,10 @@ async function deleteKnowledgeDocument(kbId, documentId) {
 
 async function deleteKnowledgeBase(kbId) {
   const database = await getKnowledgeDatabase();
-  const documents = database.prepare("SELECT id FROM knowledge_documents WHERE kb_id = ?").all(kbId);
-  runTransaction(database, () => {
+  const documents = runTransaction(database, () => {
+    const rows = database.prepare("SELECT id FROM knowledge_documents WHERE kb_id = ?").all(kbId);
     database.prepare("DELETE FROM knowledge_bases WHERE id = ?").run(kbId);
+    return rows;
   });
   await deleteKnowledgeZvecChunks({ kbId }).catch(() => {});
   await Promise.all(documents.map((document) => rm(path.join(filesDir, document.id), { recursive: true, force: true }).catch(() => {})));
@@ -171,7 +233,13 @@ async function reindexKnowledgeBase(kbId) {
     const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
     await insertKnowledgeZvecChunks(chunks, embeddings);
   }
-  return { ok: true, updated: new Set(chunks.map((chunk) => chunk.documentId)).size, chunkCount: chunks.length };
+  const liveChunkIds = new Set(readChunks(database).filter((chunk) => chunk.kbId === kbId).map((chunk) => chunk.id));
+  const staleChunks = chunks.filter((chunk) => !liveChunkIds.has(chunk.id));
+  if (staleChunks.length > 0) {
+    await deleteKnowledgeZvecChunks({ chunkIds: staleChunks.map((chunk) => chunk.id), kbId }).catch(() => {});
+  }
+  const liveChunks = chunks.filter((chunk) => liveChunkIds.has(chunk.id));
+  return { ok: true, updated: new Set(liveChunks.map((chunk) => chunk.documentId)).size, chunkCount: liveChunks.length };
 }
 
 async function searchKnowledgeBase(payload = {}) {
@@ -194,10 +262,12 @@ async function readKnowledgeDocumentFile(documentId) {
   const database = await getKnowledgeDatabase();
   const row = getKnowledgeDocumentRow(database, documentId);
   if (!row?.filePath || !existsSync(row.filePath)) return null;
-  return {
-    row,
-    buffer: await readFile(row.filePath),
-  };
+  try {
+    return { row, buffer: await readFile(row.filePath) };
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 function insertDocumentShell(database, document) {
@@ -226,8 +296,84 @@ function insertDocumentShell(database, document) {
   );
 }
 
+function reserveKnowledgeDocument(database, document) {
+  return runTransaction(database, () => {
+    if (!getKnowledgeBaseRow(database, document.kbId)) throwHttpError("知识库不存在", 404);
+    const byKey = document.scopedIdempotencyKey
+      ? getKnowledgeDocumentByIdempotencyKey(database, document.kbId, document.scopedIdempotencyKey)
+      : null;
+    if (byKey) {
+      if (byKey.requestFileHash !== document.fileHash || byKey.requestFileName !== document.fileName) {
+        throwHttpError("Idempotency-Key 已用于另一份资料", 409);
+      }
+      if (!isAbandonedKnowledgeReservation(byKey)) return { created: false, row: byKey };
+      replaceAbandonedKnowledgeReservation(database, document, byKey);
+      return { created: true, row: getKnowledgeDocumentRow(database, document.id), replaced: byKey };
+    }
+    const duplicate = getKnowledgeDocumentByContent(database, document.kbId, document.fileHash, document.fileName);
+    if (duplicate) {
+      if (isAbandonedKnowledgeReservation(duplicate)) {
+        replaceAbandonedKnowledgeReservation(database, document, duplicate);
+        return { created: true, row: getKnowledgeDocumentRow(database, document.id), replaced: duplicate };
+      }
+      bindKnowledgeIdempotencyKey(database, document, duplicate.id);
+      return { created: false, row: duplicate };
+    }
+    insertDocumentShell(database, document);
+    bindKnowledgeIdempotencyKey(database, document, document.id);
+    touchKnowledgeBase(database, document.kbId);
+    return { created: true, row: getKnowledgeDocumentRow(database, document.id) };
+  });
+}
+
+function isAbandonedKnowledgeReservation(document) {
+  return ["解析中", "索引中"].includes(document.status) && !activeKnowledgeDocumentIds.has(document.id);
+}
+
+function replaceAbandonedKnowledgeReservation(database, document, abandoned) {
+  database.prepare("DELETE FROM knowledge_documents WHERE id = ?").run(abandoned.id);
+  insertDocumentShell(database, document);
+  bindKnowledgeIdempotencyKey(database, document, document.id);
+  touchKnowledgeBase(database, document.kbId);
+}
+
+function getKnowledgeDocumentByIdempotencyKey(database, kbId, scopedKey) {
+  return database.prepare(`
+    SELECT d.*, i.file_hash AS requestFileHash, i.file_name AS requestFileName
+    FROM (${knowledgeDocumentSelectSql}) d
+    JOIN knowledge_upload_idempotency i ON i.document_id = d.id AND i.kb_id = d.kbId
+    WHERE i.kb_id = ? AND i.scoped_key = ?
+  `).get(kbId, scopedKey);
+}
+
+function bindKnowledgeIdempotencyKey(database, document, documentId) {
+  if (!document.scopedIdempotencyKey) return;
+  database.prepare(`
+    INSERT INTO knowledge_upload_idempotency (kb_id, scoped_key, document_id, file_hash, file_name, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    document.kbId,
+    document.scopedIdempotencyKey,
+    documentId,
+    document.fileHash,
+    document.fileName,
+    document.now,
+  );
+}
+
+function getKnowledgeDocumentByContent(database, kbId, fileHash, fileName) {
+  return database.prepare(`
+    ${knowledgeDocumentSelectSql}
+    WHERE kb_id = ? AND file_hash = ? AND file_name = ? AND deleted_at IS NULL
+    ORDER BY created_at
+    LIMIT 1
+  `).get(kbId, fileHash, fileName);
+}
+
 function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, chunks, now }) {
   runTransaction(database, () => {
+    const document = getKnowledgeDocumentRow(database, documentId);
+    if (!document || document.kbId !== kbId) throwHttpError("资料在解析过程中已被删除", 409);
     database.prepare("DELETE FROM knowledge_chunks WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_paragraphs WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_pages WHERE document_id = ?").run(documentId);
@@ -267,7 +413,7 @@ function updateDocumentIndexState(database, state) {
   database.prepare(`
     UPDATE knowledge_documents
     SET status = ?, index_mode = ?, page_count = ?, paragraph_count = ?, chunk_count = ?, error = ?, updated_at = ?
-    WHERE id = ?
+    WHERE id = ? AND deleted_at IS NULL
   `).run(
     state.status,
     state.indexMode,
@@ -321,8 +467,15 @@ function readChunks(database) {
 function mergeSearchResults(database, primaryResults, fallbackResults, topK) {
   const merged = [];
   const seen = new Set();
+  const isLive = database.prepare(`
+    SELECT 1
+    FROM knowledge_chunks c
+    JOIN knowledge_documents d ON d.id = c.document_id
+    JOIN knowledge_bases b ON b.id = c.kb_id
+    WHERE c.id = ? AND d.deleted_at IS NULL AND b.deleted_at IS NULL
+  `);
   [...primaryResults, ...fallbackResults].forEach((item) => {
-    if (!item || seen.has(item.id)) return;
+    if (!item || seen.has(item.id) || !isLive.get(item.id)) return;
     seen.add(item.id);
     merged.push(formatSearchResult(database, item));
   });
@@ -410,11 +563,7 @@ function getKnowledgeBaseRow(database, kbId) {
 
 function getKnowledgeDocumentRow(database, documentId) {
   return database.prepare(`
-    SELECT id, kb_id AS kbId, name, file_name AS fileName, file_ext AS fileExt, mime_type AS mimeType,
-      file_size AS size, file_path AS filePath, pdf_path AS pdfPath, text_path AS textPath,
-      status, index_mode AS indexMode, page_count AS pageCount, paragraph_count AS paragraphCount,
-      chunk_count AS chunkCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
-    FROM knowledge_documents
+    ${knowledgeDocumentSelectSql}
     WHERE id = ? AND deleted_at IS NULL
   `).get(documentId);
 }
@@ -428,9 +577,30 @@ function touchKnowledgeBase(database, kbId) {
 }
 
 function decodeDocumentPayload(payload) {
-  if (payload.fileBase64) return Buffer.from(String(payload.fileBase64), "base64");
+  if (payload.fileBase64) {
+    const value = String(payload.fileBase64).replace(/\s+/g, "");
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+      throwHttpError("资料内容不是有效 Base64", 400);
+    }
+    return Buffer.from(value, "base64");
+  }
   if (payload.text) return Buffer.from(String(payload.text), "utf8");
   return Buffer.alloc(0);
+}
+
+function normalizeScopedIdempotencyKey(value, principal) {
+  if (value == null || value === "") return null;
+  const key = String(value);
+  if (Buffer.byteLength(key, "utf8") > 128 || !/^[\x21-\x7e]+$/.test(key)) {
+    throwHttpError("Idempotency-Key 必须是不超过 128 字节的可见 ASCII 字符", 400);
+  }
+  const actorId = String(principal?.id || "local-development");
+  if (!actorId || Buffer.byteLength(actorId, "utf8") > 256 || /[\u0000-\u001f\u007f]/.test(actorId)) {
+    throwHttpError("幂等请求的身份标识格式无效", 400);
+  }
+  const actorHash = createHash("sha256").update(`actor:${actorId}`, "utf8").digest("hex");
+  const keyHash = createHash("sha256").update(`key:${key}`, "utf8").digest("hex");
+  return `${actorHash}:${keyHash}`;
 }
 
 function sanitizeFileName(value) {

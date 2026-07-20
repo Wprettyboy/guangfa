@@ -3,6 +3,7 @@ import {
   normalizeComplexFillAnchors,
   normalizeComplexFillFields,
 } from "./anchors.js";
+import { apiRequest } from "../../services/apiClient.js";
 
 function buildComplexFillOutputRequirement(field = {}) {
   return [field.contentRequirement, field.formatRequirement]
@@ -67,17 +68,15 @@ function buildComplexFillAiField(card) {
 }
 
 async function requestComplexFillAiFill(card, { materials, knowledgeOptions }) {
-  const response = await fetch("/api/ai/fill-field", {
+  const result = await apiRequest("/api/ai/fill-field", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    json: {
       field: buildComplexFillAiField(card),
       materials,
       knowledgeOptions,
-    }),
+    },
+    fallbackMessage: "AI 填充失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result?.error || "AI 填充失败");
   return {
     value: result.value || "",
     status: result.status || (result.value ? "待确认" : "需补充资料"),

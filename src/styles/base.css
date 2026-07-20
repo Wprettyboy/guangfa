@@ -33,6 +33,80 @@ button:disabled {
   cursor: default;
 }
 
+.api-auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: #eef2f7;
+}
+
+.api-auth-panel {
+  width: min(420px, calc(100vw - 48px));
+  padding: 32px;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+}
+
+.api-auth-panel h1 {
+  margin: 14px 0 24px;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.api-auth-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #ffffff;
+  background: #0f63e9;
+}
+
+.api-auth-status,
+.api-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-auth-status {
+  flex-direction: row;
+  align-items: center;
+  color: #56657b;
+}
+
+.api-auth-form label {
+  color: #344258;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.api-auth-form input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e3;
+  border-radius: 6px;
+  color: #172033;
+  background: #ffffff;
+}
+
+.api-auth-form input:focus {
+  border-color: #0f63e9;
+  outline: 2px solid rgba(15, 99, 233, 0.14);
+}
+
+.api-auth-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

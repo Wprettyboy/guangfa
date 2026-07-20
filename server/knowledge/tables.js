@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import JSZip from "jszip";
+import { buildCapabilityResource, capabilityScopes, signCapabilityUrl } from "../api/capability.js";
+import { loadSafeDocx, readSafeZipEntry } from "../document-security.js";
 import { getKnowledgeDatabase } from "./db.js";
 
 const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
@@ -44,8 +45,8 @@ async function extractTablesForDocuments(database, documents) {
 
 async function extractDocxTables(database, document) {
   if (!document?.filePath || !existsSync(document.filePath)) return [];
-  const zip = await JSZip.loadAsync(await readFile(document.filePath));
-  const xml = await zip.file("word/document.xml")?.async("text");
+  const zip = await loadSafeDocx(await readFile(document.filePath));
+  const xml = (await readSafeZipEntry(zip, "word/document.xml", 32 * 1024 * 1024))?.toString("utf8");
   if (!xml) return [];
   const pages = readDocumentPages(database, document.id);
   const items = readBodyItems(xml);
@@ -65,6 +66,7 @@ async function extractDocxTables(database, document) {
       .join("\n");
     const tableIndex = tables.length + 1;
     const columnCount = rows.reduce((max, row) => Math.max(max, row.reduce((sum, cell) => sum + cell.colSpan, 0)), 0);
+    const docxPath = `/api/v1/knowledge-tables/${encodeURIComponent(document.id)}/${tableIndex}/docx`;
     tables.push({
       id: `${document.id}-T${tableIndex}`,
       documentId: document.id,
@@ -78,7 +80,10 @@ async function extractDocxTables(database, document) {
       rowCount: rows.length,
       columnCount,
       rows,
-      sourceDocxUrl: `${publicBaseUrl}/api/knowledge-tables/${encodeURIComponent(document.id)}/${tableIndex}/docx`,
+      sourceDocxUrl: signCapabilityUrl(`${publicBaseUrl.replace(/\/$/, "")}${docxPath}`, {
+        scope: capabilityScopes.knowledgeTableDocx,
+        resource: buildCapabilityResource("knowledge-table", document.id, tableIndex, "docx"),
+      }),
       plainText,
     });
   });
@@ -89,8 +94,8 @@ async function readKnowledgeTableDocx(documentId, tableIndex) {
   const database = await getKnowledgeDatabase();
   const row = getKnowledgeDocumentRow(database, documentId);
   if (!row?.filePath || !existsSync(row.filePath)) return null;
-  const zip = await JSZip.loadAsync(await readFile(row.filePath));
-  const xml = await zip.file("word/document.xml")?.async("text");
+  const zip = await loadSafeDocx(await readFile(row.filePath));
+  const xml = (await readSafeZipEntry(zip, "word/document.xml", 32 * 1024 * 1024))?.toString("utf8");
   if (!xml) return null;
   const tableItems = readBodyItems(xml).filter((item) => item.type === "table");
   const index = Math.max(1, Number(tableIndex) || 1);

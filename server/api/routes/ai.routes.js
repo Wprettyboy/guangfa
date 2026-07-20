@@ -4,9 +4,20 @@ import { createFormatOutlinePlan } from "../../ai/format-outline.js";
 import { createAiKnowledgeSearch } from "../../ai/knowledge-query.js";
 import { generateSolutionDraftContent, generateSolutionModuleSections, generateSolutionTaskPlan, identifySolutionModules, testSolutionTaskKnowledge } from "../../solution-writing/generator.js";
 import { generateSolutionPlantumlImage, readSolutionPlantumlImageDocx, readSolutionPlantumlImageFile } from "../../solution-writing/plantuml-image.js";
+import {
+  assertCapabilityAccess,
+  buildCapabilityResource,
+  capabilityQueryName,
+  capabilityScopes,
+} from "../capability.js";
 import { defineRoute } from "../registry.js";
 
 const aiBodyLimitBytes = 2 * 1024 * 1024;
+const docxMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const aiResponses = {
+  200: "object",
+  502: { schema: "object", description: "上游 AI 服务调用失败" },
+};
 
 function registerAiRoutes() {
   defineRoute({
@@ -15,9 +26,10 @@ function registerAiRoutes() {
     path: "/api/ai/fill-field",
     tags: ["ai"],
     summary: "AI 填充单个字段",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { field: "object?", knowledgeOptions: "object?", fields: "array?" },
-    responses: { 200: "object" },
+    body: { field: "object", materials: "array?", knowledgeOptions: "object?" },
+    responses: aiResponses,
     handler: ({ body }) => fillField(body),
   });
 
@@ -27,9 +39,10 @@ function registerAiRoutes() {
     path: "/api/ai/format-outline-plan",
     tags: ["ai", "format"],
     summary: "生成格式大纲修复计划",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { candidates: "array?", outline: "object?", userInstruction: "string?" },
-    responses: { 200: "object" },
+    body: { candidates: "array", onlyOfficeOutline: "array?", auditRules: "array?", userInstruction: "string?" },
+    responses: aiResponses,
     handler: ({ body }) => createFormatOutlinePlan(body),
   });
 
@@ -39,9 +52,10 @@ function registerAiRoutes() {
     path: "/api/ai/chat",
     tags: ["ai"],
     summary: "知识库聊天",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
     body: { message: "string", history: "array?", knowledgeOptions: "object?" },
-    responses: { 200: "object" },
+    responses: aiResponses,
     handler: ({ body }) => createKnowledgeChat(body),
   });
 
@@ -51,9 +65,10 @@ function registerAiRoutes() {
     path: "/api/ai/knowledge-search",
     tags: ["ai", "knowledge"],
     summary: "AI 知识库检索",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { query: "string?", field: "object?", knowledgeOptions: "object?" },
-    responses: { 200: "object" },
+    body: { query: "string?", message: "string?", knowledgeOptions: "object?" },
+    responses: aiResponses,
     handler: ({ body }) => createAiKnowledgeSearch(body),
   });
 
@@ -63,9 +78,10 @@ function registerAiRoutes() {
     path: "/api/ai/solution-identify-modules",
     tags: ["ai", "solution-writing"],
     summary: "方案编写识别功能模块",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
     body: { sectionTitle: "string?", childTemplates: "array?", userInstruction: "string?", knowledgeOptions: "object?" },
-    responses: { 200: "object" },
+    responses: aiResponses,
     handler: ({ body }) => identifySolutionModules(body),
   });
 
@@ -75,9 +91,10 @@ function registerAiRoutes() {
     path: "/api/ai/solution-generate-sections",
     tags: ["ai", "solution-writing"],
     summary: "方案编写生成模块写作规划",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { sectionTitle: "string?", childTemplates: "array?", module: "object?", userInstruction: "string?", knowledgeOptions: "object?" },
-    responses: { 200: "object" },
+    body: { sectionTitle: "string?", childTemplates: "array?", module: "object", userInstruction: "string?", knowledgeOptions: "object?" },
+    responses: aiResponses,
     handler: ({ body }) => generateSolutionModuleSections(body),
   });
 
@@ -87,9 +104,10 @@ function registerAiRoutes() {
     path: "/api/ai/solution-plan-tasks",
     tags: ["ai", "solution-writing"],
     summary: "方案编写生成执行任务规划",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { outlineText: "string?", categories: "array?", userInstruction: "string?", knowledgeOptions: "object?", taskDensity: "string?" },
-    responses: { 200: "object" },
+    body: { outlineText: "string?", categories: "array", userInstruction: "string?", knowledgeOptions: "object?", taskDensity: "string?" },
+    responses: aiResponses,
     handler: ({ body }) => generateSolutionTaskPlan(body),
   });
 
@@ -99,9 +117,10 @@ function registerAiRoutes() {
     path: "/api/ai/solution-task-knowledge-test",
     tags: ["ai", "solution-writing", "knowledge"],
     summary: "方案任务规划知识库召回测试",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { outlineText: "string?", categories: "array?", userInstruction: "string?", knowledgeOptions: "object?" },
-    responses: { 200: "object" },
+    body: { outlineText: "string?", categories: "array", userInstruction: "string?", knowledgeOptions: "object?" },
+    responses: aiResponses,
     handler: ({ body }) => testSolutionTaskKnowledge(body),
   });
 
@@ -111,9 +130,10 @@ function registerAiRoutes() {
     path: "/api/ai/solution-draft-content",
     tags: ["ai", "solution-writing"],
     summary: "方案编制根据任务规划生成正文草稿",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { taskPlan: "object?", globalPrompt: "string?", knowledgeOptions: "object?" },
-    responses: { 200: "object" },
+    body: { taskPlan: "object", globalPrompt: "string?", knowledgeOptions: "object?" },
+    responses: aiResponses,
     handler: ({ body }) => generateSolutionDraftContent(body),
   });
 
@@ -123,10 +143,11 @@ function registerAiRoutes() {
     path: "/api/ai/solution-plantuml-image",
     tags: ["ai", "solution-writing"],
     summary: "方案编写基于当前文档生成 PlantUML 配图",
+    roles: ["editor"],
     bodyLimitBytes: aiBodyLimitBytes,
-    body: { prompt: "string", selectedTitle: "string?", selectedBodyText: "string?", outlineItems: "array?", outlineText: "string?" },
-    responses: { 200: "object" },
-    handler: ({ body }) => generateSolutionPlantumlImage(body),
+    body: { prompt: "string", selectedTitle: "string", selectedBodyText: "string?", outlineItems: "array?", outlineText: "string?" },
+    responses: aiResponses,
+    handler: ({ body, principal }) => generateSolutionPlantumlImage(body, principal),
   });
 
   defineRoute({
@@ -135,9 +156,18 @@ function registerAiRoutes() {
     path: "/api/solution-plantuml-images/:imageId/file",
     tags: ["ai", "solution-writing"],
     summary: "读取方案 AI 生成配图预览文件",
-    responses: { 200: "binary" },
-    handler: async ({ params }) => {
-      const file = await readSolutionPlantumlImageFile(params.imageId);
+    auth: "optional",
+    roles: ["editor"],
+    query: { [`${capabilityQueryName}?`]: { type: "string", maxLength: 4096 } },
+    responses: { 200: { schema: "binary", contentType: "image/png", description: "PNG 配图" } },
+    handler: async ({ params, principal, query }) => {
+      assertCapabilityAccess({
+        principal,
+        accessToken: query.get(capabilityQueryName),
+        scope: capabilityScopes.solutionPlantumlFile,
+        resource: buildCapabilityResource("solution-plantuml-image", params.imageId, "file"),
+      });
+      const file = await readSolutionPlantumlImageFile(params.imageId, principal);
       if (!file) {
         const error = new Error("AI 生成配图不存在");
         error.statusCode = 404;
@@ -150,6 +180,7 @@ function registerAiRoutes() {
         headers: {
           "Content-Disposition": `inline; filename="${encodeURIComponent(file.fileName)}"`,
           "Cache-Control": "no-store",
+          "Cross-Origin-Resource-Policy": "cross-origin",
         },
       };
     },
@@ -161,9 +192,18 @@ function registerAiRoutes() {
     path: "/api/solution-plantuml-images/:imageId/docx",
     tags: ["ai", "solution-writing"],
     summary: "读取方案 AI 生成配图 DOCX 片段",
-    responses: { 200: "binary" },
-    handler: async ({ params }) => {
-      const file = await readSolutionPlantumlImageDocx(params.imageId);
+    auth: "optional",
+    roles: ["editor"],
+    query: { [`${capabilityQueryName}?`]: { type: "string", maxLength: 4096 } },
+    responses: { 200: { schema: "binary", contentType: docxMimeType, description: "DOCX 配图片段" } },
+    handler: async ({ params, principal, query }) => {
+      assertCapabilityAccess({
+        principal,
+        accessToken: query.get(capabilityQueryName),
+        scope: capabilityScopes.solutionPlantumlDocx,
+        resource: buildCapabilityResource("solution-plantuml-image", params.imageId, "docx"),
+      });
+      const file = await readSolutionPlantumlImageDocx(params.imageId, principal);
       if (!file) {
         const error = new Error("AI 生成配图不存在");
         error.statusCode = 404;
@@ -172,10 +212,11 @@ function registerAiRoutes() {
       return {
         kind: "buffer",
         buffer: file.buffer,
-        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        contentType: docxMimeType,
         headers: {
           "Content-Disposition": `attachment; filename="${encodeURIComponent(file.fileName)}"`,
           "Cache-Control": "no-store",
+          "Cross-Origin-Resource-Policy": "cross-origin",
         },
       };
     },

@@ -1,11 +1,17 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { buildCapabilityResource, capabilityScopes, signCapabilityUrl } from "../api/capability.js";
+import { signOnlyOfficeJwt } from "../office.js";
 
 const onlyOfficeServerUrl = process.env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080";
 const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
 
 async function convertDocxToPdf({ documentId, sourcePath, outputPath, title }) {
-  const url = `${publicBaseUrl}/api/knowledge-documents/${encodeURIComponent(documentId)}/file`;
+  const filePath = `/api/v1/knowledge-documents/${encodeURIComponent(documentId)}/file`;
+  const url = signCapabilityUrl(`${publicBaseUrl.replace(/\/$/, "")}${filePath}`, {
+    scope: capabilityScopes.knowledgeDocumentFile,
+    resource: buildCapabilityResource("knowledge-document", documentId, "file"),
+  });
   const body = {
     async: false,
     filetype: "docx",
@@ -17,7 +23,7 @@ async function convertDocxToPdf({ documentId, sourcePath, outputPath, title }) {
   const response = await fetch(`${onlyOfficeServerUrl}/ConvertService.ashx`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, token: signOnlyOfficeJwt(body, 300) }),
     signal: AbortSignal.timeout(12000),
   });
   if (!response.ok) throw new Error(`OnlyOffice 转换请求失败：${response.status}`);

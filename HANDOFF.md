@@ -111,15 +111,18 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/api/routes/office.routes.js`：Office 接口注册入口；handler 调用 `server/office.js` 和 `server/outline-probe.js`，不要在路由里写 Office 业务规则。
 - `server/office.js`：DOCX 上传保存、callback 保存、download-url、OnlyOffice 初始化配置等业务函数。
+- `server/knowledge/docx-convert.js`：调用 OnlyOffice ConvertService 把知识库 DOCX 转为 PDF；转换命令使用 OnlyOffice inbox JWT，源文件 URL 使用短期精确资源票据。
 
 ### 本地 API 管理
 
 - `server/api/index.js`：本地 API 注册表入口，负责注册当前已迁移的路由并生成统一 middleware。
 - `server/api/registry.js`：接口注册与 `:param` 路径匹配；新增接口优先通过 `defineRoute()` 登记，不要继续在 Vite 中间件里堆分支。
-- `server/api/router.js`：统一分发已注册路由，并提供 `/api/_meta/routes` 与 `/api/_meta/openapi.json`。
+- `server/api/router.js`：统一分发已注册路由，并提供 `/api/v1/_meta/routes` 与 `/api/v1/_meta/openapi.json`；旧 `/api/_meta/*` 仅作兼容。
 - `server/api/openapi.js`：从注册表生成轻量 OpenAPI 3.0.3 文档；只描述通用入参、响应和路径，不写业务说明长文。
 - `server/api/http.js`：通用 JSON body、JSON 响应、二进制响应辅助。
 - `server/api/routes/*.routes.js`：按模块存放已迁移 API 的路由定义；handler 应调用现有业务模块，不在路由文件里重写业务规则。
+- `server/api/gateway.js`：开发、预览和正式服务共用的 API 网关，负责 CORS、v1 路径和预检；不要在 Vite 配置中再复制一套来源判断。
+- `server/index.js` / `server/http-server.js`：正式静态站点与 API 服务入口，启动、认证、TLS、限流和多用户配置见 `docs/api-production.md`。
 
 ### AI / 知识库高频区
 
@@ -170,7 +173,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 3. 模板标注以 OnlyOffice 真实选区为准，字段保存的是选区原文、页码、bookmark/selection/inputPoint 等信息。
 4. 填充确认工作台优先用 OnlyOffice 现场写入与下载回传保存，避免旧 HTML DOCX 预览链路导致状态丢失。
 5. 格式审核工作台保留脚本审查 + AI 大纲审查；修复仍由脚本写 DOCX 副本。
-6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/_meta/routes` 和 `/api/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
+6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/v1/_meta/routes` 和 `/api/v1/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
 
 ## 最近已完成
 
@@ -242,8 +245,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ### 本地 API 注册表
 
 - 已新增 `server/api/` 轻量注册表，用代码维护接口清单，避免把接口长期散写在交接文档或 Vite middleware 分支里。
-- Vite dev server 当前挂载 `apiMiddleware()`；注册表内置 `GET /api/_meta/routes` 查看已登记接口，`GET /api/_meta/openapi.json` 生成 OpenAPI 3.0.3 文档。
-- 当前已迁移知识库、AI、草稿、模板库/模板类型、系统设置、Office 文档、OnlyOffice 大纲探针等本地 API；接口清单以 `/api/_meta/routes` 与 `/api/_meta/openapi.json` 为准。
+- Vite dev server 当前挂载 `apiMiddleware()`；注册表内置 `GET /api/v1/_meta/routes` 查看已登记接口，`GET /api/v1/_meta/openapi.json` 生成 OpenAPI 3.0.3 文档，旧 `/api/_meta/*` 仅作兼容。
+- 当前已迁移知识库、AI、草稿、模板库/模板类型、系统设置、Office 文档、OnlyOffice 大纲探针等本地 API；接口清单以 `/api/v1/_meta/routes` 与 `/api/v1/_meta/openapi.json` 为准。
 - 迁移后的路由只做协议层定义，仍调用知识库、AI、模板、设置、草稿、Office 等原有业务函数；`server/knowledge-base.js` 保留兼容导出。
 - 后续新增或迁移本地 API 时，优先新增对应 `server/api/routes/<module>.routes.js`，在 `server/api/index.js` 注册；不要把 handler 写成大路由分发文件。
 
@@ -253,6 +256,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - Gemini Flash Lite 属于普通文本输出模型，接入现有 `/chat/completions` 链路；不要把它和 Live API 实时音频翻译链路混用。
 - 云端 API Key 字段支持多个 Key，用英文逗号、分号、换行或转义换行分隔；`server/ai/chat-completions.js` 会按请求轮询起始 Key，遇到 401、403、429、5xx 时尝试下一个 Key。
 - 日志和调试输出不要记录完整 API Key；配置文件和 `.env.local` 里也不要写入文档或聊天窗口。
+- 本机代理软件使用 Fake-IP DNS 时，在系统设置“云端 API”中填写 `http://127.0.0.1:7890`，或在 `.env.local` 设置 `AI_PROXY_URL`；HTTPS 云模型通过 CONNECT 隧道访问，不能移除 `198.18.0.0/15` 的 SSRF 禁止网段。代理地址只允许无路径、查询、片段和凭据的 HTTP(S) URL，本地模型与本地 Embedding 仍直连。
+- 字段填充结果的系统状态只保存为“待确认”或“需补充资料”；`server/ai/fill-rules.js` 会把 Gemini 常见的“已确认”“已完成”“待确认或需补充资料”等输出规范到这两个状态，未知状态继续失败关闭，避免有效内容因措辞差异被误判为 502。
 
 ### OnlyOffice 通用接口与本地封装
 
@@ -280,8 +285,13 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 #### 服务端 Office 接口
 
-- Office 服务端接口统一登记在 `server/api/routes/office.routes.js`；具体路径、方法、参数和响应以 `/api/_meta/routes` 与 `/api/_meta/openapi.json` 为准，不再在交接文档手工维护清单。
+- Office 服务端接口统一登记在 `server/api/routes/office.routes.js`；具体路径、方法、参数和响应以 `/api/v1/_meta/routes` 与 `/api/v1/_meta/openapi.json` 为准，不再在交接文档手工维护清单。
 - `server/office.js` 负责生成 OnlyOffice `document.url`、`document.key`、`editorConfig.callbackUrl`、编辑权限和 AI 插件配置；前端不要手写 OnlyOffice 初始化配置。
+- OnlyOffice 使用同一强随机 `ONLYOFFICE_JWT_SECRET` 和 HS256：浏览器初始化配置携带短期 `config.token`，文档原文件 URL 携带独立的短期 `office-file` access token，保存回调校验 DocumentServer outbox JWT 的签名、`key/status/url`、签发时间和重放状态；同一文档的回调必须串行处理，并在队列内重读元数据，按已持久化的回调 `iat` 拒绝旧回调。生产环境缺少密钥时必须失败关闭。
+- DocumentServer `token.outbox.urlExclusionRegex` 使用 `[?&]accessToken=`：对已经携带短期精确资源票据的下载 URL 不再附加 OnlyOffice `Authorization`，避免它被应用误判为用户 Bearer；callback URL 没有该参数，仍正常携带 outbox JWT。
+- converter 等仍可能附加 outbox Bearer；`server/api/auth.js` 只在 optional 资源路由同时带 `accessToken` 且 Bearer 通过 OnlyOffice JWT 验签时，将其视为 DocumentServer 匿名请求，随后仍由 handler 校验精确资源票据。普通无效 Bearer 不允许回退。
+- DocumentServer 9.4 在 `JWT_IN_BODY=true` 时会把回调 JWT 放在 `body.token`，claims 为回调字段平铺；使用 Authorization header 时 claims 位于 `payload`。服务端兼容两种官方形态，但都只接受 HS256。`/api/office/documents/:id/file` 与 `/api/office/callback/:id` 是机器请求路由，应绕过普通用户 Bearer 认证，再由 `server/office.js` 校验专用 token；不能把这两条路由直接匿名放行。
+- `scripts/start-onlyoffice.ps1` 会启用 browser/inbox/outbox JWT；本地首次启动若缺少密钥，会生成 48 字节随机值并持久化到 `.env.local`。正式部署必须由密钥管理系统注入并保证 Web 服务与 DocumentServer 使用同一个值，不要提交真实密钥。
 
 #### 前端桥接函数
 
@@ -429,7 +439,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 已完成配置：
 
-- `server/office.js` 会在 `editorConfig.aiPluginSettings` 下发 `Local Qwen [qwen3.6-35b-a3b]`。
+- `server/office.js` 会在 `editorConfig.aiPluginSettings` 下发 `Local Qwen [qwen3.6-35b-a3b]`；其中 `ONLYOFFICE_AI_CLIENT_API_KEY` 对浏览器可见，只能使用无外部权限的本地占位值，严禁复用 `LOCAL_LLM_API_KEY` 等服务端密钥。
 - `scripts/start-onlyoffice.ps1` 会写入 DocumentServer 的 `/etc/onlyoffice/documentserver/local.json` -> `aiSettings`。
 - Docker 容器内访问宿主机模型要用 `http://host.docker.internal:8129`，不能用容器内的 `127.0.0.1:8129`。
 - OnlyOffice AI 插件已出现：聊天机器人、摘要、翻译、拼写与语法检查、创建 AI 助手。

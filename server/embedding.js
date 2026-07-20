@@ -29,10 +29,7 @@ export async function createEmbeddings(inputs) {
     throw error;
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
-  try {
-    const response = await fetch(buildEmbeddingUrl(config.baseUrl), {
+  const data = await requestJsonEndpoint(buildEmbeddingUrl(config.baseUrl), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -42,29 +39,20 @@ export async function createEmbeddings(inputs) {
         model: config.model,
         input: inputs,
       }),
-      signal: controller.signal,
+      timeoutMs: config.timeoutMs,
+      maxResponseBytes: 32 * 1024 * 1024,
+      allowLocal: isLocalEndpoint(config.baseUrl),
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      const error = new Error(`Embedding 接口返回异常：${response.status} ${text.slice(0, 160)}`);
-      error.code = "EMBEDDING_REQUEST_FAILED";
-      throw error;
-    }
-
-    const data = await response.json();
-    const embeddings = Array.isArray(data?.data)
-      ? data.data.map((item) => item.embedding).filter((item) => Array.isArray(item))
-      : [];
-    if (embeddings.length !== inputs.length) {
-      const error = new Error("Embedding 接口返回数量与输入数量不一致。");
-      error.code = "EMBEDDING_RESPONSE_INVALID";
-      throw error;
-    }
-    return embeddings.map((embedding) => normalizeEmbeddingDimension(embedding, config.dimension));
-  } finally {
-    clearTimeout(timeout);
+  const embeddings = Array.isArray(data?.data)
+    ? data.data.map((item) => item.embedding).filter((item) => Array.isArray(item))
+    : [];
+  if (embeddings.length !== inputs.length) {
+    const error = new Error("Embedding 接口返回数量与输入数量不一致。");
+    error.code = "EMBEDDING_RESPONSE_INVALID";
+    throw error;
   }
+  return embeddings.map((embedding) => normalizeEmbeddingDimension(embedding, config.dimension));
 }
 
 function buildEmbeddingUrl(baseUrl) {
@@ -78,3 +66,4 @@ function normalizeEmbeddingDimension(embedding, dimension) {
   if (embedding.length > dimension) return embedding.slice(0, dimension);
   return [...embedding, ...Array.from({ length: dimension - embedding.length }, () => 0)];
 }
+import { isLocalEndpoint, requestJsonEndpoint } from "./ai/chat-completions.js";

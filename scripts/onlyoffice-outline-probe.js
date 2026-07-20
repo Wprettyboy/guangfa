@@ -2765,7 +2765,10 @@
     aiKnowledgeContext = context && typeof context === "object" ? context : null;
     window.__guangfaAiKnowledgeContext = aiKnowledgeContext;
     try {
-      if (aiKnowledgeContext) window.localStorage.setItem("guangfa_ai_knowledge_context", JSON.stringify(aiKnowledgeContext));
+      if (aiKnowledgeContext) {
+        const { accessToken, ...persistedContext } = aiKnowledgeContext;
+        window.localStorage.setItem("guangfa_ai_knowledge_context", JSON.stringify(persistedContext));
+      }
       else window.localStorage.removeItem("guangfa_ai_knowledge_context");
     } catch {}
     updateGuangfaAiChatKnowledgeLabel(document.getElementById("guangfa-ai-chat-panel"));
@@ -3418,19 +3421,23 @@
     if (!message || sendButton?.disabled) return;
 
     const context = getAiChatKnowledgeContext();
+    const { accessToken, ...knowledgeOptions } = context;
     updateGuangfaAiChatKnowledgeLabel(panel);
     input.value = "";
     sendButton.disabled = true;
     appendGuangfaAiChatMessage("user", message);
     const pending = appendGuangfaAiChatMessage("assistant", "正在思考中...", "pending");
     try {
-      const response = await fetch(`${context.apiBase}/api/ai/chat`, {
+      const response = await fetch(`${context.apiBase}/api/v1/ai/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           message,
           history: aiChatHistory.slice(-8),
-          knowledgeOptions: context,
+          knowledgeOptions,
         }),
       });
       const result = await response.json().catch(() => ({}));

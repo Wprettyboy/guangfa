@@ -76,12 +76,61 @@ function getFillModePromptRule(mode) {
 
 function getFillOutputJsonPrompt(mode) {
   if (mode === "amount-choice") {
-    return '{"value":"金额纯数字","amountValue":"金额纯数字","choiceValue":"含税或不含税","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"金额和含税状态的一句可溯源证据"}';
+    return '{"value":"金额纯数字","amountValue":"金额纯数字","choiceValue":"含税或不含税","status":"待确认","confidence":80,"source":"资料名或位置","evidence":"金额和含税状态的一句可溯源证据"}';
   }
   if (mode === "choice-replace") {
-    return '{"value":"命中时为基于资料依据生成的完整要求文本；未命中时为未命中","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"支撑该填充值的资料依据或未命中原因"}';
+    return '{"value":"命中时为基于资料依据生成的完整要求文本；未命中时为未命中","status":"待确认","confidence":80,"source":"资料名或位置","evidence":"支撑该填充值的资料依据或未命中原因"}';
   }
-  return '{"value":"字段填充值","status":"待确认或需补充资料","confidence":0-100,"source":"资料名或位置","evidence":"一句可溯源证据"}';
+  return '{"value":"字段填充值","status":"待确认","confidence":80,"source":"资料名或位置","evidence":"一句可溯源证据"}';
+}
+
+function normalizeFillModelResult(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const result = { ...value };
+  const rawStatus = String(value.status || "").trim();
+  const status = rawStatus.toLowerCase().replace(/[\s_/-]+/g, "");
+  const hasValue = String(value.value || value.amountValue || "").trim().length > 0;
+  if (status === "待确认" || status === "需补充资料") return result;
+
+  const ambiguous = new Set([
+    "待确认或需补充资料",
+    "待确认或补充资料",
+    "需确认",
+    "待审核",
+    "待核实",
+    "pending",
+    "needsreview",
+    "review",
+  ]);
+  const ready = new Set([
+    "已确认",
+    "确认",
+    "已完成",
+    "完成",
+    "可直接填写",
+    "可填充",
+    "confirmed",
+    "complete",
+    "completed",
+    "ready",
+    "ok",
+    "success",
+  ]);
+  const missing = new Set([
+    "待补充资料",
+    "待补充",
+    "资料不足",
+    "缺少资料",
+    "无法确认",
+    "无法填充",
+    "needsinfo",
+    "missing",
+    "insufficient",
+  ]);
+  if (ambiguous.has(status)) result.status = hasValue ? "待确认" : "需补充资料";
+  else if (ready.has(status)) result.status = hasValue ? "待确认" : "需补充资料";
+  else if (missing.has(status)) result.status = "需补充资料";
+  return result;
 }
 
 function isAmountChoiceContext(context) {
@@ -551,6 +600,7 @@ export {
   getFillModeLabel,
   getFillModePromptRule,
   getFillOutputJsonPrompt,
+  normalizeFillModelResult,
   isAmountChoiceContext,
   normalizeFilledValueForTemplate,
   normalizeAmountFillValue,

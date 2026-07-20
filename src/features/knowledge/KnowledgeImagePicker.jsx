@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Loader2, Search, X } from "lucide-react";
 import { searchKnowledgeImages } from "../../services/knowledgeBase.js";
+import useApiAssetUrl from "../../hooks/useApiAssetUrl.js";
 
 function KnowledgeImagePicker({
   open,
@@ -29,6 +30,7 @@ function KnowledgeImagePicker({
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId) || documents[0] || null;
   const documentImages = selectedDocument ? images.filter((image) => image.documentId === selectedDocument.id) : [];
   const selectedImage = documentImages.find((image) => image.id === selectedImageId) || documentImages[0] || null;
+  const selectedImageAsset = useApiAssetUrl(open ? selectedImage?.previewUrl : "");
 
   useEffect(() => {
     if (!open) return;
@@ -164,7 +166,13 @@ function KnowledgeImagePicker({
                   </button>
                 </div>
                 <div className="knowledge-table-preview-scroll knowledge-image-preview-scroll">
-                  <img src={selectedImage.previewUrl} alt={selectedImage.title || "资料图片预览"} />
+                  {selectedImageAsset.loading ? (
+                    <div className="knowledge-table-empty"><Loader2 size={16} className="spin" /> 正在读取图片</div>
+                  ) : selectedImageAsset.error ? (
+                    <div className="knowledge-table-empty error">{selectedImageAsset.error}</div>
+                  ) : (
+                    <img src={selectedImageAsset.url} alt={selectedImage.title || "资料图片预览"} />
+                  )}
                 </div>
                 {insertStatus && insertStatus !== "inserting" ? (
                   <div className={insertStatus === "done" ? "knowledge-table-status done" : "knowledge-table-status error"}>

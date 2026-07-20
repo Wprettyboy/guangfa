@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { readFile, unlink } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import JSZip from "jszip";
 import { assertFillModelResult } from "../server/ai/fill.js";
+import { normalizeFillModelResult } from "../server/ai/fill-rules.js";
 import { parseModelJson } from "../server/ai/model.js";
+import { isAllowedOrigin, readAllowedOrigins } from "../server/api/gateway.js";
 import { assertOfficeDocumentId, createOfficeDocument, validateOnlyOfficeDocumentUrl } from "../server/office.js";
 import { API_KEY_UNCHANGED, redactModelConfig, resolveApiKeyUpdate } from "../server/settings.js";
 import { normalizeDraftFillState } from "../src/features/docx/fill/draftState.js";
@@ -14,7 +17,6 @@ import { clearOnlyOfficeEditor, registerOnlyOfficeEditor } from "../src/features
 import { insertSolutionWritingWithConnector } from "../src/features/docx/office/solutionConnector.js";
 import { buildPlanningReplaceTarget, normalizePlanningSubtreeMetadata } from "../src/features/solution-writing/planningInsert.js";
 import { normalizeWorkspaceSession } from "../src/services/workspaceSession.js";
-import { isAllowedApiOrigin } from "../vite.config.js";
 
 test("workspace sessions restore standalone and annotation workspaces", () => {
   assert.equal(normalizeWorkspaceSession({ activeWorkspace: "solution-writing" }).activeWorkspace, "solution-writing");
@@ -607,10 +609,11 @@ test("API origins are limited to the local web app and OnlyOffice", () => {
     socket: { encrypted: false },
   };
 
-  assert.equal(isAllowedApiOrigin(request, "http://127.0.0.1:5173", "http://127.0.0.1:8080"), true);
-  assert.equal(isAllowedApiOrigin(request, "http://localhost:8080", "http://127.0.0.1:8080"), true);
-  assert.equal(isAllowedApiOrigin(request, "https://example.com", "http://127.0.0.1:8080"), false);
-  assert.equal(isAllowedApiOrigin(request, "http://127.0.0.1:8000", "http://127.0.0.1:8080"), false);
+  const allowedOrigins = readAllowedOrigins(["http://127.0.0.1:8080"], { production: false });
+  assert.equal(isAllowedOrigin(request, "http://127.0.0.1:5173", allowedOrigins, { production: false }), true);
+  assert.equal(isAllowedOrigin(request, "http://localhost:8080", allowedOrigins, { production: false }), true);
+  assert.equal(isAllowedOrigin(request, "https://example.com", allowedOrigins, { production: false }), false);
+  assert.equal(isAllowedOrigin(request, "http://127.0.0.1:8000", allowedOrigins, { production: false }), false);
 });
 
 test("model settings redact every configured API key", () => {
@@ -641,7 +644,8 @@ test("Office document identifiers and download origins fail closed", () => {
 });
 
 test("Office document creation returns a usable local editor config", async () => {
-  const request = Readable.from([Buffer.from("office-config-regression")]);
+  const request = Readable.from([await buildMinimalDocx()]);
+  request.headers = {};
   const result = await createOfficeDocument(
     request,
     new URLSearchParams({ title: "regression.docx", previewId: "regression" }),
@@ -651,12 +655,31 @@ test("Office document creation returns a usable local editor config", async () =
     assert.doesNotThrow(() => assertOfficeDocumentId(result.id));
     assert.equal(result.serverUrl, process.env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080");
     assert.equal(result.config.document.title, "regression.docx");
-    assert.match(result.config.document.url, new RegExp(`/api/office/documents/${result.id}/file`));
+    assert.match(result.config.document.url, new RegExp(`/api/v1/office/documents/${result.id}/file`));
+    assert.match(result.config.token, /^[^.]+\.[^.]+\.[^.]+$/);
     assert.equal(typeof result.available, "boolean");
   } finally {
-    await unlink(path.join(tmpdir(), "guangfa-office-documents", `${result.id}.docx`));
+    await Promise.all([
+      rm(path.join(tmpdir(), "guangfa-office-documents", `${result.id}.docx`), { force: true }),
+      rm(path.join(tmpdir(), "guangfa-office-documents", `${result.id}.json`), { force: true }),
+    ]);
   }
 });
+
+async function buildMinimalDocx() {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0"?>
+    <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+    </Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+    </Relationships>`);
+  zip.file("word/document.xml", `<?xml version="1.0"?>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/></w:body></w:document>`);
+  return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+}
 
 test("invalid model JSON and incomplete fill contracts are rejected", () => {
   assert.deepEqual(parseModelJson('{"ok":true}'), { ok: true });
@@ -685,4 +708,14 @@ test("invalid model JSON and incomplete fill contracts are rejected", () => {
   for (const confidence of [0, 90, 100]) {
     assert.doesNotThrow(() => assertFillModelResult({ ...validFillResult, confidence }, "short"));
   }
+});
+
+test("fill model status aliases normalize to the persisted field contract", () => {
+  const base = { value: "项目付款方式", confidence: 90, source: "资料", evidence: "资料依据" };
+  assert.equal(normalizeFillModelResult({ ...base, status: "已确认" }).status, "待确认");
+  assert.equal(normalizeFillModelResult({ ...base, value: "", status: "已确认" }).status, "需补充资料");
+  assert.equal(normalizeFillModelResult({ ...base, status: "待确认或需补充资料" }).status, "待确认");
+  assert.equal(normalizeFillModelResult({ ...base, value: "", status: "待确认或需补充资料" }).status, "需补充资料");
+  assert.equal(normalizeFillModelResult({ ...base, status: "资料不足" }).status, "需补充资料");
+  assert.equal(normalizeFillModelResult({ ...base, status: "自定义状态" }).status, "自定义状态");
 });

@@ -17,6 +17,7 @@ import {
   normalizeFillMode,
   normalizeForSearch,
   normalizeFilledValueForTemplate,
+  normalizeFillModelResult,
   normalizeTaxChoiceValue,
   normalizeTemplateAmountValue,
   sanitizeAmountChoiceFillResult,
@@ -117,6 +118,7 @@ async function fillField(payload) {
     "9. 知识库片段与临时资料都可作为依据；如果二者冲突，优先采用字段上下文匹配度更高、证据更明确的内容。",
     "10. 知识库片段是当前招标/采购文件的编制依据，可能来自技术文件、项目资料、上游审批、历史招采说明或命名规则；不要因为片段出现“后续”“分包”“统一使用”等上下文词就排除它。",
     "11. 对项目名称/工程名称字段，若资料写有“名称统一使用……”“项目名称为……”“工程名称为……”，应视为当前模板的权威命名依据，直接提取引号或冒号后的完整名称。",
+    "状态字段必须严格输出“待确认”或“需补充资料”之一；有可写入的资料值时输出“待确认”，没有明确资料依据时输出“需补充资料”，不要输出“已确认”“完成”或“待确认或需补充资料”。",
     ...(fillMode === "amount-choice" ? [
       `12. 当前字段是“金额+勾选”复合字段，模板金额单位为“${getTemplateAmountUnit(promptField) || "未识别"}”。amountValue 必须按模板单位换算后输出，不要带单位；例如资料为 300 万元且模板单位为元，则 amountValue 为 3000000；模板单位为万元则 amountValue 为 300；模板单位为十万元/十万则 amountValue 为 30。`,
       "13. choiceValue 只能输出模板候选项中的“含税”或“不含税”。金额或含税状态任一项没有资料依据时，status 必须为需补充资料。",
@@ -142,10 +144,10 @@ async function fillField(payload) {
     materialText ? `【本次上传资料】\n${materialText}` : "【本次上传资料】\n未上传临时资料。",
   ].join("\n");
 
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" ? 1536 : 768, {
+  const parsed = normalizeFillModelResult(await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" ? 1536 : 768, {
     debugFileName: "ai-fill-last.json",
     debugContext,
-  });
+  }));
   assertFillModelResult(parsed, fillMode);
   const rawValue = typeof parsed.value === "string" ? parsed.value.trim() : "";
   const evidence = typeof parsed.evidence === "string" && parsed.evidence.trim() ? parsed.evidence.trim() : "模型未返回明确证据片段。";

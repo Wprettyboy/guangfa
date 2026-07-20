@@ -8,8 +8,9 @@ function registerDraftRoutes() {
     path: "/api/draft",
     tags: ["draft"],
     summary: "读取当前草稿",
-    responses: { 200: "object" },
-    handler: () => readDraft(),
+    roles: ["viewer"],
+    responses: { 200: { schema: { type: "object", nullable: true }, description: "当前草稿；尚未保存时为 null" } },
+    handler: ({ principal }) => readDraft(principal),
   });
 
   defineRoute({
@@ -18,10 +19,11 @@ function registerDraftRoutes() {
     path: "/api/draft",
     tags: ["draft"],
     summary: "保存当前草稿",
+    roles: ["editor"],
     bodyLimitBytes: 80 * 1024 * 1024,
-    body: { data: "object?" },
+    body: "object",
     responses: { 200: "object" },
-    handler: ({ body }) => writeDraft(body || {}).then(() => ({ ok: true })),
+    handler: ({ body, principal }) => writeDraft(body || {}, principal).then(() => ({ ok: true })),
   });
 }
 

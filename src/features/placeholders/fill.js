@@ -1,3 +1,5 @@
+import { apiRequest } from "../../services/apiClient.js";
+
 function normalizePromptText(value) {
   return String(value || "")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -36,17 +38,15 @@ function buildPlaceholderAiField(card) {
 }
 
 async function requestPlaceholderAiFill(card, { materials, knowledgeOptions }) {
-  const response = await fetch("/api/ai/fill-field", {
+  const result = await apiRequest("/api/ai/fill-field", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    json: {
       field: buildPlaceholderAiField(card),
       materials,
       knowledgeOptions,
-    }),
+    },
+    fallbackMessage: "AI 填充失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result?.error || "AI 填充失败");
   return {
     value: result.value || "",
     status: result.status || (result.value ? "待确认" : "需补充资料"),

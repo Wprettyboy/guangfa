@@ -1,3 +1,5 @@
+import { apiRequest } from "../../services/apiClient.js";
+
 async function identifySolutionModules(payload) {
   return postSolutionWriting("/api/ai/solution-identify-modules", payload, "功能模块识别失败");
 }
@@ -22,15 +24,17 @@ async function generateSolutionPlantumlImage(payload) {
   return postSolutionWriting("/api/ai/solution-plantuml-image", payload, "AI 生图失败");
 }
 
+async function renderSolutionPlantuml(payload) {
+  return postSolutionWriting("/api/plantuml/render", payload, "PlantUML 渲染失败");
+}
+
 async function postSolutionWriting(url, payload, fallbackMessage) {
-  const response = await fetch(url, {
+  return apiRequest(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
+    json: payload || {},
+    timeoutMs: 180_000,
+    fallbackMessage,
   });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || fallbackMessage);
-  return result;
 }
 
 export {
@@ -39,5 +43,6 @@ export {
   generateSolutionPlantumlImage,
   generateSolutionTaskPlan,
   identifySolutionModules,
+  renderSolutionPlantuml,
   testSolutionTaskKnowledge,
 };

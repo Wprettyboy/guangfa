@@ -18,6 +18,7 @@ import {
   registerOnlyOfficeEditor,
 } from "./connector.js";
 import { insertSolutionWritingWithConnector } from "./solutionConnector.js";
+import { apiRequest, isApiRequestUrl } from "../../../services/apiClient.js";
 
 let onlyOfficeFillRequestSeq = 0;
 let onlyOfficePlaceholderRequestSeq = 0;
@@ -62,10 +63,10 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
         source: "guangfa-parent",
         action: "sync-ai-knowledge-context",
         context: aiKnowledgeContext,
-      }, 2);
+      }, 2, getPostMessageOrigin(serverUrl));
     }
     return undefined;
-  }, [aiKnowledgeContext, mode]);
+  }, [aiKnowledgeContext, mode, serverUrl]);
 
   useEffect(() => {
     trackRevisionsEnabledRef.current = trackRevisionsEnabled;
@@ -121,7 +122,7 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
                     source: "guangfa-parent",
                     action: "sync-ai-knowledge-context",
                     context: aiKnowledgeContextRef.current,
-                  });
+                  }, 8, getPostMessageOrigin(serverUrl));
                 }, 350);
               }
             },
@@ -165,15 +166,23 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
   return <div className="onlyoffice-preview-host" ref={containerRef} />;
 }
 
-function postOnlyOfficeCommand(container, message, attempts = 8) {
+function postOnlyOfficeCommand(container, message, attempts = 8, targetOrigin = "*") {
   return retryOnlyOfficePost(() => {
     const frames = [...(container?.querySelectorAll?.("iframe") || [])];
     frames.forEach((frame) => {
       try {
-        frame.contentWindow?.postMessage(message, "*");
+        frame.contentWindow?.postMessage(message, targetOrigin);
       } catch {}
     });
   }, attempts);
+}
+
+function getPostMessageOrigin(value) {
+  try {
+    return new URL(String(value || ""), window.location.href).origin;
+  } catch {
+    return window.location.origin;
+  }
 }
 
 function requestOnlyOfficeDocumentSave(trigger = "manual") {
@@ -498,9 +507,12 @@ async function imageToOnlyOfficeDataUrl(image) {
   const candidates = [image?.previewUrl, image?.fileUrl, image?.imageUrl].filter(Boolean);
   for (const url of candidates) {
     try {
-      const response = await fetch(url, { cache: "no-store" });
-      if (!response.ok) continue;
-      const blob = await response.blob();
+      const blob = await apiRequest(url, {
+        auth: isApiRequestUrl(url),
+        cache: "no-store",
+        responseType: "blob",
+        fallbackMessage: "图片读取失败",
+      });
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
@@ -827,12 +839,16 @@ function requestOnlyOfficeDocumentDownloadAs(fileType = "docx", timeoutMs = 2000
 }
 
 async function fetchOnlyOfficeDownloadAsBuffer(url) {
-  const response = await fetch("/api/office/download-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
-  return response.ok ? response.arrayBuffer() : null;
+  try {
+    return await apiRequest("/api/office/download-url", {
+      method: "POST",
+      json: { url },
+      responseType: "arrayBuffer",
+      fallbackMessage: "OnlyOffice 导出文件读取失败",
+    });
+  } catch {
+    return null;
+  }
 }
 
 function readOnlyOfficePageNumber(payload) {

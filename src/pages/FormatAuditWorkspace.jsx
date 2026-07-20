@@ -21,6 +21,7 @@ import {
   getOutlineRevisionReason,
 } from "../features/docx/audit/aiOutline.js";
 import { readDocxStructure } from "../features/docx/structure/docxStructure.js";
+import { apiRequest } from "../services/apiClient.js";
 
 function FormatAuditWorkspace({ onStoreTemplate }) {
   const fileInputRef = useRef(null);
@@ -173,6 +174,7 @@ function FormatAuditWorkspace({ onStoreTemplate }) {
   }
 
   useEffect(() => {
+    const controller = new AbortController();
     function handleOfficeCustomAction(event) {
       const data = event.data || {};
       if (data.source !== "guangfa-onlyoffice-custom") return;
@@ -181,14 +183,15 @@ function FormatAuditWorkspace({ onStoreTemplate }) {
         setOnlyOfficeOutline(data.outline);
         console.log("[format-audit] onlyoffice-outline-probe", data.outline);
         if (data.outline?.items && console.table) console.table(data.outline.items);
-        fetch("/api/office/outline-probe", {
+        apiRequest("/api/office/outline-probe", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          json: {
             fileName: previewFile?.name || "",
             previewId: previewFile?.previewId || "",
             outline: data.outline,
-          }),
+          },
+          signal: controller.signal,
+          fallbackMessage: "大纲探针上报失败",
         }).catch(() => {});
         return;
       }
@@ -197,7 +200,10 @@ function FormatAuditWorkspace({ onStoreTemplate }) {
     }
 
     window.addEventListener("message", handleOfficeCustomAction);
-    return () => window.removeEventListener("message", handleOfficeCustomAction);
+    return () => {
+      controller.abort();
+      window.removeEventListener("message", handleOfficeCustomAction);
+    };
   });
 
   async function applyAuditConfig() {
@@ -275,8 +281,9 @@ function FormatAuditWorkspace({ onStoreTemplate }) {
     try {
       await onStoreTemplate(currentFile, templateCategory);
       setTemplateStoreState("saved");
-    } catch {
+    } catch (storeError) {
       setTemplateStoreState("error");
+      setError(storeError?.message || "存入模板库失败。");
     }
   }
 

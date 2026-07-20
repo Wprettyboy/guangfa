@@ -50,6 +50,7 @@ import {
   scrollPreviewToElement,
   scrollPreviewToPage,
 } from "./preview/pageLayout.js";
+import { apiRequest } from "../../services/apiClient.js";
 
 import {
   extractOutlineItems,
@@ -198,6 +199,7 @@ function DocumentFrame({
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const requestId = auditPreviewRequestRef.current + 1;
     auditPreviewRequestRef.current = requestId;
     const sourceBuffer = templateFile.buffer.slice(0);
@@ -210,17 +212,15 @@ function DocumentFrame({
     });
     officeBufferPromise
       .then((officeBuffer) =>
-        fetch(`/api/office/documents?${officeParams.toString()}`, {
+        apiRequest(`/api/office/documents?${officeParams.toString()}`, {
           method: "POST",
           headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
           body: officeBuffer,
+          signal: controller.signal,
+          timeoutMs: 120_000,
+          fallbackMessage: "OnlyOffice 文档初始化失败",
         }),
       )
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || "OnlyOffice 文档初始化失败");
-        return data;
-      })
       .then((data) => {
         if (cancelled || requestId !== auditPreviewRequestRef.current) return;
         if (data.available && data.config && data.serverUrl) {
@@ -236,6 +236,7 @@ function DocumentFrame({
 
     return () => {
       cancelled = true;
+      controller.abort();
       onOfficeDocumentReady?.("");
       if (pdfUrlRef.current) {
         releasePdfUrlLater(pdfUrlRef.current);

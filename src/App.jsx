@@ -23,6 +23,7 @@ import {
   readWorkspaceSession,
   saveWorkspaceSession,
 } from "./services/workspaceSession.js";
+import { apiRequest, getApiAccessToken, getApiBaseUrl } from "./services/apiClient.js";
 import {
   postKnowledgeBase,
   postKnowledgeDocument,
@@ -151,6 +152,7 @@ import {
   ChevronDown,
   Image as ImageIcon,
   LayoutDashboard,
+  LogOut,
   Menu,
   MessageSquareText,
   Settings,
@@ -163,8 +165,17 @@ gsap.registerPlugin(useGSAP);
 
 const DRAFT_AUTOSAVE_INTERVAL_MS = 6 * 60 * 1000;
 
-export default function App() {
-  const [initialSession] = useState(readWorkspaceSession);
+export default function App({ onResetApiCredential = null, principal = null }) {
+  const principalRoles = new Set(principal?.roles || []);
+  const canAdmin = principalRoles.has("admin");
+  const canEdit = canAdmin || principalRoles.has("editor");
+  const [initialSession] = useState(() => {
+    const session = readWorkspaceSession();
+    if (!canEdit && (!session.activeModule || ["workspace", "settings"].includes(session.activeModule))) {
+      return { ...session, activeModule: "template-management" };
+    }
+    return session;
+  });
   const [activeModule, setActiveModule] = useState(initialSession.activeModule || "workspace");
   const [activeWorkspace, setActiveWorkspace] = useState(initialSession.activeWorkspace || "annotate");
   const [workspaceNavOpen, setWorkspaceNavOpen] = useState(initialSession.workspaceNavOpen !== false);
@@ -367,7 +378,8 @@ export default function App() {
   const onlyOfficeAiKnowledgeContext = useMemo(() => {
     return {
       ...fillKnowledgeOptions,
-      apiBase: window.location.origin,
+      apiBase: getApiBaseUrl({ absolute: true }),
+      accessToken: getApiAccessToken(),
       bases: knowledgeBases
         .filter((base) => selectedFillKnowledgeBaseIds.includes(base.id))
         .map((base) => ({ id: base.id, name: base.name, scope: base.scope })),
@@ -383,8 +395,8 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([readStoredTemplates(), readDraftState(), readTemplateTypes()]).then(async ([templates, draft, types]) => {
-      const draftToRestore = shouldRestoreDraftState(draft, templates) ? normalizeDraftFillState(draft) : null;
-      if (draft && !draftToRestore) await clearDraftState();
+      const draftToRestore = canEdit && shouldRestoreDraftState(draft, templates) ? normalizeDraftFillState(draft) : null;
+      if (canEdit && draft && !draftToRestore) await clearDraftState();
       if (cancelled) return;
       setTemplateLibrary(templates);
       setTemplateTypes(types);
@@ -419,7 +431,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canEdit]);
 
   useEffect(() => {
     refreshKnowledgeBases();
@@ -531,15 +543,17 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (!canEdit) return undefined;
     const interval = window.setInterval(() => {
       if (draftAutosaveSnapshotRef.current) {
         saveDraftState(draftAutosaveSnapshotRef.current);
       }
     }, DRAFT_AUTOSAVE_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [canEdit]);
 
   function animateWorkspace(nextWorkspace) {
+    if (!canEdit) return;
     setActiveModule("workspace");
     if (nextWorkspace === activeWorkspace) return;
     const workspace = appRef.current?.querySelector(".workspace-body");
@@ -803,6 +817,7 @@ export default function App() {
   }
 
   function openSettings() {
+    if (!canAdmin) return;
     const workspace = appRef.current?.querySelector(".workspace-body");
     if (!workspace) {
       setActiveModule("settings");
@@ -824,12 +839,18 @@ export default function App() {
   }
 
   async function refreshKnowledgeBases() {
-    const bases = await readKnowledgeBases();
-    setKnowledgeBases(bases);
-    setSelectedKnowledgeBaseId((current) => {
-      if (current && bases.some((base) => base.id === current)) return current;
-      return bases.find((base) => base.scope === "project")?.id || bases[0]?.id || "";
-    });
+    try {
+      const bases = await readKnowledgeBases();
+      setKnowledgeBases(bases);
+      setSelectedKnowledgeBaseId((current) => {
+        if (current && bases.some((base) => base.id === current)) return current;
+        return bases.find((base) => base.scope === "project")?.id || bases[0]?.id || "";
+      });
+      return bases;
+    } catch (error) {
+      console.error("[knowledge-base] refresh failed", error);
+      return null;
+    }
   }
 
   async function createKnowledgeBase(payload) {
@@ -1364,6 +1385,7 @@ export default function App() {
       setTemplateLibrary(nextTemplates);
     } catch (error) {
       setSaveState("storage-error");
+      await reloadTemplateStateAfterConflict(error);
       window.alert(`模板库写入失败：${error?.message || "请稍后重试。"}`);
       return;
     }
@@ -1547,25 +1569,43 @@ export default function App() {
   }
 
   async function deleteTemplate(templateId) {
-    const nextTemplates = templateLibrary.filter((template) => template.id !== templateId);
     try {
+      const currentTemplates = await readStoredTemplates();
+      const nextTemplates = currentTemplates.filter((template) => template.id !== templateId);
       await storeTemplates(nextTemplates);
       setTemplateLibrary(nextTemplates);
-    } catch {
+    } catch (error) {
       setSaveState("storage-error");
+      await reloadTemplateStateAfterConflict(error);
+      if (isTemplateWriteConflict(error)) window.alert(error.message);
     }
   }
 
   async function updateTemplateCategory(templateId, category) {
-    const nextTemplates = templateLibrary.map((template) =>
-      template.id === templateId ? { ...template, category: normalizeTemplateCategory(category) } : template,
-    );
     try {
+      const currentTemplates = await readStoredTemplates();
+      const nextTemplates = currentTemplates.map((template) =>
+        template.id === templateId ? { ...template, category: normalizeTemplateCategory(category) } : template,
+      );
       await storeTemplates(nextTemplates);
       setTemplateLibrary(nextTemplates);
-    } catch {
+    } catch (error) {
       setSaveState("storage-error");
+      await reloadTemplateStateAfterConflict(error);
+      if (isTemplateWriteConflict(error)) window.alert(error.message);
     }
+  }
+
+  function isTemplateWriteConflict(error) {
+    return ["TEMPLATE_WRITE_CONFLICT", "TEMPLATE_PRECONDITION_REQUIRED"].includes(error?.code);
+  }
+
+  async function reloadTemplateStateAfterConflict(error) {
+    if (!isTemplateWriteConflict(error)) return;
+    if (Array.isArray(error.latestTemplates)) setTemplateLibrary(error.latestTemplates);
+    try {
+      setTemplateTypes(await readTemplateTypes());
+    } catch {}
   }
 
   async function refreshTemplateTypesAndLibrary() {
@@ -1576,18 +1616,33 @@ export default function App() {
   }
 
   async function createTemplateCategory(name) {
-    await createTemplateType({ name });
-    await refreshTemplateTypesAndLibrary();
+    try {
+      await createTemplateType({ name });
+      await refreshTemplateTypesAndLibrary();
+    } catch (error) {
+      await reloadTemplateStateAfterConflict(error);
+      throw error;
+    }
   }
 
   async function renameTemplateCategory(typeId, name) {
-    await updateTemplateType(typeId, { name });
-    await refreshTemplateTypesAndLibrary();
+    try {
+      await updateTemplateType(typeId, { name });
+      await refreshTemplateTypesAndLibrary();
+    } catch (error) {
+      await reloadTemplateStateAfterConflict(error);
+      throw error;
+    }
   }
 
   async function removeTemplateCategory(typeId) {
-    await deleteTemplateType(typeId);
-    await refreshTemplateTypesAndLibrary();
+    try {
+      await deleteTemplateType(typeId);
+      await refreshTemplateTypesAndLibrary();
+    } catch (error) {
+      await reloadTemplateStateAfterConflict(error);
+      throw error;
+    }
   }
 
   async function storeAuditTemplate(file, category) {
@@ -1610,10 +1665,16 @@ export default function App() {
       source: "format-audit",
       fileBuffer: file.buffer.slice(0),
     };
-    const nextTemplates = [savedTemplate, ...templateLibrary.filter((item) => item.fileName !== savedTemplate.fileName)];
-    await storeTemplates(nextTemplates);
-    setTemplateLibrary(nextTemplates);
-    return savedTemplate;
+    try {
+      const currentTemplates = await readStoredTemplates();
+      const nextTemplates = [savedTemplate, ...currentTemplates.filter((item) => item.fileName !== savedTemplate.fileName)];
+      await storeTemplates(nextTemplates);
+      setTemplateLibrary(nextTemplates);
+      return savedTemplate;
+    } catch (error) {
+      await reloadTemplateStateAfterConflict(error);
+      throw error;
+    }
   }
 
   async function uploadMaterials(files, options = {}) {
@@ -1977,10 +2038,9 @@ export default function App() {
     try {
       const aiCategory = normalizeFieldCategory(templateField?.category || templateField?.type || targetField.category || targetField.type);
       const aiFillMode = normalizeFillMode(templateField?.fillMode || targetField.fillMode, { ...targetField, ...templateField, category: aiCategory, type: aiCategory });
-      const response = await fetch("/api/ai/fill-field", {
+      const result = await apiRequest("/api/ai/fill-field", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        json: {
           field: {
             ...targetField,
             sourceText: getTemplateFieldSourceText(templateField || targetField),
@@ -1997,14 +2057,10 @@ export default function App() {
           },
           materials: materialFiles,
           knowledgeOptions: fillKnowledgeOptions,
-        }),
+        },
+        fallbackMessage: "AI 填充失败",
       });
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
-      const result = await response.json();
-      if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
-      if (!response.ok) {
-        throw new Error(result?.error || "AI 填充失败");
-      }
       const appliedField = {
         ...targetField,
         value: result.value || "",
@@ -2234,64 +2290,72 @@ export default function App() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          <SidebarItem
-            icon={LayoutDashboard}
-            label="工作台"
-            active={activeModule === "workspace"}
-            expanded={workspaceNavOpen}
-            hasChildren
-            onClick={() => setWorkspaceNavOpen((open) => !open)}
-          />
-          {workspaceNavOpen ? (
-            <div className="nav-children">
-              <button
-                className={activeModule === "workspace" && activeWorkspace === "annotate" ? "child-link active" : "child-link"}
-                onClick={() => animateWorkspace("annotate")}
-              >
-                模板标注工作台
-              </button>
-              <button
-                className={activeModule === "workspace" && activeWorkspace === "fill" ? "child-link active" : "child-link"}
-                onClick={() => animateWorkspace("fill")}
-              >
-                填充确认工作台
-              </button>
-              <button
-                className={activeModule === "workspace" && activeWorkspace === "solution-writing" ? "child-link active" : "child-link"}
-                onClick={() => animateWorkspace("solution-writing")}
-              >
-                方案编写工作台
-              </button>
-              <button
-                className={activeModule === "workspace" && activeWorkspace === "layout" ? "child-link active" : "child-link"}
-                onClick={() => animateWorkspace("layout")}
-              >
-                排版工作台
-              </button>
-              <button
-                className={activeModule === "workspace" && activeWorkspace === "audit" ? "child-link active" : "child-link"}
-                onClick={() => animateWorkspace("audit")}
-              >
-                格式审核工作台
-              </button>
-            </div>
+          {canEdit ? (
+            <>
+              <SidebarItem
+                icon={LayoutDashboard}
+                label="工作台"
+                active={activeModule === "workspace"}
+                expanded={workspaceNavOpen}
+                hasChildren
+                onClick={() => setWorkspaceNavOpen((open) => !open)}
+              />
+              {workspaceNavOpen ? (
+                <div className="nav-children">
+                  <button
+                    className={activeModule === "workspace" && activeWorkspace === "annotate" ? "child-link active" : "child-link"}
+                    onClick={() => animateWorkspace("annotate")}
+                  >
+                    模板标注工作台
+                  </button>
+                  <button
+                    className={activeModule === "workspace" && activeWorkspace === "fill" ? "child-link active" : "child-link"}
+                    onClick={() => animateWorkspace("fill")}
+                  >
+                    填充确认工作台
+                  </button>
+                  <button
+                    className={activeModule === "workspace" && activeWorkspace === "solution-writing" ? "child-link active" : "child-link"}
+                    onClick={() => animateWorkspace("solution-writing")}
+                  >
+                    方案编写工作台
+                  </button>
+                  <button
+                    className={activeModule === "workspace" && activeWorkspace === "layout" ? "child-link active" : "child-link"}
+                    onClick={() => animateWorkspace("layout")}
+                  >
+                    排版工作台
+                  </button>
+                  <button
+                    className={activeModule === "workspace" && activeWorkspace === "audit" ? "child-link active" : "child-link"}
+                    onClick={() => animateWorkspace("audit")}
+                  >
+                    格式审核工作台
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : null}
           <SidebarItem icon={Archive} label="模板管理" active={activeModule === "template-management"} onClick={openTemplateManagement} />
           <SidebarItem icon={BookOpenText} label="知识库管理" active={activeModule === "knowledge-management"} onClick={openKnowledgeManagement} />
-          <SidebarItem
-            icon={Settings}
-            label="系统设置"
-            active={activeModule === "settings"}
-            expanded={settingsNavOpen}
-            hasChildren
-            onClick={() => setSettingsNavOpen((open) => !open)}
-          />
-          {settingsNavOpen ? (
-            <div className="nav-children">
-              <button className={activeModule === "settings" ? "child-link active" : "child-link"} onClick={openSettings}>
-                模型配置
-              </button>
-            </div>
+          {canAdmin ? (
+            <>
+              <SidebarItem
+                icon={Settings}
+                label="系统设置"
+                active={activeModule === "settings"}
+                expanded={settingsNavOpen}
+                hasChildren
+                onClick={() => setSettingsNavOpen((open) => !open)}
+              />
+              {settingsNavOpen ? (
+                <div className="nav-children">
+                  <button className={activeModule === "settings" ? "child-link active" : "child-link"} onClick={openSettings}>
+                    模型配置
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </nav>
       </aside>
@@ -2312,7 +2376,24 @@ export default function App() {
               <MessageSquareText size={17} />
               审阅意见 3
             </button>
-            <button className="avatar-button topbar-action">张工</button>
+            <button
+              className={principal?.id ? "avatar-button authenticated-principal topbar-action" : "avatar-button topbar-action"}
+              type="button"
+              title={principal?.id || "张工"}
+            >
+              {principal?.id || "张工"}
+            </button>
+            {onResetApiCredential ? (
+              <button
+                className="ghost-button topbar-action"
+                type="button"
+                title="退出 API 会话"
+                onClick={onResetApiCredential}
+              >
+                <LogOut size={17} />
+                退出
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -2392,6 +2473,7 @@ export default function App() {
           <div className="workspace-body">
             {activeModule === "template-management" ? (
               <TemplateManagement
+                canEdit={canEdit}
                 templates={templateLibrary}
                 templateTypes={templateTypes}
                 onUseTemplate={useTemplate}
@@ -2405,6 +2487,7 @@ export default function App() {
               />
             ) : activeModule === "knowledge-management" ? (
               <KnowledgeBaseManagement
+                canEdit={canEdit}
                 knowledgeBases={knowledgeBases}
                 selectedKnowledgeBaseId={selectedKnowledgeBaseId}
                 projectId={currentProjectId}
@@ -2415,7 +2498,7 @@ export default function App() {
                 onDeleteDocument={deleteKnowledgeDocument}
                 onRefresh={refreshKnowledgeBases}
               />
-            ) : activeModule === "settings" ? (
+            ) : activeModule === "settings" && canAdmin ? (
               <SystemSettings />
             ) : activeWorkspace === "layout" ? (
               <LayoutWorkspace />

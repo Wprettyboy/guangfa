@@ -1,8 +1,11 @@
+import { ApiClientError, apiRequest } from "./apiClient.js";
+
 const templateDbName = "tender-agent-template-db";
 
 const templateStoreName = "templates";
 const currentDraftVersion = 3;
 const defaultTemplateTypeNames = ["招标类", "合同类", "方案类"];
+let templateRevisionEtag = "";
 
 async function openTemplateDb() {
   return new Promise((resolve, reject) => {
@@ -19,8 +22,8 @@ async function openTemplateDb() {
 }
 
 async function readStoredTemplates() {
-  const serverTemplates = await readServerTemplates();
-  if (serverTemplates.length > 0) return serverTemplates;
+  const serverResult = await readServerTemplates();
+  if (serverResult.succeeded) return serverResult.value;
 
   try {
     const db = await openTemplateDb();
@@ -36,8 +39,8 @@ async function readStoredTemplates() {
 }
 
 async function readStoredTemplate(templateId) {
-  const serverTemplate = await readServerTemplate(templateId);
-  if (serverTemplate) return serverTemplate;
+  const serverResult = await readServerTemplate(templateId);
+  if (serverResult.succeeded) return serverResult.value;
 
   try {
     const db = await openTemplateDb();
@@ -77,43 +80,49 @@ async function storeTemplates(templates) {
 
 async function readServerTemplates() {
   try {
-    const response = await fetch("/api/templates");
-    if (!response.ok) return [];
+    const response = await apiRequest("/api/templates", {
+      responseType: "response",
+      fallbackMessage: "后端模板库读取失败",
+    });
     const templates = await response.json();
-    return Array.isArray(templates) ? templates.map(deserializeTemplate).sort(sortTemplatesBySavedAt) : [];
+    templateRevisionEtag = response.headers.get("ETag") || "";
+    return {
+      succeeded: true,
+      value: Array.isArray(templates) ? templates.map(deserializeTemplate).sort(sortTemplatesBySavedAt) : [],
+    };
   } catch {
-    return [];
+    return { succeeded: false, value: [] };
   }
 }
 
 async function readServerTemplate(templateId) {
   try {
-    const response = await fetch(`/api/templates/${encodeURIComponent(templateId)}`);
-    if (!response.ok) return null;
-    const template = await response.json();
-    return template ? deserializeTemplate(template) : null;
-  } catch {
-    return null;
+    const template = await apiRequest(`/api/templates/${encodeURIComponent(templateId)}`, {
+      fallbackMessage: "模板读取失败",
+    });
+    return { succeeded: true, value: template ? deserializeTemplate(template) : null };
+  } catch (error) {
+    return {
+      succeeded: error instanceof ApiClientError && error.status === 404,
+      value: null,
+    };
   }
 }
 
 async function storeServerTemplates(templates) {
-  const response = await fetch("/api/templates", {
+  await requestTemplateMutation("/api/templates", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(templates.map(serializeTemplate)),
+    json: templates.map(serializeTemplate),
+    timeoutMs: 120_000,
+    fallbackMessage: "后端模板库保存失败",
   });
-  if (!response.ok) {
-    const result = await response.json().catch(() => ({}));
-    throw new Error(result.error || "后端模板库保存失败");
-  }
 }
 
 async function readDraftState() {
   try {
-    const response = await fetch("/api/draft");
-    if (!response.ok) return null;
-    const draft = await response.json();
+    const draft = await apiRequest("/api/draft", {
+      fallbackMessage: "草稿读取失败",
+    });
     const restoredDraft = deserializeDraft(draft);
     if (!restoredDraft && draft?.templateFile?.fileBase64) {
       await clearDraftState();
@@ -126,8 +135,11 @@ async function readDraftState() {
 
 async function readTemplateTypes() {
   try {
-    const response = await fetch("/api/template-types");
-    if (!response.ok) return defaultTemplateTypeNames.map(createFallbackTemplateType);
+    const response = await apiRequest("/api/template-types", {
+      responseType: "response",
+      fallbackMessage: "模板类别读取失败",
+    });
+    templateRevisionEtag = response.headers.get("ETag") || templateRevisionEtag;
     const types = await response.json();
     const normalized = normalizeTemplateTypes(types);
     return normalized.length > 0 ? normalized : defaultTemplateTypeNames.map(createFallbackTemplateType);
@@ -137,43 +149,67 @@ async function readTemplateTypes() {
 }
 
 async function createTemplateType(payload) {
-  const response = await fetch("/api/template-types", {
+  const response = await requestTemplateMutation("/api/template-types", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
+    json: payload || {},
+    fallbackMessage: "模板类别新增失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "模板类别新增失败");
-  return result;
+  return response.json();
 }
 
 async function updateTemplateType(typeId, payload) {
-  const response = await fetch(`/api/template-types/${encodeURIComponent(typeId)}`, {
+  const response = await requestTemplateMutation(`/api/template-types/${encodeURIComponent(typeId)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
+    json: payload || {},
+    fallbackMessage: "模板类别修改失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "模板类别修改失败");
-  return result;
+  return response.json();
 }
 
 async function deleteTemplateType(typeId) {
-  const response = await fetch(`/api/template-types/${encodeURIComponent(typeId)}`, {
+  const response = await requestTemplateMutation(`/api/template-types/${encodeURIComponent(typeId)}`, {
     method: "DELETE",
+    fallbackMessage: "模板类别删除失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "模板类别删除失败");
-  return result;
+  return response.json();
+}
+
+async function requestTemplateMutation(path, options) {
+  const expectedEtag = templateRevisionEtag;
+  try {
+    const response = await apiRequest(path, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        ...(expectedEtag ? { "If-Match": expectedEtag } : {}),
+      },
+      responseType: "response",
+    });
+    templateRevisionEtag = response.headers.get("ETag") || expectedEtag;
+    return response;
+  } catch (error) {
+    if (!(error instanceof ApiClientError) || ![412, 428].includes(error.status)) throw error;
+    const latestTemplates = await readServerTemplates();
+    const conflict = new Error(
+      error.status === 428
+        ? "模板库写入缺少有效版本，请刷新模板库后重新执行本次操作。"
+        : "模板库已被其他用户或标签页更新，请刷新后重新执行本次操作。",
+      { cause: error },
+    );
+    conflict.code = error.status === 428 ? "TEMPLATE_PRECONDITION_REQUIRED" : "TEMPLATE_WRITE_CONFLICT";
+    conflict.latestTemplates = latestTemplates.succeeded ? latestTemplates.value : null;
+    throw conflict;
+  }
 }
 
 async function saveDraftState(draft) {
   if (!draft.templateFile?.buffer) return;
   try {
-    await fetch("/api/draft", {
+    await apiRequest("/api/draft", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(serializeDraft(draft)),
+      json: serializeDraft(draft),
+      timeoutMs: 120_000,
+      fallbackMessage: "草稿保存失败",
     });
   } catch {
     // Draft autosave should never block the workspace.
@@ -182,10 +218,10 @@ async function saveDraftState(draft) {
 
 async function clearDraftState() {
   try {
-    await fetch("/api/draft", {
+    await apiRequest("/api/draft", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
+      json: {},
+      fallbackMessage: "草稿清理失败",
     });
   } catch {
     // Draft cleanup should never block creating a new template.

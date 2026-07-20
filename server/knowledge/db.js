@@ -9,6 +9,7 @@ const defaultProjectId = "default-project";
 async function getKnowledgeDatabase() {
   const database = await getTemplateDatabase();
   database.exec(knowledgeSchemaSql);
+  ensureKnowledgeSchemaMigrations(database);
   await migrateLegacyKnowledge(database);
   ensureDefaultKnowledgeBases(database);
   return database;
@@ -148,6 +149,18 @@ function ensureDefaultKnowledgeBases(database) {
   );
 }
 
+function ensureKnowledgeSchemaMigrations(database) {
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_knowledge_documents_content_identity
+    ON knowledge_documents(kb_id, file_hash, file_name)
+    WHERE deleted_at IS NULL
+  `);
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_knowledge_upload_idempotency_document
+    ON knowledge_upload_idempotency(document_id)
+  `);
+}
+
 const knowledgeSchemaSql = `
 CREATE TABLE IF NOT EXISTS knowledge_bases (
   id TEXT PRIMARY KEY,
@@ -184,6 +197,18 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER,
   FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_upload_idempotency (
+  kb_id TEXT NOT NULL,
+  scoped_key TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  file_hash TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (kb_id, scoped_key),
+  FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+  FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_document_pages (

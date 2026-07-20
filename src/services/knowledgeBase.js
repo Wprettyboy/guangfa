@@ -1,80 +1,70 @@
+import { apiRequest } from "./apiClient.js";
+
 async function readKnowledgeBases() {
-  try {
-    const response = await fetch("/api/knowledge-bases");
-    if (!response.ok) return [];
-    const bases = await response.json();
-    return Array.isArray(bases) ? bases : [];
-  } catch {
-    return [];
-  }
+  const bases = await apiRequest("/api/knowledge-bases", {
+    fallbackMessage: "知识库读取失败",
+  });
+  return Array.isArray(bases) ? bases : [];
 }
 
 async function postKnowledgeBase(payload) {
-  const response = await fetch("/api/knowledge-bases", {
+  return apiRequest("/api/knowledge-bases", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    json: payload,
+    fallbackMessage: "知识库创建失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "知识库创建失败");
-  return result;
 }
 
 async function postKnowledgeDocument(kbId, material) {
-  const response = await fetch(`/api/knowledge-bases/${encodeURIComponent(kbId)}/documents`, {
+  return apiRequest(`/api/knowledge-bases/${encodeURIComponent(kbId)}/documents`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    headers: { "Idempotency-Key": createUploadOperationId() },
+    json: {
       name: material.name,
       fileName: material.fileName || material.name,
       fileType: material.fileType || "",
       size: material.size,
       fileBase64: material.fileBase64,
-    }),
+    },
+    timeoutMs: 120_000,
+    fallbackMessage: "资料入库失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "资料入库失败");
-  return result;
 }
 
 async function removeKnowledgeDocument(kbId, documentId) {
-  const response = await fetch(`/api/knowledge-bases/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(documentId)}`, {
+  return apiRequest(`/api/knowledge-bases/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(documentId)}`, {
     method: "DELETE",
+    fallbackMessage: "资料删除失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "资料删除失败");
-  return result;
 }
 
 async function removeKnowledgeBase(kbId) {
-  const response = await fetch(`/api/knowledge-bases/${encodeURIComponent(kbId)}`, {
+  return apiRequest(`/api/knowledge-bases/${encodeURIComponent(kbId)}`, {
     method: "DELETE",
+    fallbackMessage: "知识库删除失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "知识库删除失败");
-  return result;
 }
 
 async function searchKnowledgeTables(payload) {
-  const response = await fetch("/api/knowledge-tables/search", {
+  const result = await apiRequest("/api/knowledge-tables/search", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
+    json: payload || {},
+    fallbackMessage: "知识库表格读取失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "知识库表格读取失败");
   return Array.isArray(result) ? result : [];
 }
 
 async function searchKnowledgeImages(payload) {
-  const response = await fetch("/api/knowledge-images/search", {
+  const result = await apiRequest("/api/knowledge-images/search", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
+    json: payload || {},
+    fallbackMessage: "知识库图片读取失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "知识库图片读取失败");
   return Array.isArray(result) ? result : [];
+}
+
+function createUploadOperationId() {
+  return globalThis.crypto?.randomUUID?.() || `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export {

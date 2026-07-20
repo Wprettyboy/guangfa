@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import JSZip from "jszip";
+import { buildCapabilityResource, capabilityScopes, signCapabilityUrl } from "../api/capability.js";
+import { inspectRasterImage, loadSafeDocx, readSafeZipEntry } from "../document-security.js";
 import { getKnowledgeDatabase } from "./db.js";
 
 const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
@@ -40,10 +41,10 @@ async function listKnowledgeDocumentImages(documentId) {
 
 async function extractDocxImages(database, document) {
   if (!document?.filePath || !existsSync(document.filePath)) return [];
-  const zip = await JSZip.loadAsync(await readFile(document.filePath));
-  const documentXml = await zip.file("word/document.xml")?.async("text");
+  const zip = await loadSafeDocx(await readFile(document.filePath));
+  const documentXml = await readZipText(zip, "word/document.xml");
   if (!documentXml) return [];
-  const rels = readDocumentRelationships(await zip.file("word/_rels/document.xml.rels")?.async("text"));
+  const rels = readDocumentRelationships(await readZipText(zip, "word/_rels/document.xml.rels"));
   const paragraphs = readParagraphs(documentXml);
   const pages = readDocumentPages(database, document.id);
   const images = [];
@@ -59,6 +60,10 @@ async function extractDocxImages(database, document) {
     const imageIndex = images.length + 1;
     const title = lastText || text || `图片 ${imageIndex}`;
     const extent = readImageExtentEmu(paragraph.xml);
+    const filePath = `/api/v1/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/file`;
+    const docxPath = `/api/v1/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/docx`;
+    const fileResource = buildCapabilityResource("knowledge-image", document.id, imageIndex, "file");
+    const docxResource = buildCapabilityResource("knowledge-image", document.id, imageIndex, "docx");
     images.push({
       id: `${document.id}-I${imageIndex}`,
       documentId: document.id,
@@ -70,9 +75,9 @@ async function extractDocxImages(database, document) {
       title,
       page: resolveImagePage(pages, title || text),
       imageCount: imageRels.length,
-      previewUrl: `/api/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/file`,
-      imageUrl: `${publicBaseUrl}/api/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/file`,
-      sourceDocxUrl: `${publicBaseUrl}/api/knowledge-images/${encodeURIComponent(document.id)}/${imageIndex}/docx`,
+      previewUrl: signCapabilityUrl(filePath, { scope: capabilityScopes.knowledgeImageFile, resource: fileResource }),
+      imageUrl: signCapabilityUrl(`${publicBaseUrl.replace(/\/$/, "")}${filePath}`, { scope: capabilityScopes.knowledgeImageFile, resource: fileResource }),
+      sourceDocxUrl: signCapabilityUrl(`${publicBaseUrl.replace(/\/$/, "")}${docxPath}`, { scope: capabilityScopes.knowledgeImageDocx, resource: docxResource }),
       widthEmu: extent.widthEmu,
       heightEmu: extent.heightEmu,
       plainText: normalizeText([title, text, imageRels.map((item) => item.target).join(" ")].filter(Boolean).join("\n")),
@@ -86,10 +91,10 @@ async function readKnowledgeImageDocx(documentId, imageIndex) {
   const database = await getKnowledgeDatabase();
   const row = getKnowledgeDocumentRow(database, documentId);
   if (!row?.filePath || !existsSync(row.filePath)) return null;
-  const zip = await JSZip.loadAsync(await readFile(row.filePath));
-  const documentXml = await zip.file("word/document.xml")?.async("text");
+  const zip = await loadSafeDocx(await readFile(row.filePath));
+  const documentXml = await readZipText(zip, "word/document.xml");
   if (!documentXml) return null;
-  const rels = readDocumentRelationships(await zip.file("word/_rels/document.xml.rels")?.async("text"));
+  const rels = readDocumentRelationships(await readZipText(zip, "word/_rels/document.xml.rels"));
   const imageParagraphs = readParagraphs(documentXml).filter((paragraph) => readImageRelationships(paragraph.xml, rels).length > 0);
   const index = Math.max(1, Number(imageIndex) || 1);
   const paragraph = imageParagraphs[index - 1];
@@ -105,23 +110,28 @@ async function readKnowledgeImageFile(documentId, imageIndex) {
   const database = await getKnowledgeDatabase();
   const row = getKnowledgeDocumentRow(database, documentId);
   if (!row?.filePath || !existsSync(row.filePath)) return null;
-  const zip = await JSZip.loadAsync(await readFile(row.filePath));
-  const documentXml = await zip.file("word/document.xml")?.async("text");
+  const zip = await loadSafeDocx(await readFile(row.filePath));
+  const documentXml = await readZipText(zip, "word/document.xml");
   if (!documentXml) return null;
-  const rels = readDocumentRelationships(await zip.file("word/_rels/document.xml.rels")?.async("text"));
+  const rels = readDocumentRelationships(await readZipText(zip, "word/_rels/document.xml.rels"));
   const imageParagraphs = readParagraphs(documentXml).filter((paragraph) => readImageRelationships(paragraph.xml, rels).length > 0);
   const index = Math.max(1, Number(imageIndex) || 1);
   const paragraph = imageParagraphs[index - 1];
   if (!paragraph) return null;
   const image = readImageRelationships(paragraph.xml, rels)[0];
   if (!image) return null;
-  const file = zip.file(image.path);
-  if (!file) return null;
+  const buffer = await readSafeZipEntry(zip, image.path, 32 * 1024 * 1024);
+  if (!buffer) return null;
   return {
     fileName: path.basename(image.path),
-    contentType: getImageContentType(image.path),
-    buffer: Buffer.from(await file.async("nodebuffer")),
+    contentType: inspectRasterImage(buffer, image.path),
+    buffer,
   };
+}
+
+async function readZipText(zip, name) {
+  const content = await readSafeZipEntry(zip, name, 32 * 1024 * 1024);
+  return content?.toString("utf8") || "";
 }
 
 function getKnowledgeDocumentRow(database, documentId) {
@@ -162,7 +172,10 @@ function readImageRelationships(paragraphXml, rels) {
   }
   return [...ids]
     .map((id) => rels.get(id))
-    .filter((rel) => rel && (/\/image$/i.test(rel.type || "") || /^word\/media\//i.test(rel.path || "")));
+    .filter((rel) => rel
+      && !/^https?:\/\//i.test(rel.path || "")
+      && /^word\/media\/[^/]+$/i.test(rel.path || "")
+      && (/\/image$/i.test(rel.type || "") || /^word\/media\//i.test(rel.path || "")));
 }
 
 function readImageExtentEmu(paragraphXml) {
@@ -218,16 +231,6 @@ function filterKnowledgeImages(images, query) {
 
 function sanitizeFileStem(value) {
   return String(value || "image").replace(/\.(docx|doc)$/i, "").replace(/[\\/:*?"<>|]/g, "_").trim() || "image";
-}
-
-function getImageContentType(filePath) {
-  const ext = path.extname(filePath || "").toLowerCase();
-  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-  if (ext === ".gif") return "image/gif";
-  if (ext === ".bmp") return "image/bmp";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".svg") return "image/svg+xml";
-  return "image/png";
 }
 
 function extractText(xml) {

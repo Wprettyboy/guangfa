@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
 import JSZip from "jszip";
+import { buildCapabilityResource, capabilityScopes, signCapabilityUrl } from "../api/capability.js";
 import { getAiRuntimeConfig } from "../ai/config.js";
 import { callJsonModel } from "../ai/model.js";
 
@@ -10,8 +12,11 @@ const imageDir = path.resolve(process.cwd(), "data", "solution-plantuml-images")
 const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
 const plantumlBaseUrl = process.env.PLANTUML_SERVER_URL || "http://127.0.0.1:8090";
 const plantumlAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+const plantumlImageTtlMs = readBoundedNumber(process.env.SOLUTION_IMAGE_TTL_MS, 24 * 60 * 60 * 1000, 15 * 60 * 1000, 7 * 24 * 60 * 60 * 1000);
+const maxPlantumlImages = readBoundedNumber(process.env.SOLUTION_IMAGE_MAX_ITEMS, 200, 10, 2000);
+let plantumlImageWriteQueue = Promise.resolve();
 
-async function generateSolutionPlantumlImage(payload = {}) {
+async function generateSolutionPlantumlImage(payload = {}, principal) {
   const runtime = getAiRuntimeConfig();
   const prompt = cleanMultilineText(payload.prompt).slice(0, 2000);
   const selectedTitle = cleanText(payload.selectedTitle).slice(0, 200);
@@ -72,6 +77,7 @@ async function generateSolutionPlantumlImage(payload = {}) {
       png,
       selectedTitle,
       prompt,
+      ownerId: principal?.id,
     });
     return {
       ok: true,
@@ -87,10 +93,42 @@ async function generateSolutionPlantumlImage(payload = {}) {
   throw error;
 }
 
-async function readSolutionPlantumlImageFile(imageId) {
+async function renderSolutionPlantumlSource(payload = {}, principal) {
+  const plantuml = normalizeManualPlantumlSource(payload.source);
+  const validation = validateManualPlantumlSource(plantuml);
+  if (!validation.ok) {
+    const error = new Error(validation.error);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const syntaxValidation = await validatePlantumlSyntax(plantuml);
+  if (!syntaxValidation.ok) {
+    const error = new Error(`PlantUML 渲染失败：${syntaxValidation.error}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const title = cleanText(payload.title).slice(0, 80) || "PlantUML配图";
+  const png = await renderPlantumlPng(plantuml);
+  const image = await savePlantumlImage({
+    title,
+    plantuml,
+    png,
+    selectedTitle: "",
+    prompt: "",
+    documentName: "PlantUML配图",
+    ownerId: principal?.id,
+  });
+  return { ok: true, image, plantuml };
+}
+
+async function readSolutionPlantumlImageFile(imageId, principal) {
   const id = sanitizeId(imageId);
   const filePath = path.join(imageDir, `${id}.png`);
-  if (!id || !existsSync(filePath)) return null;
+  const metadata = id ? await readActivePlantumlImageMetadata(id) : null;
+  if (!metadata || !existsSync(filePath)) return null;
+  assertPlantumlImageOwner(metadata, principal);
   return {
     fileName: `${id}.png`,
     contentType: "image/png",
@@ -98,10 +136,12 @@ async function readSolutionPlantumlImageFile(imageId) {
   };
 }
 
-async function readSolutionPlantumlImageDocx(imageId) {
+async function readSolutionPlantumlImageDocx(imageId, principal) {
   const id = sanitizeId(imageId);
   const filePath = path.join(imageDir, `${id}.docx`);
-  if (!id || !existsSync(filePath)) return null;
+  const metadata = id ? await readActivePlantumlImageMetadata(id) : null;
+  if (!metadata || !existsSync(filePath)) return null;
+  assertPlantumlImageOwner(metadata, principal);
   return {
     fileName: `${id}.docx`,
     buffer: await readFile(filePath),
@@ -273,8 +313,17 @@ function validatePlantumlPolicy(plantuml, diagramPolicy) {
 async function validatePlantuml(plantuml, diagramPolicy) {
   const policyValidation = validatePlantumlPolicy(plantuml, diagramPolicy);
   if (!policyValidation.ok) return policyValidation;
-  const encoded = encodePlantuml(plantuml);
-  const response = await fetch(`${plantumlBaseUrl.replace(/\/$/, "")}/svg/${encoded}`);
+  return validatePlantumlSyntax(plantuml);
+}
+
+async function validatePlantumlSyntax(plantuml) {
+  let response;
+  try {
+    const encoded = encodePlantuml(plantuml);
+    response = await fetch(`${plantumlBaseUrl.replace(/\/$/, "")}/svg/${encoded}`);
+  } catch {
+    return { ok: false, error: `无法连接本地 PlantUML 服务：${plantumlBaseUrl}` };
+  }
   const text = await response.text();
   if (!response.ok) return { ok: false, error: `${response.status} ${text.slice(0, 1200)}` };
   if (/Syntax Error|Some diagram description contains errors|PlantUML diagram error|ERROR/i.test(text)) {
@@ -285,7 +334,14 @@ async function validatePlantuml(plantuml, diagramPolicy) {
 
 async function renderPlantumlPng(plantuml) {
   const encoded = encodePlantuml(plantuml);
-  const response = await fetch(`${plantumlBaseUrl.replace(/\/$/, "")}/png/${encoded}`);
+  let response;
+  try {
+    response = await fetch(`${plantumlBaseUrl.replace(/\/$/, "")}/png/${encoded}`);
+  } catch {
+    const error = new Error(`无法连接本地 PlantUML 服务：${plantumlBaseUrl}`);
+    error.statusCode = 502;
+    throw error;
+  }
   if (!response.ok) {
     const text = await response.text();
     const error = new Error(`PlantUML PNG 渲染失败：${response.status} ${text.slice(0, 500)}`);
@@ -295,34 +351,133 @@ async function renderPlantumlPng(plantuml) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-async function savePlantumlImage({ title, plantuml, png, selectedTitle, prompt }) {
+async function savePlantumlImage({ title, plantuml, png, selectedTitle, prompt, documentName = "AI生成配图", ownerId }) {
+  const operation = plantumlImageWriteQueue.catch(() => {}).then(() => persistPlantumlImage({
+    title,
+    plantuml,
+    png,
+    selectedTitle,
+    prompt,
+    documentName,
+    ownerId,
+  }));
+  plantumlImageWriteQueue = operation;
+  return operation;
+}
+
+async function persistPlantumlImage({ title, plantuml, png, selectedTitle, prompt, documentName, ownerId }) {
   await mkdir(imageDir, { recursive: true });
-  const id = `SPI-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await cleanupPlantumlImages();
+  const id = `SPI-${randomUUID()}`;
   const safeTitle = sanitizeTitle(title || selectedTitle || "AI生成配图");
   const pngPath = path.join(imageDir, `${id}.png`);
   const docxPath = path.join(imageDir, `${id}.docx`);
   const metaPath = path.join(imageDir, `${id}.json`);
   const size = getImageEmuSize(png);
-  await writeFile(pngPath, png);
-  await writeFile(docxPath, await buildImageDocx(png, safeTitle));
-  await writeFile(metaPath, JSON.stringify({
-    id,
-    title: safeTitle,
-    selectedTitle,
-    prompt,
-    plantuml,
-    createdAt: new Date().toISOString(),
-  }, null, 2), "utf8");
+  const createdAt = Date.now();
+  try {
+    await writeFile(pngPath, png);
+    await writeFile(docxPath, await buildImageDocx(png, safeTitle));
+    await writeFile(metaPath, JSON.stringify({
+      id,
+      title: safeTitle,
+      selectedTitle,
+      prompt,
+      plantuml,
+      ownerId: String(ownerId || "local-development"),
+      createdAt,
+      expiresAt: createdAt + plantumlImageTtlMs,
+    }, null, 2), "utf8");
+  } catch (error) {
+    await removePlantumlImage(id);
+    throw error;
+  }
+  const filePath = `/api/v1/solution-plantuml-images/${encodeURIComponent(id)}/file`;
+  const sourceDocxPath = `/api/v1/solution-plantuml-images/${encodeURIComponent(id)}/docx`;
   return {
     id,
     title: safeTitle,
-    documentName: "AI生成配图",
-    previewUrl: `/api/solution-plantuml-images/${encodeURIComponent(id)}/file`,
-    imageUrl: `${publicBaseUrl}/api/solution-plantuml-images/${encodeURIComponent(id)}/file`,
-    sourceDocxUrl: `${publicBaseUrl}/api/solution-plantuml-images/${encodeURIComponent(id)}/docx`,
+    documentName,
+    previewUrl: signCapabilityUrl(filePath, {
+      scope: capabilityScopes.solutionPlantumlFile,
+      resource: buildCapabilityResource("solution-plantuml-image", id, "file"),
+    }),
+    imageUrl: signCapabilityUrl(`${publicBaseUrl.replace(/\/$/, "")}${filePath}`, {
+      scope: capabilityScopes.solutionPlantumlFile,
+      resource: buildCapabilityResource("solution-plantuml-image", id, "file"),
+    }),
+    sourceDocxUrl: signCapabilityUrl(`${publicBaseUrl.replace(/\/$/, "")}${sourceDocxPath}`, {
+      scope: capabilityScopes.solutionPlantumlDocx,
+      resource: buildCapabilityResource("solution-plantuml-image", id, "docx"),
+    }),
     widthEmu: size.widthEmu,
     heightEmu: size.heightEmu,
   };
+}
+
+async function readActivePlantumlImageMetadata(id) {
+  try {
+    const metadata = JSON.parse(await readFile(path.join(imageDir, `${id}.json`), "utf8"));
+    if (metadata?.id !== id) return null;
+    const createdAt = readTimestamp(metadata.createdAt);
+    const expiresAt = Number(metadata.expiresAt) || createdAt + plantumlImageTtlMs;
+    if (!createdAt || expiresAt <= Date.now()) {
+      await removePlantumlImage(id);
+      return null;
+    }
+    return { ...metadata, createdAt, expiresAt };
+  } catch (error) {
+    if (error?.code === "ENOENT" || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+function assertPlantumlImageOwner(metadata, principal) {
+  const authentication = principal?.authentication;
+  if (!principal || ["anonymous", "public", "disabled"].includes(authentication) || principal.roles?.includes("admin")) return;
+  if (!metadata.ownerId || metadata.ownerId !== principal.id) {
+    const error = new Error("当前身份无权读取该方案配图");
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+async function cleanupPlantumlImages() {
+  const names = await readdir(imageDir).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
+  const ids = [...new Set(names.map((name) => name.match(/^([A-Za-z0-9_-]+)\.(?:png|docx|json)$/)?.[1]).filter(Boolean))];
+  const active = [];
+  for (const id of ids) {
+    const [metadata, pngStat, docxStat] = await Promise.all([
+      readActivePlantumlImageMetadata(id),
+      stat(path.join(imageDir, `${id}.png`)).catch(() => null),
+      stat(path.join(imageDir, `${id}.docx`)).catch(() => null),
+    ]);
+    if (!metadata || !pngStat?.isFile() || !docxStat?.isFile()) {
+      await removePlantumlImage(id);
+      continue;
+    }
+    active.push({ id, createdAt: metadata.createdAt });
+  }
+  active.sort((left, right) => right.createdAt - left.createdAt);
+  await Promise.all(active.slice(maxPlantumlImages - 1).map(({ id }) => removePlantumlImage(id)));
+}
+
+async function removePlantumlImage(id) {
+  await Promise.all(["png", "docx", "json"].map((extension) => (
+    rm(path.join(imageDir, `${id}.${extension}`), { force: true })
+  )));
+}
+
+function readTimestamp(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readBoundedNumber(value, fallback, minimum, maximum) {
+  const number = Number(value ?? fallback);
+  return Number.isSafeInteger(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
 }
 
 async function buildImageDocx(png, title) {
@@ -436,6 +591,28 @@ function normalizePlantumlSource(value, diagramPolicy = resolveDiagramPolicy({})
   return lines.join("\n");
 }
 
+function normalizeManualPlantumlSource(value) {
+  return String(value || "")
+    .replace(/^\s*```(?:plantuml|puml|uml)?\s*\r?\n/i, "")
+    .replace(/\r?\n\s*```\s*$/i, "")
+    .replace(/\r\n/g, "\n")
+    .trim();
+}
+
+function validateManualPlantumlSource(source) {
+  if (!source) return { ok: false, error: "请粘贴 PlantUML 源码。" };
+  if (source.length > 100000) return { ok: false, error: "PlantUML 源码不能超过 100000 个字符。" };
+  const starts = source.match(/^\s*@start[a-z]+\b/gim) || [];
+  const ends = source.match(/^\s*@end[a-z]+\b/gim) || [];
+  if (starts.length !== 1 || ends.length !== 1 || /^\s*newpage\b/im.test(source)) {
+    return { ok: false, error: "源码必须且只能包含一个完整的 PlantUML 图。" };
+  }
+  if (/^\s*!(?:include|includeurl|import)\b/im.test(source)) {
+    return { ok: false, error: "为避免读取外部资源，手动渲染不支持 include 或 import。" };
+  }
+  return { ok: true };
+}
+
 function readPngSize(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 24 || buffer.toString("ascii", 1, 4) !== "PNG") {
     return { width: 900, height: 520 };
@@ -507,8 +684,10 @@ export {
   buildPlantumlUserPrompt,
   generateSolutionPlantumlImage,
   normalizePlantumlSource,
+  renderSolutionPlantumlSource,
   readSolutionPlantumlImageDocx,
   readSolutionPlantumlImageFile,
   resolveDiagramPolicy,
+  validateManualPlantumlSource,
   validatePlantumlPolicy,
 };

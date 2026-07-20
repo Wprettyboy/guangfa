@@ -13,8 +13,10 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { apiRequest } from "../services/apiClient.js";
 
 function KnowledgeBaseManagement({
+  canEdit = true,
   knowledgeBases,
   selectedKnowledgeBaseId,
   projectId,
@@ -161,7 +163,7 @@ function KnowledgeBaseManagement({
             <h2>知识库</h2>
             <span className="soft-count">{knowledgeBases.length} 个</span>
           </div>
-          <form className="knowledge-create" onSubmit={handleCreateBase}>
+          {canEdit ? <form className="knowledge-create" onSubmit={handleCreateBase}>
             <input value={newBaseName} onChange={(event) => setNewBaseName(event.target.value)} placeholder="新建知识库名称" />
             <select value={newBaseScope} onChange={(event) => setNewBaseScope(event.target.value)}>
               <option value="project">专项数据库</option>
@@ -171,7 +173,7 @@ function KnowledgeBaseManagement({
               <BookOpenText size={16} />
               新建
             </button>
-          </form>
+          </form> : null}
           <div className="knowledge-base-tree" role="tree" aria-label="知识库树">
             {knowledgeTreeGroups.map((group) => (
               <div className="knowledge-tree-group" key={group.id}>
@@ -202,9 +204,11 @@ function KnowledgeBaseManagement({
                               <span>{base.indexStatus} · {base.documentCount || 0} 资料 / {base.chunkCount || 0} 片段</span>
                             </div>
                           </button>
-                          <button className="knowledge-tree-delete" type="button" aria-label={`删除${base.name}`} onClick={() => handleDeleteBase(base)}>
-                            <Trash2 size={14} />
-                          </button>
+                          {canEdit ? (
+                            <button className="knowledge-tree-delete" type="button" aria-label={`删除${base.name}`} onClick={() => handleDeleteBase(base)}>
+                              <Trash2 size={14} />
+                            </button>
+                          ) : null}
                         </div>
                       ))
                     ) : (
@@ -226,20 +230,24 @@ function KnowledgeBaseManagement({
               <h2>{selectedBase?.name || "未选择知识库"}</h2>
               <p>{selectedBase?.scope === "global" ? "全局资料会参与所有项目召回。" : "项目资料仅参与当前项目召回。"}</p>
             </div>
-            <input
-              className="visually-hidden"
-              type="file"
-              accept=".docx,.txt,.md,.json,.csv"
-              multiple
-              ref={fileInputRef}
-              onChange={handleUploadChange}
-            />
-            <button className="tool-button primary" onClick={() => fileInputRef.current?.click()} disabled={!selectedBase || uploading}>
-              {uploading ? <Loader2 size={17} className="spin" /> : <Upload size={17} />}
-              {uploading ? "入库中" : "上传资料"}
-            </button>
+            {canEdit ? (
+              <>
+                <input
+                  className="visually-hidden"
+                  type="file"
+                  accept=".docx,.txt,.md,.json,.csv"
+                  multiple
+                  ref={fileInputRef}
+                  onChange={handleUploadChange}
+                />
+                <button className="tool-button primary" onClick={() => fileInputRef.current?.click()} disabled={!selectedBase || uploading}>
+                  {uploading ? <Loader2 size={17} className="spin" /> : <Upload size={17} />}
+                  {uploading ? "入库中" : "上传资料"}
+                </button>
+              </>
+            ) : null}
           </div>
-          <div
+          {canEdit ? <div
             className={uploading ? "knowledge-upload-zone busy" : "knowledge-upload-zone"}
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(event) => event.preventDefault()}
@@ -258,7 +266,7 @@ function KnowledgeBaseManagement({
               <strong>{uploading ? "正在入库资料" : "点击或拖拽资料入库"}</strong>
               <span>支持 DOCX、TXT、MD、JSON、CSV；资料会切片后进入当前知识库。</span>
             </div>
-          </div>
+          </div> : null}
           {uploadMessage ? <div className="knowledge-upload-message ok">{uploadMessage}</div> : null}
           {uploadError ? <div className="knowledge-upload-message error">{uploadError}</div> : null}
           <div className="knowledge-document-table">
@@ -271,9 +279,11 @@ function KnowledgeBaseManagement({
                     <span>{document.size || "--"} · {document.chunkCount || 0} 片段 · {document.status}</span>
                     {document.error ? <em>{document.error}</em> : null}
                   </div>
-                  <button className="icon-button quiet" onClick={() => onDeleteDocument(selectedBase.id, document.id)} aria-label={`删除${document.name}`}>
-                    <Trash2 size={16} />
-                  </button>
+                  {canEdit ? (
+                    <button className="icon-button quiet" onClick={() => onDeleteDocument(selectedBase.id, document.id)} aria-label={`删除${document.name}`}>
+                      <Trash2 size={16} />
+                    </button>
+                  ) : null}
                 </div>
               ))
             ) : (
@@ -392,19 +402,17 @@ function escapeKnowledgeRegExp(value) {
 }
 async function searchKnowledge(query, projectId, knowledgeBase) {
   const kbId = knowledgeBase?.id || "";
-  const response = await fetch("/api/knowledge-bases/search", {
+  const result = await apiRequest("/api/knowledge-bases/search", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    json: {
       query,
       projectId,
       kbIds: kbId ? [kbId] : [],
       includeGlobal: false,
       topK: 8,
-    }),
+    },
+    fallbackMessage: "知识库检索失败",
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "知识库检索失败");
   return Array.isArray(result) ? result : [];
 }
 

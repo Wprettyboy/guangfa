@@ -9,6 +9,7 @@ const dbPath = path.join(dataDir, "guangfa.sqlite");
 const legacyTemplateFile = path.join(dataDir, "templates", "library.json");
 const defaultLibraryId = "LIB-default";
 const defaultLibraryName = "默认模板库";
+const templateRevisionKey = "template_library_revision";
 
 let databasePromise = null;
 
@@ -22,11 +23,14 @@ async function getTemplateDatabase() {
 async function initializeTemplateDatabase() {
   await mkdir(dataDir, { recursive: true });
   const database = new DatabaseSync(dbPath);
+  database.exec("PRAGMA busy_timeout = 5000");
   database.exec("PRAGMA foreign_keys = ON");
+  database.exec("PRAGMA journal_mode = WAL");
   database.exec(schemaSql);
   ensureTemplateSchemaMigrations(database);
   ensureDefaultTemplateLibrary(database);
   ensureDefaultTemplateTypes(database);
+  ensureTemplateRevision(database);
   await migrateLegacyTemplateLibrary(database);
   return database;
 }
@@ -36,18 +40,43 @@ async function readTemplateLibrary() {
   return readTemplatesFromDatabase(database);
 }
 
+async function readTemplateLibrarySnapshot() {
+  const database = await getTemplateDatabase();
+  return readTemplateSnapshotFromDatabase(database, () => readTemplatesFromDatabase(database));
+}
+
 async function readTemplate(templateId) {
   const database = await getTemplateDatabase();
   return readTemplatesFromDatabase(database, templateId)[0] || null;
 }
 
-async function replaceTemplateLibrary(templates) {
+async function readTemplateSnapshot(templateId) {
   const database = await getTemplateDatabase();
-  replaceTemplatesInDatabase(database, Array.isArray(templates) ? templates : []);
+  return readTemplateSnapshotFromDatabase(database, () => readTemplatesFromDatabase(database, templateId)[0] || null);
+}
+
+async function replaceTemplateLibrary(templates, options = {}) {
+  const database = await getTemplateDatabase();
+  const body = Array.isArray(templates) ? templates : [];
+  const revision = replaceTemplatesInDatabase(database, body, options);
+  return {
+    body: { ok: true, count: body.length },
+    revision,
+    etag: formatTemplateRevisionEtag(revision),
+  };
 }
 
 async function readTemplateLibraries() {
   const database = await getTemplateDatabase();
+  return readTemplateLibrariesFromDatabase(database);
+}
+
+async function readTemplateLibrariesSnapshot() {
+  const database = await getTemplateDatabase();
+  return readTemplateSnapshotFromDatabase(database, () => readTemplateLibrariesFromDatabase(database));
+}
+
+function readTemplateLibrariesFromDatabase(database) {
   return database.prepare(`
     SELECT id, name, description, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt
     FROM template_libraries
@@ -58,6 +87,15 @@ async function readTemplateLibraries() {
 
 async function readTemplateTypes(libraryId = "") {
   const database = await getTemplateDatabase();
+  return readTemplateTypesFromDatabase(database, libraryId);
+}
+
+async function readTemplateTypesSnapshot(libraryId = "") {
+  const database = await getTemplateDatabase();
+  return readTemplateSnapshotFromDatabase(database, () => readTemplateTypesFromDatabase(database, libraryId));
+}
+
+function readTemplateTypesFromDatabase(database, libraryId = "") {
   const sql = `
     SELECT
       template_types.id,
@@ -80,7 +118,7 @@ async function readTemplateTypes(libraryId = "") {
   return libraryId ? database.prepare(sql).all(libraryId) : database.prepare(sql).all();
 }
 
-async function createTemplateType(payload = {}) {
+async function createTemplateType(payload = {}, options = {}) {
   const database = await getTemplateDatabase();
   const name = normalizeTemplateTypeName(payload.name);
   if (!name) {
@@ -90,47 +128,46 @@ async function createTemplateType(payload = {}) {
   }
   const now = Date.now();
   const libraryId = String(payload.libraryId || defaultLibraryId);
-  ensureDefaultTemplateLibrary(database);
   const id = String(payload.id || stableId("TYPE", `${libraryId}:${name}`));
   const sortOrder = Number.isFinite(Number(payload.sortOrder)) ? Number(payload.sortOrder) : getNextTemplateTypeSortOrder(database, libraryId);
-  database.prepare(`
-    INSERT INTO template_types (id, library_id, name, description, sort_order, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(library_id, name) DO UPDATE SET
-      description = excluded.description,
-      sort_order = excluded.sort_order,
-      updated_at = excluded.updated_at,
-      deleted_at = NULL
-  `).run(id, libraryId, name, String(payload.description || ""), sortOrder, now, now);
-  const types = await readTemplateTypes(libraryId);
-  return types.find((type) => type.name === name) || null;
+  const result = runTransaction(database, () => {
+    assertTemplateRevision(database, options.expectedRevision, options.requirePrecondition);
+    ensureDefaultTemplateLibrary(database);
+    database.prepare(`
+      INSERT INTO template_types (id, library_id, name, description, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(library_id, name) DO UPDATE SET
+        description = excluded.description,
+        sort_order = excluded.sort_order,
+        updated_at = excluded.updated_at,
+        deleted_at = NULL
+    `).run(id, libraryId, name, String(payload.description || ""), sortOrder, now, now);
+    const revision = incrementTemplateRevision(database);
+    const body = readTemplateTypesFromDatabase(database, libraryId).find((type) => type.name === name) || null;
+    return { body, revision };
+  });
+  return {
+    ...result,
+    etag: formatTemplateRevisionEtag(result.revision),
+  };
 }
 
-async function updateTemplateType(typeId, payload = {}) {
+async function updateTemplateType(typeId, payload = {}, options = {}) {
   const database = await getTemplateDatabase();
-  const current = getTemplateTypeRow(database, typeId);
-  if (!current) {
-    const error = new Error("模板类别不存在");
-    error.statusCode = 404;
-    throw error;
-  }
-  const name = normalizeTemplateTypeName(payload.name ?? current.name);
-  if (!name) {
-    const error = new Error("类别名称不能为空");
-    error.statusCode = 400;
-    throw error;
-  }
-  const duplicate = database.prepare(`
-    SELECT id FROM template_types
-    WHERE library_id = ? AND name = ? AND id <> ?
-  `).get(current.library_id, name, typeId);
-  if (duplicate) {
-    const error = new Error("同名类别已存在");
-    error.statusCode = 409;
-    throw error;
-  }
-  const now = Date.now();
-  runTransaction(database, () => {
+  let current;
+  let name;
+  const result = runTransaction(database, () => {
+    assertTemplateRevision(database, options.expectedRevision, options.requirePrecondition);
+    current = getTemplateTypeRow(database, typeId);
+    if (!current) throwTemplateError("模板类别不存在", 404);
+    name = normalizeTemplateTypeName(payload.name ?? current.name);
+    if (!name) throwTemplateError("类别名称不能为空", 400);
+    const duplicate = database.prepare(`
+      SELECT id FROM template_types
+      WHERE library_id = ? AND name = ? AND id <> ?
+    `).get(current.library_id, name, typeId);
+    if (duplicate) throwTemplateError("同名类别已存在", 409);
+    const now = Date.now();
     database.prepare(`
       UPDATE template_types
       SET name = ?, description = ?, updated_at = ?
@@ -141,31 +178,37 @@ async function updateTemplateType(typeId, payload = {}) {
       SET category = ?, updated_at = ?
       WHERE deleted_at IS NULL AND (type_id = ? OR category = ?)
     `).run(name, now, typeId, current.name);
+    const revision = incrementTemplateRevision(database);
+    const body = readTemplateTypesFromDatabase(database, current.library_id).find((type) => type.id === typeId) || null;
+    return { body, revision };
   });
-  const types = await readTemplateTypes(current.library_id);
-  return types.find((type) => type.id === typeId) || null;
+  return {
+    ...result,
+    etag: formatTemplateRevisionEtag(result.revision),
+  };
 }
 
-async function deleteTemplateType(typeId) {
+async function deleteTemplateType(typeId, options = {}) {
   const database = await getTemplateDatabase();
-  const current = getTemplateTypeRow(database, typeId);
-  if (!current) {
-    const error = new Error("模板类别不存在");
-    error.statusCode = 404;
-    throw error;
-  }
-  const templateCount = database.prepare(`
-    SELECT COUNT(*) AS count
-    FROM templates
-    WHERE deleted_at IS NULL AND (type_id = ? OR category = ?)
-  `).get(typeId, current.name).count;
-  if (templateCount > 0) {
-    const error = new Error(`该类别下还有 ${templateCount} 个模板，不能删除`);
-    error.statusCode = 409;
-    throw error;
-  }
-  database.prepare("UPDATE template_types SET deleted_at = ?, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), typeId);
-  return { ok: true };
+  const revision = runTransaction(database, () => {
+    assertTemplateRevision(database, options.expectedRevision, options.requirePrecondition);
+    const current = getTemplateTypeRow(database, typeId);
+    if (!current) throwTemplateError("模板类别不存在", 404);
+    const templateCount = database.prepare(`
+      SELECT COUNT(*) AS count
+      FROM templates
+      WHERE deleted_at IS NULL AND (type_id = ? OR category = ?)
+    `).get(typeId, current.name).count;
+    if (templateCount > 0) throwTemplateError(`该类别下还有 ${templateCount} 个模板，不能删除`, 409);
+    const now = Date.now();
+    database.prepare("UPDATE template_types SET deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, typeId);
+    return incrementTemplateRevision(database);
+  });
+  return {
+    body: { ok: true },
+    revision,
+    etag: formatTemplateRevisionEtag(revision),
+  };
 }
 
 async function migrateLegacyTemplateLibrary(database) {
@@ -184,8 +227,9 @@ async function migrateLegacyTemplateLibrary(database) {
   setSchemaMeta(database, "templates_json_migrated", "1");
 }
 
-function replaceTemplatesInDatabase(database, templates) {
-  runTransaction(database, () => {
+function replaceTemplatesInDatabase(database, templates, options = {}) {
+  return runTransaction(database, () => {
+    assertTemplateRevision(database, options.expectedRevision, options.requirePrecondition);
     const now = Date.now();
     const insertLibrary = database.prepare(`
       INSERT INTO template_libraries (id, name, description, sort_order, created_at, updated_at)
@@ -376,6 +420,7 @@ function replaceTemplatesInDatabase(database, templates) {
         );
       });
     });
+    return incrementTemplateRevision(database);
   });
 }
 
@@ -661,6 +706,19 @@ function runTransaction(database, callback) {
   }
 }
 
+function readTemplateSnapshotFromDatabase(database, readBody) {
+  database.exec("BEGIN");
+  try {
+    const revision = getTemplateRevision(database);
+    const body = readBody();
+    database.exec("COMMIT");
+    return { body, revision, etag: formatTemplateRevisionEtag(revision) };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function setSchemaMeta(database, key, value) {
   database.prepare(`
     INSERT INTO schema_meta (key, value)
@@ -669,15 +727,66 @@ function setSchemaMeta(database, key, value) {
   `).run(key, value);
 }
 
+function ensureTemplateRevision(database) {
+  const row = database.prepare("SELECT value FROM schema_meta WHERE key = ?").get(templateRevisionKey);
+  if (!row) setSchemaMeta(database, templateRevisionKey, "1");
+}
+
+function getTemplateRevision(database) {
+  const value = Number(database.prepare("SELECT value FROM schema_meta WHERE key = ?").get(templateRevisionKey)?.value);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error("模板库版本数据无效");
+  }
+  return value;
+}
+
+function incrementTemplateRevision(database) {
+  const revision = getTemplateRevision(database) + 1;
+  setSchemaMeta(database, templateRevisionKey, String(revision));
+  return revision;
+}
+
+function assertTemplateRevision(database, expectedRevision, requirePrecondition = false) {
+  const expected = parseTemplateRevision(expectedRevision);
+  if (expected === null) {
+    if (requirePrecondition) throwTemplateError("修改共享模板前必须提供 If-Match", 428, "PRECONDITION_REQUIRED");
+    return;
+  }
+  const current = getTemplateRevision(database);
+  if (expected !== current) {
+    throwTemplateError("模板库已被其他用户修改，请重新加载后再保存", 412, "TEMPLATE_REVISION_CONFLICT");
+  }
+}
+
+function parseTemplateRevision(value) {
+  if (value == null || value === "") return null;
+  if (Number.isSafeInteger(value) && value > 0) return value;
+  const etag = String(value).trim();
+  const match = /^"templates-(\d+)"$/.exec(etag);
+  const revision = Number(match?.[1]);
+  if (!match || !Number.isSafeInteger(revision) || revision < 1) {
+    throwTemplateError("If-Match 不是有效的模板库版本", 400, "INVALID_TEMPLATE_REVISION");
+  }
+  return revision;
+}
+
+function formatTemplateRevisionEtag(revision) {
+  return `"templates-${Number(revision)}"`;
+}
+
+function throwTemplateError(message, statusCode, code) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  throw error;
+}
+
 function ensureDefaultTemplateLibrary(database) {
   const now = Date.now();
   database.prepare(`
     INSERT INTO template_libraries (id, name, description, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      updated_at = excluded.updated_at,
-      deleted_at = NULL
+    ON CONFLICT(id) DO NOTHING
   `).run(defaultLibraryId, defaultLibraryName, "", 0, now, now);
 }
 
@@ -916,11 +1025,16 @@ CREATE INDEX IF NOT EXISTS idx_complex_fill_anchors_template ON template_complex
 `;
 
 export {
+  formatTemplateRevisionEtag,
   getTemplateDatabase,
   readTemplate,
+  readTemplateSnapshot,
   readTemplateLibraries,
+  readTemplateLibrariesSnapshot,
   readTemplateLibrary,
+  readTemplateLibrarySnapshot,
   readTemplateTypes,
+  readTemplateTypesSnapshot,
   createTemplateType,
   updateTemplateType,
   deleteTemplateType,

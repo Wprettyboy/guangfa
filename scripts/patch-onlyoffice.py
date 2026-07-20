@@ -186,12 +186,18 @@ knowledge_helper = r'''
 			if (!lastUser)
 				return;
 
-			let response = await fetch(String(context.apiBase).replace(/\/$/, "") + "/api/ai/knowledge-search", {
+			let accessToken = String(context.accessToken || "").trim();
+			let knowledgeContext = Object.assign({}, context);
+			delete knowledgeContext.accessToken;
+			let response = await fetch(String(context.apiBase).replace(/\/$/, "") + "/api/v1/ai/knowledge-search", {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: Object.assign(
+					{ "Content-Type": "application/json" },
+					accessToken ? { "Authorization": "Bearer " + accessToken } : {}
+				),
 				body: JSON.stringify({
 					message: lastUser,
-					knowledgeOptions: context
+					knowledgeOptions: knowledgeContext
 				})
 			});
 			if (!response.ok)

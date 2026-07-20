@@ -4,6 +4,7 @@ import FillCommonToolbar from "../features/docx/fill/FillCommonToolbar.jsx";
 import OtherFieldFillPanel from "../features/docx/fill/OtherFieldFillPanel.jsx";
 import { exportFilledDocx } from "../features/docx/fill/docxXmlFill.js";
 import { requestOnlyOfficeDocumentDownloadAs } from "../features/docx/office/bridge.jsx";
+import { fetchOfficeDocumentBuffer } from "../features/docx/office/documentSync.js";
 import { DocumentFrame, getFillFieldDisplayPage } from "../features/docx/runtime.jsx";
 import ComplexFillCards from "../features/complex-fill/ComplexFillCards.jsx";
 import PlaceholderFillCards from "../features/placeholders/PlaceholderFillCards.jsx";
@@ -132,9 +133,9 @@ function FillWorkspace({
           setExportState("done");
           return;
         }
-        const response = await fetch(`/api/office/documents/${officeDocId}/file?t=${Date.now()}`, { cache: "no-store" });
-        if (response.ok) {
-          downloadDocxBuffer(await response.arrayBuffer(), buildExportFileName(baseTemplateFile.name));
+        const serverBuffer = await fetchOfficeDocumentBuffer(officeDocId);
+        if (serverBuffer) {
+          downloadDocxBuffer(serverBuffer, buildExportFileName(baseTemplateFile.name));
           setExportState("done");
           return;
         }

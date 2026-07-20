@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import {
   buildPlantumlUserPrompt,
   normalizePlantumlSource,
+  readSolutionPlantumlImageFile,
   resolveDiagramPolicy,
+  validateManualPlantumlSource,
   validatePlantumlPolicy,
 } from "../server/solution-writing/plantuml-image.js";
 
@@ -116,4 +120,59 @@ test("diagram policy rejects multiple blocks, external includes and invalid WBS 
   assert.deepEqual(validatePlantumlPolicy(wbsSource, wbsPolicy), { ok: true });
   assert.match(validatePlantumlPolicy(wbsSource.replace("** 业务管理", "*** 业务管理"), wbsPolicy).error, /不能跳过中间层级/);
   assert.match(validatePlantumlPolicy(wbsSource.replace("** 业务管理", "component 业务管理"), wbsPolicy).error, /不得混入其他图型/);
+});
+
+test("manual PlantUML accepts one complete diagram and rejects external resources", () => {
+  const mindmap = `@startmindmap
+* 方案
+** 功能
+** 流程
+@endmindmap`;
+  assert.deepEqual(validateManualPlantumlSource(mindmap), { ok: true });
+  assert.match(validateManualPlantumlSource("").error, /粘贴 PlantUML/);
+  assert.match(validateManualPlantumlSource(`${activitySource}\n${activitySource}`).error, /只能包含一个/);
+  assert.match(validateManualPlantumlSource(activitySource.replace("\nstart\n", "\n!includeurl https://example.com/theme.puml\nstart\n")).error, /include 或 import/);
+});
+
+test("generated diagram assets enforce owner access while preserving signed anonymous reads", async () => {
+  const id = `SPI-owner-test-${Date.now()}`;
+  const directory = path.resolve(process.cwd(), "data", "solution-plantuml-images");
+  const basePath = path.join(directory, id);
+  await mkdir(directory, { recursive: true });
+  await writeFile(`${basePath}.png`, Buffer.from("test-image"));
+  await writeFile(`${basePath}.docx`, Buffer.from("test-docx"));
+  await writeFile(`${basePath}.json`, JSON.stringify({
+    id,
+    ownerId: "owner-user",
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  }), "utf8");
+
+  try {
+    assert.ok((await readSolutionPlantumlImageFile(id, {
+      id: "owner-user",
+      roles: ["editor"],
+      authentication: "bearer",
+    })).buffer.length > 0);
+    await assert.rejects(
+      readSolutionPlantumlImageFile(id, {
+        id: "other-user",
+        roles: ["editor"],
+        authentication: "bearer",
+      }),
+      (error) => error.statusCode === 403,
+    );
+    assert.ok((await readSolutionPlantumlImageFile(id, {
+      id: "admin-user",
+      roles: ["admin"],
+      authentication: "bearer",
+    })).buffer.length > 0);
+    assert.ok((await readSolutionPlantumlImageFile(id, {
+      id: "anonymous",
+      roles: [],
+      authentication: "anonymous",
+    })).buffer.length > 0);
+  } finally {
+    await Promise.all(["png", "docx", "json"].map((extension) => rm(`${basePath}.${extension}`, { force: true })));
+  }
 });

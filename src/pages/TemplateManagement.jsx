@@ -49,6 +49,7 @@ function normalizeCategoryInput(value) {
 }
 
 function TemplateManagement({
+  canEdit = true,
   templates,
   templateTypes = [],
   onUseTemplate,
@@ -202,10 +203,12 @@ function TemplateManagement({
           <h2>模板库</h2>
           <p>合同类、招标类、方案类模板统一管理，后续按智能体场景直接调用。</p>
         </div>
-        <button className="tool-button solid" onClick={onCreateTemplate}>
-          <Highlighter size={17} />
-          新建标注模板
-        </button>
+        {canEdit ? (
+          <button className="tool-button solid" onClick={onCreateTemplate}>
+            <Highlighter size={17} />
+            新建标注模板
+          </button>
+        ) : null}
       </div>
 
       <div className="manager-summary">
@@ -244,7 +247,7 @@ function TemplateManagement({
         })}
       </div>
 
-      <div className="template-category-crud">
+      {canEdit ? <div className="template-category-crud">
         <div className="template-category-create">
           <input
             value={newCategoryName}
@@ -313,7 +316,7 @@ function TemplateManagement({
           <span className="template-category-hint">选择具体类别后可重命名或删除；“全部”仅用于筛选。</span>
         )}
         {categoryMessage ? <span className="template-category-message">{categoryMessage}</span> : null}
-      </div>
+      </div> : null}
 
       {activeCategory === "合同类" && contractFolders.length > 0 ? (
         <div className="contract-folder-browser">
@@ -367,10 +370,12 @@ function TemplateManagement({
           <Archive size={28} />
           <strong>暂无模板</strong>
           <span>在模板标注工作台上传 DOCX 后可直接保存入库；需要自动填充时再标注字段并设置输入点。</span>
-          <button className="tool-button primary" onClick={onCreateTemplate}>
-            <Upload size={17} />
-            去标注模板
-          </button>
+          {canEdit ? (
+            <button className="tool-button primary" onClick={onCreateTemplate}>
+              <Upload size={17} />
+              去标注模板
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="template-grid">
@@ -417,7 +422,7 @@ function TemplateManagement({
               </div>
               <label className="template-category-editor">
                 <span>模板分类</span>
-                <select value={template.category} onChange={(event) => onUpdateCategory(template.id, event.target.value)}>
+                <select disabled={!canEdit} value={template.category} onChange={(event) => onUpdateCategory(template.id, event.target.value)}>
                   {categoryNames.map((category) => (
                     <option key={category} value={category}>{category}</option>
                   ))}
@@ -430,7 +435,7 @@ function TemplateManagement({
               </div>
               <div className="template-foot">
                 <span>保存于 {template.savedAt}</span>
-                <div>
+                {canEdit ? <div>
                   <button className="mini-button" onClick={() => onEditTemplate(template)}>
                     <Highlighter size={15} />
                     编辑模板
@@ -442,7 +447,7 @@ function TemplateManagement({
                   <button className="icon-button quiet" aria-label={`删除${template.name}`} onClick={() => onDeleteTemplate(template.id)}>
                     <Trash2 size={16} />
                   </button>
-                </div>
+                </div> : null}
               </div>
               </article>
             );

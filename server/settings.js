@@ -1,6 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { requestChatCompletion, splitApiKeys } from "./ai/chat-completions.js";
+import {
+  isLocalEndpoint,
+  requestChatCompletion,
+  requestJsonEndpoint,
+  splitApiKeys,
+  validateAiEndpoint,
+  validateAiProxyUrl,
+} from "./ai/chat-completions.js";
 
 const settingsDir = path.resolve(process.cwd(), "data", "settings");
 const settingsFile = path.join(settingsDir, "model-config.json");
@@ -9,6 +16,7 @@ const API_KEY_UNCHANGED = "********";
 
 const envKeys = [
   "AI_PROVIDER",
+  "AI_PROXY_URL",
   "DEEPSEEK_BASE_URL",
   "DEEPSEEK_MODEL",
   "DEEPSEEK_API_KEY",
@@ -26,6 +34,7 @@ export async function getModelConfig() {
   const saved = await readSavedConfig();
   return normalizeConfig({
     provider: saved.provider || process.env.AI_PROVIDER || inferProvider(),
+    proxyUrl: saved.proxyUrl ?? process.env.AI_PROXY_URL ?? "",
     local: {
       baseUrl: saved.local?.baseUrl ?? process.env.LOCAL_LLM_BASE_URL ?? "",
       model: saved.local?.model ?? process.env.LOCAL_LLM_MODEL ?? "",
@@ -47,6 +56,7 @@ export async function getModelConfig() {
 }
 
 async function saveModelConfig(config) {
+  validateModelConfigEndpoints(config);
   await mkdir(settingsDir, { recursive: true });
   await writeFile(settingsFile, JSON.stringify(config, null, 2), "utf8");
   applyConfigToProcess(config);
@@ -58,42 +68,48 @@ async function testModelConfig(payload) {
     ? await resolveModelConfigUpdate(payload.config)
     : await getModelConfig();
   const target = payload.target === "embedding" ? "embedding" : "llm";
-  if (target === "embedding") return testEmbedding(config.embedding);
-  return testLlm(config.provider === "cloud" ? config.cloud : config.local);
+  if (target === "embedding") return testEmbedding(config.embedding, { proxyUrl: config.proxyUrl });
+  return testLlm(config.provider === "cloud" ? config.cloud : config.local, {
+    allowLocal: config.provider !== "cloud",
+    proxyUrl: config.proxyUrl,
+  });
 }
 
-async function testLlm(runtime) {
+async function testLlm(runtime, { allowLocal, proxyUrl }) {
   if (!runtime.baseUrl || !runtime.model) {
     const error = new Error("请先填写当前模型的 Base URL 和模型名称。");
     error.statusCode = 400;
     throw error;
   }
-  const isLocal = isLocalEndpoint(runtime.baseUrl);
-  if (!splitApiKeys(runtime.apiKey).length && !isLocal) {
+  if (!splitApiKeys(runtime.apiKey).length && !allowLocal) {
     const error = new Error("云端 API 需要填写 API Key。");
     error.statusCode = 400;
     throw error;
   }
 
-  await requestChatCompletion(runtime, {
+  await requestChatCompletion({ ...runtime, timeoutMs: 20000 }, {
     temperature: 0,
     max_tokens: 32,
-    ...(isLocal ? { reasoning: false } : {}),
+    ...(allowLocal ? { reasoning: false } : {}),
     messages: [
       { role: "system", content: "只返回 JSON，不要输出思考过程。" },
       { role: "user", content: '返回 {"ok":true}' },
     ],
+  }, {
+    allowLocal,
+    ...(proxyUrl ? { proxyUrl } : {}),
   });
   return { ok: true, message: "当前模型连接正常" };
 }
 
-async function testEmbedding(embedding) {
+async function testEmbedding(embedding, { proxyUrl } = {}) {
   if (!embedding.baseUrl || !embedding.model) {
     const error = new Error("请先填写 Embedding Base URL 和模型名称。");
     error.statusCode = 400;
     throw error;
   }
-  const response = await fetch(buildEmbeddingUrl(embedding.baseUrl), {
+  const timeoutMs = clampNumber(Number(embedding.timeoutMs || 30000), 1000, 120000);
+  const data = await requestJsonEndpoint(buildEmbeddingUrl(embedding.baseUrl), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -103,15 +119,10 @@ async function testEmbedding(embedding) {
       model: embedding.model,
       input: ["系统设置连接测试"],
     }),
+    timeoutMs,
+    allowLocal: isLocalEndpoint(embedding.baseUrl),
+    ...(proxyUrl ? { proxyUrl } : {}),
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    const error = new Error(`Embedding 接口异常：${response.status} ${text.slice(0, 160)}`);
-    error.statusCode = 502;
-    throw error;
-  }
-  const data = await response.json();
   const dimension = data?.data?.[0]?.embedding?.length || 0;
   return { ok: true, message: `Embedding 连接正常，返回维度 ${dimension}` };
 }
@@ -119,6 +130,7 @@ async function testEmbedding(embedding) {
 function normalizeConfig(value = {}) {
   return {
     provider: value.provider === "cloud" ? "cloud" : "local",
+    proxyUrl: String(value.proxyUrl || "").trim(),
     local: normalizeRuntime(value.local),
     cloud: normalizeRuntime(value.cloud),
     embedding: {
@@ -135,19 +147,25 @@ async function resolveModelConfigUpdate(value = {}) {
   const current = await getModelConfig();
   const config = normalizeConfig({
     provider: Object.prototype.hasOwnProperty.call(value, "provider") ? value.provider : current.provider,
+    proxyUrl: Object.prototype.hasOwnProperty.call(value, "proxyUrl") ? value.proxyUrl : current.proxyUrl,
     local: { ...current.local, ...(value.local || {}) },
     cloud: { ...current.cloud, ...(value.cloud || {}) },
     embedding: { ...current.embedding, ...(value.embedding || {}) },
   });
   for (const section of ["local", "cloud", "embedding"]) {
     const incoming = value?.[section];
-    if (!incoming || !Object.prototype.hasOwnProperty.call(incoming, "apiKey")) {
-      config[section].apiKey = current[section].apiKey;
-    } else {
-      config[section].apiKey = resolveApiKeyUpdate(incoming.apiKey, current[section].apiKey);
-    }
+    config[section].apiKey = resolveRuntimeApiKeyUpdate(incoming, current[section]);
   }
   return config;
+}
+
+function resolveRuntimeApiKeyUpdate(incoming, current = {}) {
+  if (!incoming || typeof incoming !== "object") return String(current.apiKey || "");
+  const hasApiKey = Object.prototype.hasOwnProperty.call(incoming, "apiKey");
+  const baseUrlChanged = Object.prototype.hasOwnProperty.call(incoming, "baseUrl")
+    && canonicalBaseUrl(incoming.baseUrl) !== canonicalBaseUrl(current.baseUrl);
+  if (baseUrlChanged) return hasApiKey ? resolveApiKeyUpdate(incoming.apiKey, "") : "";
+  return hasApiKey ? resolveApiKeyUpdate(incoming.apiKey, current.apiKey) : String(current.apiKey || "");
 }
 
 function resolveApiKeyUpdate(value, currentValue = "") {
@@ -178,6 +196,7 @@ function normalizeRuntime(runtime = {}) {
 
 function applyConfigToProcess(config) {
   process.env.AI_PROVIDER = config.provider;
+  process.env.AI_PROXY_URL = config.proxyUrl;
   process.env.LOCAL_LLM_BASE_URL = config.local.baseUrl;
   process.env.LOCAL_LLM_MODEL = config.local.model;
   process.env.LOCAL_LLM_API_KEY = config.local.apiKey;
@@ -194,6 +213,7 @@ function applyConfigToProcess(config) {
 async function updateEnvLocal(config) {
   const updates = {
     AI_PROVIDER: config.provider,
+    AI_PROXY_URL: config.proxyUrl,
     DEEPSEEK_BASE_URL: config.cloud.baseUrl,
     DEEPSEEK_MODEL: config.cloud.model,
     DEEPSEEK_API_KEY: config.cloud.apiKey,
@@ -244,8 +264,28 @@ function inferProvider() {
   return process.env.LOCAL_LLM_BASE_URL ? "local" : "cloud";
 }
 
-function isLocalEndpoint(baseUrl) {
-  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(\/|$)/i.test(baseUrl);
+function validateModelConfigEndpoints(config) {
+  if (config.proxyUrl) validateAiProxyUrl(config.proxyUrl);
+  if (config.local.baseUrl) validateAiEndpoint(config.local.baseUrl, { allowLocal: true });
+  if (config.cloud.baseUrl) validateAiEndpoint(config.cloud.baseUrl, { allowLocal: false });
+  if (config.embedding.baseUrl) {
+    validateAiEndpoint(config.embedding.baseUrl, { allowLocal: isLocalEndpoint(config.embedding.baseUrl) });
+  }
+}
+
+function canonicalBaseUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return url.href;
+  } catch {
+    return String(value || "").trim().replace(/\/+$/, "");
+  }
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function buildEmbeddingUrl(baseUrl) {
@@ -263,7 +303,9 @@ export {
   normalizeConfig,
   redactModelConfig,
   resolveApiKeyUpdate,
+  resolveRuntimeApiKeyUpdate,
   resolveModelConfigUpdate,
   saveModelConfig,
   testModelConfig,
+  validateModelConfigEndpoints,
 };

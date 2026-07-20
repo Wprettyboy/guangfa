@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Check, CircleAlert, Database, Loader2, Save, Settings, Sparkles } from "lucide-react";
+import { apiRequest } from "../services/apiClient.js";
 
 const geminiFlashLitePreset = {
   label: "Gemini 3.1 Flash Lite",
@@ -9,6 +10,7 @@ const geminiFlashLitePreset = {
 
 const emptyModelConfig = {
   provider: "local",
+  proxyUrl: "",
   local: { baseUrl: "", model: "", apiKey: "" },
   cloud: { baseUrl: "", model: "", apiKey: "" },
   embedding: { baseUrl: "", model: "", apiKey: "", dimension: "1024", timeoutMs: "60000" },
@@ -25,11 +27,11 @@ function SystemSettings() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/settings/model")
-      .then((response) => {
-        if (!response.ok) throw new Error("读取模型配置失败");
-        return response.json();
-      })
+    const controller = new AbortController();
+    apiRequest("/api/settings/model", {
+      signal: controller.signal,
+      fallbackMessage: "读取模型配置失败",
+    })
       .then((data) => {
         if (!cancelled) setConfig(mergeModelConfig(data));
       })
@@ -41,6 +43,7 @@ function SystemSettings() {
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -59,13 +62,11 @@ function SystemSettings() {
     setError("");
     setMessage("");
     try {
-      const response = await fetch("/api/settings/model", {
+      const data = await apiRequest("/api/settings/model", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        json: config,
+        fallbackMessage: "保存模型配置失败",
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "保存模型配置失败");
       setConfig(mergeModelConfig(data.config || config));
       setMessage("配置已保存，后端当前进程已生效。");
     } catch (err) {
@@ -80,13 +81,12 @@ function SystemSettings() {
     setError("");
     setMessage("");
     try {
-      const response = await fetch("/api/settings/model/test", {
+      const data = await apiRequest("/api/settings/model/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, config }),
+        json: { target, config },
+        timeoutMs: 90_000,
+        fallbackMessage: "连接测试失败",
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "连接测试失败");
       setMessage(data.message || "连接测试通过。");
     } catch (err) {
       setError(err.message || "连接测试失败");
@@ -158,6 +158,8 @@ function SystemSettings() {
           apiKeyMultiline
           apiKeyPlaceholder={"每行填写一个 Key\nAIza...\nAIza..."}
           apiKeyHint="每行一个 Key；请求会按顺序轮询，限流或 Key 异常时自动尝试下一个。"
+          proxyUrl={config.proxyUrl}
+          onProxyChange={(value) => setConfig((current) => ({ ...current, proxyUrl: value }))}
           onChange={(key, value) => updateSection("cloud", key, value)}
           presets={[geminiFlashLitePreset]}
           onApplyPreset={(preset) => {
@@ -207,6 +209,8 @@ function ModelRuntimeCard({
   apiKeyPlaceholder = "本地服务可留空，云端必填",
   apiKeyHint = "",
   apiKeyMultiline = false,
+  proxyUrl,
+  onProxyChange,
   onApplyPreset,
   onChange,
 }) {
@@ -238,6 +242,15 @@ function ModelRuntimeCard({
         hint={apiKeyHint}
         onChange={(value) => onChange("apiKey", value)}
       />
+      {onProxyChange ? (
+        <SettingsField
+          label="代理地址（可选）"
+          value={proxyUrl}
+          placeholder="http://127.0.0.1:7890"
+          hint="仅云端 AI 请求使用；本地模型始终直连。"
+          onChange={onProxyChange}
+        />
+      ) : null}
     </section>
   );
 }
@@ -259,6 +272,7 @@ function SettingsField({ label, value, placeholder, hint = "", type = "text", on
 function mergeModelConfig(data = {}) {
   return {
     provider: data.provider === "cloud" ? "cloud" : "local",
+    proxyUrl: String(data.proxyUrl || ""),
     local: { ...emptyModelConfig.local, ...(data.local || {}) },
     cloud: { ...emptyModelConfig.cloud, ...(data.cloud || {}), apiKey: formatApiKeysForEditor(data.cloud?.apiKey) },
     embedding: { ...emptyModelConfig.embedding, ...(data.embedding || {}) },
