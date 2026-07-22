@@ -89,7 +89,6 @@ const PlaceholderCardItem = memo(function PlaceholderCardItem({
               <KnowledgeSourceLink
                 documentId={card.sourceDocumentId}
                 page={card.sourcePage}
-                highlightText={card.sourceSnippetText || card.evidence}
                 available={card.sourcePdfAvailable}
               />
             </div>

@@ -371,7 +371,6 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
           <KnowledgeSourceLink
             documentId={field.sourceDocumentId}
             page={field.sourcePage}
-            highlightText={sourceSnippetText}
             available={field.sourcePdfAvailable}
           />
         </div>
