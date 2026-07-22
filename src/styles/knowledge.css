@@ -694,6 +694,13 @@
   color: #0f7a4a;
 }
 
+.knowledge-source-link {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .knowledge-image-preview-scroll {
   display: grid;
   place-items: center;

@@ -112,6 +112,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/api/routes/office.routes.js`：Office 接口注册入口；handler 调用 `server/office.js` 和 `server/outline-probe.js`，不要在路由里写 Office 业务规则。
 - `server/office.js`：DOCX 上传保存、callback 保存、download-url、OnlyOffice 初始化配置等业务函数。
 - `server/knowledge/docx-convert.js`：调用 OnlyOffice ConvertService 把知识库 DOCX 转为 PDF；转换命令使用 OnlyOffice inbox JWT，源文件 URL 使用短期精确资源票据。
+- 知识库分页溯源：`server/knowledge/parser.js` 对 PDF 使用 `pdfjs` 分页，对 DOCX 优先使用 `onlyoffice-pdf` 分页；解析器写入 `knowledge_documents.page_source`。只有这两类成功来源允许通过 `GET /api/v1/knowledge-documents/:documentId/source-pdf` 读取转换 PDF。DOCX XML 兜底、TXT 和旧资料不得伪装成可按页查看的 PDF。
 
 ### 本地 API 管理
 
@@ -139,6 +140,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/solution-writing/plantuml-image.js`：方案 AI 生图业务模块，只使用当前文档大纲/全文文本，调用本地 PlantUML 服务渲染 PNG，并生成可被 OnlyOffice 插入的 DOCX 图片片段；默认字体使用 `SimHei`，由 `scripts/start-plantuml.ps1` 把 Windows 黑体/微软雅黑等字体复制到 PlantUML 容器。
 - `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
 - `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
+- 检索结果保留 `documentId + page + sourcePdfAvailable`；前端通过认证 API 获取溯源 PDF 并使用 `#page=N` 打开，不把短期资源票据写入草稿。
 - `server/knowledge/tables.js`：从知识库原 DOCX 文件抽取表格结构，按知识库范围检索可插入表格。
 
 ### 样式高频区

@@ -56,6 +56,9 @@ async function requestPlaceholderAiFill(card, { materials, knowledgeOptions, sig
     aiReason: result.aiReason || result.reason || "",
     evidence: result.evidence || "AI 未返回明确证据。",
     sourceSnippetText: result.sourceSnippetText || "",
+    sourceDocumentId: result.sourceDocumentId || "",
+    sourcePage: result.sourcePage || 0,
+    sourcePdfAvailable: Boolean(result.sourcePdfAvailable),
   };
 }
 
@@ -80,6 +83,9 @@ function createPlaceholderFillError(error, previousValue = "") {
     aiReason: "",
     evidence: error?.message || "请检查模型配置、网络或上传资料。",
     sourceSnippetText: "",
+    sourceDocumentId: "",
+    sourcePage: 0,
+    sourcePdfAvailable: false,
   };
 }
 
@@ -104,6 +110,9 @@ function createEditedPlaceholderFill(value) {
     aiReason: "",
     evidence: value.trim() ? "用户手动修改自动字段填充值。" : "",
     sourceSnippetText: "",
+    sourceDocumentId: "",
+    sourcePage: 0,
+    sourcePdfAvailable: false,
   };
 }
 

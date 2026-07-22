@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Info, Loader2, Wand2 } from "lucide-react";
 import StatusPill from "../../components/StatusPill.jsx";
+import KnowledgeSourceLink from "../knowledge/KnowledgeSourceLink.jsx";
 import { useFillWorkspaceActions, useFillWorkspaceState } from "../fill/FillWorkspaceContext.jsx";
 
 function ComplexFillCards() {
@@ -91,6 +92,11 @@ function ComplexFillCards() {
                     </button>
                   </div>
                   {card.evidence ? <p className="placeholder-fill-evidence" title={card.evidence}>{card.evidence}</p> : null}
+                  <KnowledgeSourceLink
+                    documentId={card.sourceDocumentId}
+                    page={card.sourcePage}
+                    available={card.sourcePdfAvailable}
+                  />
                   <button
                     className="placeholder-card-toggle"
                     type="button"

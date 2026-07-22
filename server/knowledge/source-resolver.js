@@ -1,5 +1,10 @@
 function resolveChunkSource(database, chunk) {
   if (!chunk?.documentId) return formatResolvedSource(chunk);
+  const document = database.prepare(`
+    SELECT page_source AS pageSource
+    FROM knowledge_documents
+    WHERE id = ? AND deleted_at IS NULL
+  `).get(chunk.documentId);
   const page = Number(chunk.page || chunk.pageNumber || 0) || null;
   const paragraphStart = Number(chunk.paragraphStart || 0) || null;
   const paragraphEnd = Number(chunk.paragraphEnd || paragraphStart || 0) || null;
@@ -23,7 +28,11 @@ function resolveChunkSource(database, chunk) {
     `).get(chunk.documentId, page);
     sourceText = row?.text || "";
   }
-  return formatResolvedSource({ ...chunk, sourceText: sourceText || chunk.text || "" });
+  return formatResolvedSource({
+    ...chunk,
+    sourceText: sourceText || chunk.text || "",
+    sourcePdfAvailable: ["pdfjs", "onlyoffice-pdf"].includes(document?.pageSource),
+  });
 }
 
 function formatResolvedSource(chunk) {
@@ -34,6 +43,7 @@ function formatResolvedSource(chunk) {
     page: page || "",
     sourceText: chunk?.sourceText || chunk?.text || "",
     sourceLocation: page ? `${documentName} 第${page}页` : `${documentName}（旧资料缺少原文页码）`,
+    sourcePdfAvailable: Boolean(chunk?.sourcePdfAvailable),
   };
 }
 

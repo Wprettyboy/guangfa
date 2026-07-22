@@ -204,6 +204,9 @@ function buildPlaceholderFillCards(variables = [], anchors = [], fills = {}) {
         aiReason: fill.aiReason || "",
         evidence: fill.evidence || "",
         sourceSnippetText: fill.sourceSnippetText || "",
+        sourceDocumentId: fill.sourceDocumentId || "",
+        sourcePage: fill.sourcePage || 0,
+        sourcePdfAvailable: Boolean(fill.sourcePdfAvailable),
       };
     })
     .filter(Boolean)

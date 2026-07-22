@@ -203,7 +203,13 @@ async function fillField(payload) {
     ? extractParagraphSourceCandidate(promptField, { value, source, evidence, retrievalQuery, rawRetrievalQuery }, knowledgeSnippets, materialSnippets)
     : null;
   const resolvedCitation = contextualCitation
-    || (paragraphCitation ? { source: paragraphCitation.source, text: paragraphCitation.sourceSnippetText || paragraphCitation.text } : null)
+    || (paragraphCitation ? {
+      source: paragraphCitation.source,
+      text: paragraphCitation.sourceSnippetText || paragraphCitation.text,
+      sourceDocumentId: paragraphCitation.sourceDocumentId,
+      sourcePage: paragraphCitation.sourcePage,
+      sourcePdfAvailable: paragraphCitation.sourcePdfAvailable,
+    } : null)
     || systemCitation;
   const choiceGuard = sanitizeChoiceFillResult(promptField, parsed, value, source, evidence);
   if (choiceGuard) {
@@ -254,6 +260,9 @@ function buildFillSourceCitation(knowledgeSnippets = [], materialSnippets = [], 
       source: `知识库${index + 1}（${scopeName}｜${location}）`,
       text,
       sourceText,
+      sourceDocumentId: item.documentId || "",
+      sourcePage: Number(item.page || 0) || 0,
+      sourcePdfAvailable: Boolean(item.sourcePdfAvailable),
       tokenScore: scoreText(text, tokens),
     };
   });
@@ -293,6 +302,9 @@ function applySystemCitation(result, citation) {
       source: "未找到来源片段",
       evidence: "",
       sourceSnippetText: "",
+      sourceDocumentId: "",
+      sourcePage: 0,
+      sourcePdfAvailable: false,
     };
   }
   const text = (citation.sourceText || citation.text || "").slice(0, 2000);
@@ -302,6 +314,9 @@ function applySystemCitation(result, citation) {
     source: citation.source,
     evidence: text,
     sourceSnippetText: text,
+    sourceDocumentId: citation.sourceDocumentId || "",
+    sourcePage: citation.sourcePage || 0,
+    sourcePdfAvailable: Boolean(citation.sourcePdfAvailable),
   };
 }
 function createSupplementResult(reason, citation, detail = "") {
@@ -329,6 +344,9 @@ function attachSupplementCitation(result, citation) {
       aiReason,
       source: result.source || "未找到可参考来源片段",
       sourceSnippetText: "",
+      sourceDocumentId: "",
+      sourcePage: 0,
+      sourcePdfAvailable: false,
     };
   }
   const text = (citation.sourceText || citation.text || "").slice(0, 2000);
@@ -339,6 +357,9 @@ function attachSupplementCitation(result, citation) {
     source: `未找到可支撑当前字段的资料依据；可参考 ${citation.source}`,
     evidence: `${result.evidence || "证据不足，无法直接写入。"}\n可参考相近原文：${preview}`,
     sourceSnippetText: text,
+    sourceDocumentId: citation.sourceDocumentId || "",
+    sourcePage: citation.sourcePage || 0,
+    sourcePdfAvailable: Boolean(citation.sourcePdfAvailable),
   };
 }
 function clampConfidence(value) {

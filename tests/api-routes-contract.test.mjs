@@ -112,6 +112,7 @@ test("OpenAPI advertises concrete MIME types for generated binary files", () => 
     );
   }
   assert.ok(operationsById.get("knowledge.images.file").responses["200"].content["image/*"]);
+  assert.ok(operationsById.get("knowledge.documents.sourcePdf").responses["200"].content["application/pdf"]);
 });
 
 test("state-changing contracts expose concurrency and idempotency outcomes", () => {

@@ -1,6 +1,7 @@
 import React, { memo, useState } from "react";
 import { ChevronDown, ChevronRight, Info, Loader2, Wand2 } from "lucide-react";
 import StatusPill from "../../components/StatusPill.jsx";
+import KnowledgeSourceLink from "../knowledge/KnowledgeSourceLink.jsx";
 import { useFillWorkspaceActions, useFillWorkspaceState } from "../fill/FillWorkspaceContext.jsx";
 
 function normalizeEvidenceText(value) {
@@ -85,6 +86,11 @@ const PlaceholderCardItem = memo(function PlaceholderCardItem({
                   <dd>{card.sourceSnippetText || card.evidence || "暂无相关原文描述。"}</dd>
                 </div>
               </dl>
+              <KnowledgeSourceLink
+                documentId={card.sourceDocumentId}
+                page={card.sourcePage}
+                available={card.sourcePdfAvailable}
+              />
             </div>
           ) : null}
           <button
@@ -139,6 +145,9 @@ const PlaceholderCardItem = memo(function PlaceholderCardItem({
     && previous.card.aiReason === next.card.aiReason
     && previous.card.evidence === next.card.evidence
     && previous.card.sourceSnippetText === next.card.sourceSnippetText
+    && previous.card.sourceDocumentId === next.card.sourceDocumentId
+    && previous.card.sourcePage === next.card.sourcePage
+    && previous.card.sourcePdfAvailable === next.card.sourcePdfAvailable
     && previousAnchors.length === nextAnchors.length
     && previousAnchors.every((anchor, index) => {
       const candidate = nextAnchors[index];

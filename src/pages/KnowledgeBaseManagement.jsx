@@ -14,6 +14,7 @@ import {
   Upload,
 } from "lucide-react";
 import { apiRequest } from "../services/apiClient.js";
+import KnowledgeSourceLink from "../features/knowledge/KnowledgeSourceLink.jsx";
 
 function KnowledgeBaseManagement({
   canEdit = true,
@@ -341,6 +342,11 @@ function KnowledgeBaseManagement({
             <div className="knowledge-result-detail">
               <strong>{selectedResult.documentName}</strong>
               <span>{selectedResult.sourceLocation || "旧资料缺少原文页码"} · 相关度 {selectedResult.score} · {selectedResult.scope === "global" ? "全局库" : "项目库"}</span>
+              <KnowledgeSourceLink
+                documentId={selectedResult.documentId}
+                page={selectedResult.page}
+                available={selectedResult.sourcePdfAvailable}
+              />
               <p>{renderKnowledgeText(selectedResult.sourceText || selectedResult.text, searchTerm)}</p>
             </div>
           ) : null}

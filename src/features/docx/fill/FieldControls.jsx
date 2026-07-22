@@ -3,6 +3,7 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { Check, CircleAlert, Info, Loader2, PenLine, Save, Upload, Wand2, X } from "lucide-react";
 import StatusPill from "../../../components/StatusPill.jsx";
+import KnowledgeSourceLink from "../../knowledge/KnowledgeSourceLink.jsx";
 import {
   canUseMarkedSelectionAsFillTarget,
   fieldCategoryOptions,
@@ -367,6 +368,11 @@ function FillFieldRow({ field, index, selected, onSelect, onGenerate, generateDi
             ) : null}
           </div>
           {sourceExpanded && sourceSnippetText ? <p>{sourceSnippetText}</p> : null}
+          <KnowledgeSourceLink
+            documentId={field.sourceDocumentId}
+            page={field.sourcePage}
+            available={field.sourcePdfAvailable}
+          />
         </div>
       ) : null}
     </div>

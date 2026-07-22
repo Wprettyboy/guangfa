@@ -5,6 +5,7 @@ import {
   deleteKnowledgeDocument,
   listKnowledgeBases,
   readKnowledgeDocumentFile,
+  readKnowledgeDocumentPdf,
   reindexKnowledgeBase,
   searchKnowledgeBase,
 } from "../../knowledge/documents.js";
@@ -182,6 +183,33 @@ function registerKnowledgeRoutes() {
           "Content-Disposition": `attachment; filename="${encodeURIComponent(file.row.fileName || file.row.name || "document")}"`,
           "Cache-Control": "no-store",
           "Cross-Origin-Resource-Policy": "cross-origin",
+        },
+      };
+    },
+  });
+
+  defineRoute({
+    id: "knowledge.documents.sourcePdf",
+    method: "GET",
+    path: "/api/knowledge-documents/:documentId/source-pdf",
+    tags: ["knowledge"],
+    summary: "读取知识库分页溯源 PDF",
+    roles: ["viewer"],
+    responses: { 200: { schema: "binary", contentType: "application/pdf", description: "知识库入库时用于解析页码的 PDF" } },
+    handler: async ({ params }) => {
+      const file = await readKnowledgeDocumentPdf(params.documentId);
+      if (!file) {
+        const error = new Error("该资料没有可用于页码溯源的 PDF");
+        error.statusCode = 404;
+        throw error;
+      }
+      return {
+        kind: "buffer",
+        buffer: file.buffer,
+        contentType: "application/pdf",
+        headers: {
+          "Content-Disposition": `inline; filename="${encodeURIComponent(`${String(file.row.fileName || file.row.name || "document").replace(/\.[^.]+$/, "")}.pdf`)}"`,
+          "Cache-Control": "private, no-store",
         },
       };
     },

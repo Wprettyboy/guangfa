@@ -48,6 +48,9 @@ function createFillFieldsFromTemplate(templateFields, existingFields = []) {
       source: existing?.source ?? "待上传资料后生成",
       evidence: existing?.evidence ?? `${getFieldDisplayText(field)}尚未执行 AI 填充，暂无溯源证据。`,
       sourceSnippetText: existing?.sourceSnippetText ?? "",
+      sourceDocumentId: existing?.sourceDocumentId ?? "",
+      sourcePage: existing?.sourcePage ?? 0,
+      sourcePdfAvailable: existing?.sourcePdfAvailable ?? false,
     };
   });
 }

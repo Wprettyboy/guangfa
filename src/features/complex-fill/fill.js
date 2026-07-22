@@ -43,6 +43,9 @@ function buildComplexFillCards(fields = [], anchors = [], fills = {}) {
         source: fill.source || "待上传资料后生成",
         evidence: fill.evidence || "",
         sourceSnippetText: fill.sourceSnippetText || "",
+        sourceDocumentId: fill.sourceDocumentId || "",
+        sourcePage: fill.sourcePage || 0,
+        sourcePdfAvailable: Boolean(fill.sourcePdfAvailable),
       };
     })
     .filter(Boolean)
@@ -85,6 +88,9 @@ async function requestComplexFillAiFill(card, { materials, knowledgeOptions, sig
     source: result.source || "AI 基于上传资料生成",
     evidence: result.evidence || "AI 未返回明确证据。",
     sourceSnippetText: result.sourceSnippetText || "",
+    sourceDocumentId: result.sourceDocumentId || "",
+    sourcePage: result.sourcePage || 0,
+    sourcePdfAvailable: Boolean(result.sourcePdfAvailable),
   };
 }
 
@@ -107,6 +113,9 @@ function createComplexFillError(error, previousValue = "") {
     source: "AI 填充失败",
     evidence: error?.message || "请检查模型配置、网络或上传资料。",
     sourceSnippetText: "",
+    sourceDocumentId: "",
+    sourcePage: 0,
+    sourcePdfAvailable: false,
   };
 }
 
@@ -129,6 +138,9 @@ function createEditedComplexFill(value) {
     source: value.trim() ? "人工修改" : "待上传资料后生成",
     evidence: value.trim() ? "用户手动修改复杂类填充值。" : "",
     sourceSnippetText: "",
+    sourceDocumentId: "",
+    sourcePage: 0,
+    sourcePdfAvailable: false,
   };
 }
 

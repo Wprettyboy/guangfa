@@ -150,6 +150,24 @@ function ensureDefaultKnowledgeBases(database) {
 }
 
 function ensureKnowledgeSchemaMigrations(database) {
+  if (!database.prepare("PRAGMA table_info(knowledge_documents)").all().some((column) => column.name === "page_source")) {
+    database.exec("ALTER TABLE knowledge_documents ADD COLUMN page_source TEXT DEFAULT ''");
+  }
+  const updatePageSource = database.prepare("UPDATE knowledge_documents SET page_source = ? WHERE id = ?");
+  database.prepare(`
+    SELECT id, file_ext AS fileExt, pdf_path AS pdfPath, error
+    FROM knowledge_documents
+    WHERE COALESCE(page_source, '') = ''
+  `).all().forEach((document) => {
+    if (document.fileExt === "pdf" && document.pdfPath && existsSync(document.pdfPath)) {
+      updatePageSource.run("pdfjs", document.id);
+      return;
+    }
+    const conversionFailed = /OnlyOffice|转\s*PDF|转换|未抽取到页文本|PDF.*(?:失败|超时)/i.test(document.error || "");
+    if (document.fileExt === "docx" && document.pdfPath && existsSync(document.pdfPath) && !conversionFailed) {
+      updatePageSource.run("onlyoffice-pdf", document.id);
+    }
+  });
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_knowledge_documents_content_identity
     ON knowledge_documents(kb_id, file_hash, file_name)
@@ -186,6 +204,7 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   file_path TEXT,
   pdf_path TEXT,
   text_path TEXT,
+  page_source TEXT DEFAULT '',
   status TEXT NOT NULL,
   index_mode TEXT NOT NULL,
   page_count INTEGER DEFAULT 0,

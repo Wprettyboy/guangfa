@@ -2059,6 +2059,9 @@ export default function App({ onResetApiCredential = null, principal = null }) {
         source: result.source || "AI 基于上传资料生成",
         evidence: result.evidence || "AI 未返回明确证据。",
         sourceSnippetText: result.sourceSnippetText || "",
+        sourceDocumentId: result.sourceDocumentId || "",
+        sourcePage: result.sourcePage || 0,
+        sourcePdfAvailable: Boolean(result.sourcePdfAvailable),
       };
       let nextField = appliedField;
       let writeResult = null;
@@ -2078,6 +2081,9 @@ export default function App({ onResetApiCredential = null, principal = null }) {
           source: appliedField.source,
           evidence: `${appliedField.evidence} 未生成可写入内容，文档保留原填充值。`,
           sourceSnippetText: appliedField.sourceSnippetText,
+          sourceDocumentId: appliedField.sourceDocumentId,
+          sourcePage: appliedField.sourcePage,
+          sourcePdfAvailable: appliedField.sourcePdfAvailable,
         };
       }
       const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? nextField : field));
@@ -2102,6 +2108,9 @@ export default function App({ onResetApiCredential = null, principal = null }) {
         source: "AI 填充失败",
         evidence: error.message || "请检查模型配置、网络或上传资料。",
         sourceSnippetText: "",
+        sourceDocumentId: "",
+        sourcePage: 0,
+        sourcePdfAvailable: false,
       };
       const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? errorField : field));
       enrichedFillFieldsRef.current = nextFieldsSnapshot;

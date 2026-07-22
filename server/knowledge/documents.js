@@ -19,6 +19,7 @@ const knowledgeDocumentSelectSql = `
   SELECT id, kb_id AS kbId, name, file_name AS fileName, file_ext AS fileExt, mime_type AS mimeType,
     file_size AS size, file_hash AS fileHash,
     file_path AS filePath, pdf_path AS pdfPath, text_path AS textPath,
+    page_source AS pageSource,
     status, index_mode AS indexMode, page_count AS pageCount, paragraph_count AS paragraphCount,
     chunk_count AS chunkCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
   FROM knowledge_documents
@@ -172,6 +173,7 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
         documentId,
         status,
         indexMode,
+        pageSource: parsed?.parser || "",
         pageCount: countDocumentRows(database, "knowledge_document_pages", documentId),
         paragraphCount: countDocumentRows(database, "knowledge_document_paragraphs", documentId),
         chunkCount: chunks.length,
@@ -264,6 +266,18 @@ async function readKnowledgeDocumentFile(documentId) {
   if (!row?.filePath || !existsSync(row.filePath)) return null;
   try {
     return { row, buffer: await readFile(row.filePath) };
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function readKnowledgeDocumentPdf(documentId) {
+  const database = await getKnowledgeDatabase();
+  const row = getKnowledgeDocumentRow(database, documentId);
+  if (!row || !["pdfjs", "onlyoffice-pdf"].includes(row.pageSource) || !row.pdfPath) return null;
+  try {
+    return { row, buffer: await readFile(row.pdfPath) };
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -412,11 +426,12 @@ function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, ch
 function updateDocumentIndexState(database, state) {
   database.prepare(`
     UPDATE knowledge_documents
-    SET status = ?, index_mode = ?, page_count = ?, paragraph_count = ?, chunk_count = ?, error = ?, updated_at = ?
+    SET status = ?, index_mode = ?, page_source = ?, page_count = ?, paragraph_count = ?, chunk_count = ?, error = ?, updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
   `).run(
     state.status,
     state.indexMode,
+    state.pageSource,
     state.pageCount,
     state.paragraphCount,
     state.chunkCount,
@@ -498,6 +513,7 @@ function formatSearchResult(database, item) {
     text: item.text,
     sourceText: resolved.sourceText,
     sourceLocation: resolved.sourceLocation,
+    sourcePdfAvailable: resolved.sourcePdfAvailable,
     score: Number((item.score || 0).toFixed(4)),
     mode: item.mode || "vector",
   };
@@ -517,7 +533,7 @@ async function searchHybridChunks(query, topK, allowedKbIds, liveChunkIds) {
 function hydrateKnowledgeBase(database, base) {
   const documents = database.prepare(`
     SELECT id, kb_id AS kbId, name, file_name AS fileName, file_size AS size, status,
-      index_mode AS indexMode, page_count AS pageCount, paragraph_count AS paragraphCount,
+      index_mode AS indexMode, page_source AS pageSource, page_count AS pageCount, paragraph_count AS paragraphCount,
       chunk_count AS chunkCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
     FROM knowledge_documents
     WHERE kb_id = ? AND deleted_at IS NULL
@@ -543,6 +559,7 @@ function hydrateKnowledgeDocument(database, row) {
     size: row.size || row.fileSize || "",
     status: row.status,
     indexMode: row.indexMode,
+    pageSource: row.pageSource || "",
     pageCount: row.pageCount || 0,
     paragraphCount: row.paragraphCount || 0,
     chunkCount: row.chunkCount || 0,
@@ -633,6 +650,7 @@ export {
   deleteKnowledgeDocument,
   listKnowledgeBases,
   readKnowledgeDocumentFile,
+  readKnowledgeDocumentPdf,
   reindexKnowledgeBase,
   searchKnowledgeBase,
 };

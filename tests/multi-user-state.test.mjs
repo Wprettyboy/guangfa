@@ -26,6 +26,7 @@ const {
   addKnowledgeDocument,
   createKnowledgeBase,
   deleteKnowledgeDocument,
+  readKnowledgeDocumentPdf,
   searchKnowledgeBase,
 } = await import("../server/knowledge/documents.js");
 
@@ -117,6 +118,8 @@ test("knowledge uploads are idempotent and deleted documents cannot appear in se
   const replay = await addKnowledgeDocument(knowledgeBase.id, payload, { idempotencyKey: "upload-identity-1", principal: alice });
   const contentReplay = await addKnowledgeDocument(knowledgeBase.id, payload);
   assert.equal(first.idempotentReplay, false);
+  assert.equal(first.pageSource, "plain-text");
+  assert.equal(await readKnowledgeDocumentPdf(first.id), null);
   assert.equal(replay.idempotentReplay, true);
   assert.equal(contentReplay.idempotentReplay, true);
   assert.equal(replay.id, first.id);
