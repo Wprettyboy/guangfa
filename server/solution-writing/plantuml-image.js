@@ -325,10 +325,14 @@ async function validatePlantumlSyntax(plantuml) {
   }
   const text = await response.text();
   if (!response.ok) return { ok: false, error: `${response.status} ${text.slice(0, 1200)}` };
-  if (/Syntax Error|Some diagram description contains errors|PlantUML diagram error|ERROR/i.test(text)) {
+  if (hasPlantumlRenderError(text)) {
     return { ok: false, error: text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1200) };
   }
   return { ok: true };
+}
+
+function hasPlantumlRenderError(value) {
+  return /Syntax Error|Some diagram description contains errors|PlantUML diagram error|\[From string \(line \d+\)\s*\]/i.test(String(value || ""));
 }
 
 async function renderPlantumlPng(plantuml) {
@@ -682,6 +686,7 @@ function escapeXml(value) {
 export {
   buildPlantumlUserPrompt,
   generateSolutionPlantumlImage,
+  hasPlantumlRenderError,
   normalizePlantumlSource,
   renderSolutionPlantumlSource,
   readSolutionPlantumlImageDocx,

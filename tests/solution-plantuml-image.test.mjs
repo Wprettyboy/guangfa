@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import {
   buildPlantumlUserPrompt,
+  hasPlantumlRenderError,
   normalizePlantumlSource,
   readSolutionPlantumlImageFile,
   resolveDiagramPolicy,
@@ -132,6 +133,11 @@ test("manual PlantUML accepts one complete diagram and rejects external resource
   assert.match(validateManualPlantumlSource("").error, /粘贴 PlantUML/);
   assert.match(validateManualPlantumlSource(`${activitySource}\n${activitySource}`).error, /只能包含一个/);
   assert.match(validateManualPlantumlSource(activitySource.replace("\nstart\n", "\n!includeurl https://example.com/theme.puml\nstart\n")).error, /include 或 import/);
+});
+
+test("PlantUML SVG validation ignores business fields named error", () => {
+  assert.equal(hasPlantumlRenderError('<svg data-diagram-type="SEQUENCE"><text>{status,error}</text></svg>'), false);
+  assert.equal(hasPlantumlRenderError('<svg><text>[From string (line 23) ]</text><text>Syntax Error?</text></svg>'), true);
 });
 
 test("generated diagram assets enforce owner access while preserving signed anonymous reads", async () => {
