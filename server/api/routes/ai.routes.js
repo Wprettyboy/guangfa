@@ -12,7 +12,7 @@ import {
 } from "../capability.js";
 import { defineRoute } from "../registry.js";
 
-const aiBodyLimitBytes = 2 * 1024 * 1024;
+const aiBodyLimitBytes = 120 * 1024 * 1024;
 const docxMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const aiResponses = {
   200: "object",

@@ -1,4 +1,4 @@
-import { getAiRuntimeConfig, maxKnowledgeChars, maxMaterialChars } from "./config.js";
+import { getAiRuntimeConfig, maxMaterialChars } from "./config.js";
 import { summarizeFieldForDebug, summarizeSnippetsForDebug, writeFillFinalDebugLog } from "./debug-log.js";
 import {
   createChoiceReplacementFallbackResult,
@@ -54,7 +54,7 @@ async function fillField(payload) {
   const materialRetrievalQuery = retrievalQuery || rawRetrievalQuery;
   const materialSnippets = selectMaterialSnippets(materials, materialRetrievalQuery, knowledgeSnippets.length > 0 ? 4 : 8);
   const materialText = formatMaterialSnippets(materialSnippets).slice(0, maxMaterialChars);
-  const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets).slice(0, maxKnowledgeChars);
+  const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets);
   const sourceBundle = `${knowledgeText}\n${materialText}`;
   const debugContext = {
     field: summarizeFieldForDebug(promptField),
@@ -144,7 +144,7 @@ async function fillField(payload) {
     materialText ? `【本次上传资料】\n${materialText}` : "【本次上传资料】\n未上传临时资料。",
   ].join("\n");
 
-  const parsed = normalizeFillModelResult(await callJsonModel(runtime, systemPrompt, userPrompt, fillMode === "paragraph" ? 1536 : 768, {
+  const parsed = normalizeFillModelResult(await callJsonModel(runtime, systemPrompt, userPrompt, {
     debugFileName: "ai-fill-last.json",
     debugContext,
   }));

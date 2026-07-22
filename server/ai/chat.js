@@ -1,4 +1,4 @@
-import { getAiRuntimeConfig, maxKnowledgeChars } from "./config.js";
+import { getAiRuntimeConfig } from "./config.js";
 
 import { summarizeSnippetsForDebug } from "./debug-log.js";
 
@@ -26,7 +26,7 @@ async function createKnowledgeChat(payload) {
     debugFileName: "ai-chat-knowledge-query-last.json",
   });
   const knowledgeSnippets = knowledgeSearch.snippets;
-  const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets).slice(0, maxKnowledgeChars);
+  const knowledgeText = formatKnowledgeSnippets(knowledgeSnippets);
   const history = normalizeChatHistory(payload?.history);
   const sourceSnippets = formatChatSourceSnippets(knowledgeSnippets.slice(0, 1), knowledgeOptions.bases);
   const baseNames = Array.isArray(knowledgeOptions.bases)
@@ -50,7 +50,7 @@ async function createKnowledgeChat(payload) {
     { role: "system", content: systemPrompt },
     ...history,
     { role: "user", content: userPrompt },
-  ], 2048, {
+  ], {
     debugFileName: "ai-chat-last.json",
     debugContext: {
       message,

@@ -56,7 +56,7 @@ async function createFormatOutlinePlan(payload) {
     JSON.stringify(promptCandidates),
   ].join("\n");
 
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 3072, {
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, {
     debugFileName: "ai-outline-last.json",
     expectedArrayKey: "targets",
     partialArrayKey: "targets",

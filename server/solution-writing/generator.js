@@ -1,4 +1,4 @@
-import { maxKnowledgeChars, getAiRuntimeConfig } from "../ai/config.js";
+import { getAiRuntimeConfig } from "../ai/config.js";
 import { summarizeSnippetsForDebug } from "../ai/debug-log.js";
 import { formatKnowledgeSnippets, searchKnowledgeForAi } from "../ai/knowledge-query.js";
 import { callJsonModel } from "../ai/model.js";
@@ -25,7 +25,7 @@ async function identifySolutionModules(payload = {}) {
     debugFileName: "solution-writing-identify-query-last.json",
   });
   const snippets = knowledgeSearch.snippets.slice(0, 10);
-  const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, maxKnowledgeChars);
+  const knowledgeText = formatKnowledgeSnippets(snippets);
   const systemPrompt = [
     "你是政企软件方案文档的高级产品经理。",
     "任务：只根据背景资料识别需要写入详细功能设计章节的功能模块。",
@@ -50,7 +50,7 @@ async function identifySolutionModules(payload = {}) {
     "4. 资料不足时 modules 返回空数组。",
     "5. 模块名称只写纯标题文本，例如“值班管理模块”，不要写“3.1 值班管理模块”。",
   ].join("\n");
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 2048, {
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, {
     debugFileName: "solution-writing-identify-last.json",
     debugContext: {
       sectionTitle,
@@ -93,7 +93,7 @@ async function generateSolutionModuleSections(payload = {}) {
     debugFileName: "solution-writing-generate-query-last.json",
   });
   const snippets = knowledgeSearch.snippets.slice(0, 10);
-  const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, maxKnowledgeChars);
+  const knowledgeText = formatKnowledgeSnippets(snippets);
   const systemPrompt = [
     "你是政企软件方案文档的高级产品经理。",
     "任务：按给定章节模板，为单个功能模块规划每个子标题应该如何展开写作。",
@@ -125,7 +125,7 @@ async function generateSolutionModuleSections(payload = {}) {
     "6. 不输出章节编号；标题只写纯标题文本，例如“功能概述”，不要写“3.1.1 功能概述”。",
     "7. 不输出提示词、内部分析、资料片段编号堆砌；不要改动模板标题语义。",
   ].join("\n");
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 4096, {
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, {
     debugFileName: "solution-writing-generate-last.json",
     debugContext: {
       sectionTitle,
@@ -238,7 +238,7 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
       debugFileName: `solution-writing-task-plan-knowledge-${safeDebugName(category.title)}-${batchIndex + 1}.json`,
     });
     const snippets = knowledgeSearch.snippets.slice(0, 8);
-    const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, Math.min(maxKnowledgeChars, 12000));
+    const knowledgeText = formatKnowledgeSnippets(snippets);
     const userPrompt = buildTaskPlanBatchPrompt({
       outlineText,
       category: batchCategory,
@@ -247,7 +247,7 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
       knowledgeText,
       priorPlanningContext: buildPriorPlanningContext(tasks),
     });
-    const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 8192, {
+    const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, {
       debugFileName: `solution-writing-task-plan-${safeDebugName(category.title)}-${batchIndex + 1}.json`,
       debugContext: {
         categoryTitle: category.title,
@@ -374,7 +374,7 @@ async function generateDraftCategory(runtime, { category, globalPrompt, knowledg
       debugFileName: `solution-writing-draft-knowledge-${safeDebugName(category.title)}-${batchIndex + 1}.json`,
     });
     const snippets = knowledgeSearch.snippets.slice(0, 8);
-    const knowledgeText = formatKnowledgeSnippets(snippets).slice(0, Math.min(maxKnowledgeChars, 12000));
+    const knowledgeText = formatKnowledgeSnippets(snippets);
     const userPrompt = buildDraftBatchPrompt({
       category,
       targets,
@@ -383,7 +383,7 @@ async function generateDraftCategory(runtime, { category, globalPrompt, knowledg
       taskDensity,
       priorDraftContext: buildPriorDraftContext(sections),
     });
-    const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 8192, {
+    const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, {
       debugFileName: `solution-writing-draft-${safeDebugName(category.title)}-${batchIndex + 1}.json`,
       debugContext: {
         categoryTitle: category.title,

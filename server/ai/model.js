@@ -1,11 +1,12 @@
 import { writeAiDebugLog } from "./debug-log.js";
 import { requestChatCompletion } from "./chat-completions.js";
+import { modelOutputTokens } from "./config.js";
 
-export async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens, options = {}) {
+export async function callJsonModel(runtime, systemPrompt, userPrompt, options = {}) {
   const { baseUrl, model } = runtime;
   const data = await requestChatCompletion(runtime, {
     temperature: 0.1,
-    max_tokens: maxTokens,
+    max_tokens: modelOutputTokens,
     response_format: { type: "json_object" },
     ...(isLocalEndpoint(baseUrl) ? { reasoning: false } : {}),
     messages: [
@@ -39,7 +40,7 @@ export async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens
       createdAt: new Date().toISOString(),
       model,
       baseUrl,
-      maxTokens,
+      maxTokens: modelOutputTokens,
       context: options.debugContext || {},
       systemPrompt,
       userPrompt,
@@ -52,11 +53,11 @@ export async function callJsonModel(runtime, systemPrompt, userPrompt, maxTokens
   return parsed;
 }
 
-export async function callChatModel(runtime, messages, maxTokens, options = {}) {
+export async function callChatModel(runtime, messages, options = {}) {
   const { baseUrl, model } = runtime;
   const data = await requestChatCompletion(runtime, {
     temperature: 0.2,
-    max_tokens: maxTokens,
+    max_tokens: modelOutputTokens,
     ...(isLocalEndpoint(baseUrl) ? { reasoning: false } : {}),
     messages,
   });
@@ -66,7 +67,7 @@ export async function callChatModel(runtime, messages, maxTokens, options = {}) 
       createdAt: new Date().toISOString(),
       model,
       baseUrl,
-      maxTokens,
+      maxTokens: modelOutputTokens,
       context: options.debugContext || {},
       messages,
       finishReason: data?.choices?.[0]?.finish_reason || "",

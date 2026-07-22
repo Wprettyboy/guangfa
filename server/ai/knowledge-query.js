@@ -87,7 +87,7 @@ async function createKnowledgeRetrievalPlan(runtime, { rawQuery = "", field = {}
     `原始检索文本：${rawQuery}`,
   ].join("\n");
 
-  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, 512, {
+  const parsed = await callJsonModel(runtime, systemPrompt, userPrompt, {
     debugFileName,
     debugContext: { rawQuery, field: summarizeFieldForDebug(field), message },
   });

@@ -48,7 +48,6 @@ async function generateSolutionPlantumlImage(payload = {}, principal) {
         errors,
         diagramPolicy,
       }),
-      4096,
       {
         debugFileName: `solution-plantuml-image-attempt-${attempt}.json`,
         debugContext: {

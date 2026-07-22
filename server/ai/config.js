@@ -2,13 +2,13 @@ const defaultBaseUrl = "https://api.deepseek.com";
 
 const defaultModel = "deepseek-v4-flash";
 
-const maxKnowledgeChars = 9000;
-
 const maxMaterialChars = 5000;
 
 const materialChunkSize = 1000;
 
 const materialChunkOverlap = 120;
+
+const modelOutputTokens = 8192;
 
 function getAiRuntimeConfig() {
   const provider = process.env.AI_PROVIDER === "cloud" ? "cloud" : process.env.AI_PROVIDER === "local" ? "local" : "";
@@ -38,10 +38,10 @@ function getAiRuntimeConfig() {
 export {
   defaultBaseUrl,
   defaultModel,
-  maxKnowledgeChars,
   maxMaterialChars,
   materialChunkSize,
   materialChunkOverlap,
+  modelOutputTokens,
   getAiRuntimeConfig,
 };
 

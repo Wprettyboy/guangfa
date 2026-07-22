@@ -8,6 +8,7 @@ import {
   validateAiEndpoint,
   validateAiProxyUrl,
 } from "./ai/chat-completions.js";
+import { modelOutputTokens } from "./ai/config.js";
 
 const settingsDir = path.resolve(process.cwd(), "data", "settings");
 const settingsFile = path.join(settingsDir, "model-config.json");
@@ -89,7 +90,7 @@ async function testLlm(runtime, { allowLocal, proxyUrl }) {
 
   await requestChatCompletion({ ...runtime, timeoutMs: 20000 }, {
     temperature: 0,
-    max_tokens: 32,
+    max_tokens: modelOutputTokens,
     ...(allowLocal ? { reasoning: false } : {}),
     messages: [
       { role: "system", content: "只返回 JSON，不要输出思考过程。" },
