@@ -6,6 +6,10 @@ export default defineConfig(async ({ mode }) => {
   Object.assign(process.env, env);
   const { createApiGateway } = await import("./server/api/gateway.js");
   const onlyOfficeServerUrl = env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080";
+  const createDevelopmentGateway = () => createApiGateway({
+    allowedOrigins: [onlyOfficeServerUrl],
+    deploymentMode: "development",
+  });
 
   return {
     plugins: [
@@ -13,19 +17,12 @@ export default defineConfig(async ({ mode }) => {
       {
         name: "guangfa-api-gateway",
         configureServer(server) {
-          server.middlewares.use(createDevelopmentGateway(onlyOfficeServerUrl));
+          server.middlewares.use(createDevelopmentGateway());
         },
         configurePreviewServer(server) {
-          server.middlewares.use(createDevelopmentGateway(onlyOfficeServerUrl));
+          server.middlewares.use(createDevelopmentGateway());
         },
       },
     ],
   };
 });
-
-function createDevelopmentGateway(onlyOfficeServerUrl) {
-  return createApiGateway({
-    allowedOrigins: [onlyOfficeServerUrl],
-    deploymentMode: "development",
-  });
-}
