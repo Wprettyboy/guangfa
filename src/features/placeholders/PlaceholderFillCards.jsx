@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { memo, useState } from "react";
 import { ChevronDown, ChevronRight, Info, Loader2, Wand2 } from "lucide-react";
 import StatusPill from "../../components/StatusPill.jsx";
 import { useFillWorkspaceActions, useFillWorkspaceState } from "../fill/FillWorkspaceContext.jsx";
@@ -10,6 +10,144 @@ function normalizeEvidenceText(value) {
 function getPlaceholderReason(card) {
   return normalizeEvidenceText(card.aiReason) || (card.status === "需补充资料" ? normalizeEvidenceText(card.evidence) : "");
 }
+
+const PlaceholderCardItem = memo(function PlaceholderCardItem({
+  card,
+  currentPage,
+  generatingAll,
+  cardExpanded,
+  expanded,
+  onToggleCard,
+  onToggleVariable,
+  onGenerate,
+  onUpdateValue,
+  onApplyValue,
+  onJumpAnchor,
+}) {
+  const listId = `placeholder-fill-anchor-list-${card.id}`;
+  const isGenerating = card.status === "生成中";
+  const canApply = Boolean(card.value.trim()) && !isGenerating && !generatingAll;
+
+  return (
+    <article className="placeholder-variable-card placeholder-fill-card">
+      <div className="placeholder-card-header">
+        <div className="placeholder-card-title">
+          <strong title={card.name}>{card.name}</strong>
+          <button
+            className="placeholder-card-collapse-button"
+            type="button"
+            aria-expanded={cardExpanded}
+            onClick={() => onToggleCard(card.id)}
+            title={cardExpanded ? "收起字段" : "展开字段"}
+          >
+            {cardExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          </button>
+        </div>
+        <div className="placeholder-fill-actions">
+          <StatusPill status={card.status} />
+          <button
+            className="placeholder-insert-button"
+            type="button"
+            onClick={() => onGenerate?.(card.id)}
+            disabled={isGenerating || generatingAll}
+            title={`AI 填充 ${card.name}`}
+          >
+            {isGenerating ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
+            {isGenerating ? "填充中" : "AI填充"}
+          </button>
+        </div>
+      </div>
+      {cardExpanded ? (
+        <>
+          <div className="placeholder-fill-value">
+            <input
+              value={card.value}
+              placeholder="待一键填充"
+              onChange={(event) => onUpdateValue?.(card.id, event.target.value)}
+            />
+            <button className="text-button" type="button" onClick={() => onApplyValue?.(card.id)} disabled={!canApply}>
+              写入
+            </button>
+          </div>
+          {(card.aiReason || card.source || card.sourceSnippetText || card.evidence) && card.status !== "未填充" ? (
+            <div className="placeholder-fill-evidence">
+              <dl>
+                <div>
+                  <dt>AI判断原因</dt>
+                  <dd>{getPlaceholderReason(card) || "AI 未返回明确判断原因。"}</dd>
+                </div>
+                <div>
+                  <dt>原文位置</dt>
+                  <dd>{card.source || "未找到原文位置"}</dd>
+                </div>
+                <div>
+                  <dt>相关原文</dt>
+                  <dd>{card.sourceSnippetText || card.evidence || "暂无相关原文描述。"}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+          <button
+            className="placeholder-card-toggle"
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => onToggleVariable(card.id)}
+          >
+            <span>已插入总数 {card.insertedCount}</span>
+            {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          </button>
+          {expanded ? (
+            <div className="placeholder-card-anchor-list" id={listId}>
+              <div className="placeholder-anchor-head">
+                <span>序号</span>
+                <span>页面</span>
+                <span>状态</span>
+              </div>
+              {card.anchors.map((anchor, index) => (
+                <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
+                  <span className="row-index">{index + 1}</span>
+                  <button
+                    className={Number(anchor.page) === Number(currentPage) ? "placeholder-page-link is-current" : "placeholder-page-link"}
+                    type="button"
+                    onClick={() => onJumpAnchor?.(anchor)}
+                  >
+                    {anchor.pageLabel}
+                  </button>
+                  <span className="placeholder-anchor-state">书签</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </article>
+  );
+}, (previous, next) => {
+  const previousAnchors = previous.card.anchors || [];
+  const nextAnchors = next.card.anchors || [];
+  return previous.currentPage === next.currentPage
+    && previous.generatingAll === next.generatingAll
+    && previous.cardExpanded === next.cardExpanded
+    && previous.expanded === next.expanded
+    && previous.card.id === next.card.id
+    && previous.card.name === next.card.name
+    && previous.card.value === next.card.value
+    && previous.card.status === next.card.status
+    && previous.card.insertedCount === next.card.insertedCount
+    && previous.card.source === next.card.source
+    && previous.card.aiReason === next.card.aiReason
+    && previous.card.evidence === next.card.evidence
+    && previous.card.sourceSnippetText === next.card.sourceSnippetText
+    && previousAnchors.length === nextAnchors.length
+    && previousAnchors.every((anchor, index) => {
+      const candidate = nextAnchors[index];
+      return anchor.id === candidate.id
+        && anchor.bookmarkName === candidate.bookmarkName
+        && anchor.page === candidate.page
+        && anchor.pageLabel === candidate.pageLabel;
+    });
+});
 
 function PlaceholderFillCards() {
   const { placeholderCards: cards, currentPage, generatingAll } = useFillWorkspaceState();
@@ -50,108 +188,22 @@ function PlaceholderFillCards() {
   return (
     <section className="placeholder-fill-panel">
       <div className="placeholder-fill-list">
-        {cards.map((card) => {
-          const cardExpanded = collapsedCards[card.id] === false;
-          const expanded = collapsedVariables[card.id] === false;
-          const listId = `placeholder-fill-anchor-list-${card.id}`;
-          const isGenerating = card.status === "生成中";
-          const canApply = Boolean(card.value.trim()) && !isGenerating && !generatingAll;
-          return (
-            <article className="placeholder-variable-card placeholder-fill-card" key={card.id}>
-              <div className="placeholder-card-header">
-                <div className="placeholder-card-title">
-                  <strong title={card.name}>{card.name}</strong>
-                  <button
-                    className="placeholder-card-collapse-button"
-                    type="button"
-                    aria-expanded={cardExpanded}
-                    onClick={() => toggleCard(card.id)}
-                    title={cardExpanded ? "收起字段" : "展开字段"}
-                  >
-                    {cardExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                  </button>
-                </div>
-                <div className="placeholder-fill-actions">
-                  <StatusPill status={card.status} />
-                  <button
-                    className="placeholder-insert-button"
-                    type="button"
-                    onClick={() => onGenerate?.(card.id)}
-                    disabled={isGenerating || generatingAll}
-                    title={`AI 填充 ${card.name}`}
-                  >
-                    {isGenerating ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
-                    {isGenerating ? "填充中" : "AI填充"}
-                  </button>
-                </div>
-              </div>
-              {cardExpanded ? (
-                <>
-                  <div className="placeholder-fill-value">
-                    <input
-                      value={card.value}
-                      placeholder="待一键填充"
-                      onChange={(event) => onUpdateValue?.(card.id, event.target.value)}
-                    />
-                    <button className="text-button" type="button" onClick={() => onApplyValue?.(card.id)} disabled={!canApply}>
-                      写入
-                    </button>
-                  </div>
-                  {(card.aiReason || card.source || card.sourceSnippetText || card.evidence) && card.status !== "未填充" ? (
-                    <div className="placeholder-fill-evidence">
-                      <dl>
-                        <div>
-                          <dt>AI判断原因</dt>
-                          <dd>{getPlaceholderReason(card) || "AI 未返回明确判断原因。"}</dd>
-                        </div>
-                        <div>
-                          <dt>原文位置</dt>
-                          <dd>{card.source || "未找到原文位置"}</dd>
-                        </div>
-                        <div>
-                          <dt>相关原文</dt>
-                          <dd>{card.sourceSnippetText || card.evidence || "暂无相关原文描述。"}</dd>
-                        </div>
-                      </dl>
-                    </div>
-                  ) : null}
-                  <button
-                    className="placeholder-card-toggle"
-                    type="button"
-                    aria-expanded={expanded}
-                    aria-controls={listId}
-                    onClick={() => toggleVariable(card.id)}
-                  >
-                    <span>已插入总数 {card.insertedCount}</span>
-                    {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                  </button>
-                  {expanded ? (
-                    <div className="placeholder-card-anchor-list" id={listId}>
-                      <div className="placeholder-anchor-head">
-                        <span>序号</span>
-                        <span>页面</span>
-                        <span>状态</span>
-                      </div>
-                      {card.anchors.map((anchor, index) => (
-                        <div className="placeholder-anchor-row" key={anchor.bookmarkName || anchor.id}>
-                          <span className="row-index">{index + 1}</span>
-                          <button
-                            className={Number(anchor.page) === Number(currentPage) ? "placeholder-page-link is-current" : "placeholder-page-link"}
-                            type="button"
-                            onClick={() => onJumpAnchor?.(anchor)}
-                          >
-                            {anchor.pageLabel}
-                          </button>
-                          <span className="placeholder-anchor-state">书签</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              ) : null}
-            </article>
-          );
-        })}
+        {cards.map((card) => (
+          <PlaceholderCardItem
+            key={card.id}
+            card={card}
+            currentPage={currentPage}
+            generatingAll={generatingAll}
+            cardExpanded={collapsedCards[card.id] === false}
+            expanded={collapsedVariables[card.id] === false}
+            onToggleCard={toggleCard}
+            onToggleVariable={toggleVariable}
+            onGenerate={onGenerate}
+            onUpdateValue={onUpdateValue}
+            onApplyValue={onApplyValue}
+            onJumpAnchor={onJumpAnchor}
+          />
+        ))}
       </div>
     </section>
   );
