@@ -2,18 +2,16 @@ import React, { useMemo } from "react";
 import { Info } from "lucide-react";
 import { getFillFieldDisplayPage } from "../runtime.jsx";
 import { FillFieldRow } from "./FieldControls.jsx";
+import { useFillWorkspaceActions, useFillWorkspaceState } from "../../fill/FillWorkspaceContext.jsx";
 
-function OtherFieldFillPanel({
-  fields,
-  currentPage,
-  fieldPageMap,
-  selectedFieldId,
-  onSelectField,
-  onGenerate,
-  generateDisabled,
-  onUpdateValue,
-  onConfirm,
-}) {
+function OtherFieldFillPanel() {
+  const { fields, currentPage, fieldPageMap, selectedFieldId, generatingAll: generateDisabled } = useFillWorkspaceState();
+  const {
+    onSelectField,
+    onGenerate,
+    onUpdateValue,
+    onConfirm,
+  } = useFillWorkspaceActions();
   const counts = useMemo(
     () =>
       fields.reduce(

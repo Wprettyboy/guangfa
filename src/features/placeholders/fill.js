@@ -37,7 +37,7 @@ function buildPlaceholderAiField(card) {
   return field;
 }
 
-async function requestPlaceholderAiFill(card, { materials, knowledgeOptions }) {
+async function requestPlaceholderAiFill(card, { materials, knowledgeOptions, signal }) {
   const result = await apiRequest("/api/ai/fill-field", {
     method: "POST",
     json: {
@@ -46,6 +46,7 @@ async function requestPlaceholderAiFill(card, { materials, knowledgeOptions }) {
       knowledgeOptions,
     },
     fallbackMessage: "AI 填充失败",
+    signal,
   });
   return {
     value: result.value || "",

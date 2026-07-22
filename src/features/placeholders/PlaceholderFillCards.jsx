@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Info, Loader2, Wand2 } from "lucide-react";
 import StatusPill from "../../components/StatusPill.jsx";
+import { useFillWorkspaceActions, useFillWorkspaceState } from "../fill/FillWorkspaceContext.jsx";
 
 function normalizeEvidenceText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -10,15 +11,14 @@ function getPlaceholderReason(card) {
   return normalizeEvidenceText(card.aiReason) || (card.status === "需补充资料" ? normalizeEvidenceText(card.evidence) : "");
 }
 
-function PlaceholderFillCards({
-  cards,
-  currentPage,
-  generatingAll,
-  onGenerate,
-  onUpdateValue,
-  onApplyValue,
-  onJumpAnchor,
-}) {
+function PlaceholderFillCards() {
+  const { placeholderCards: cards, currentPage, generatingAll } = useFillWorkspaceState();
+  const {
+    onGeneratePlaceholder: onGenerate,
+    onUpdatePlaceholderValue: onUpdateValue,
+    onApplyPlaceholderValue: onApplyValue,
+    onJumpPlaceholderAnchor: onJumpAnchor,
+  } = useFillWorkspaceActions();
   const [collapsedCards, setCollapsedCards] = useState({});
   const [collapsedVariables, setCollapsedVariables] = useState({});
 

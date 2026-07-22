@@ -1,13 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import FillCommonToolbar from "../features/docx/fill/FillCommonToolbar.jsx";
 import OtherFieldFillPanel from "../features/docx/fill/OtherFieldFillPanel.jsx";
 import { exportFilledDocx } from "../features/docx/fill/docxXmlFill.js";
 import { requestOnlyOfficeDocumentDownloadAs } from "../features/docx/office/bridge.jsx";
 import { fetchOfficeDocumentBuffer } from "../features/docx/office/documentSync.js";
-import { DocumentFrame, getFillFieldDisplayPage } from "../features/docx/runtime.jsx";
+import { DocumentFrame } from "../features/docx/runtime.jsx";
 import ComplexFillCards from "../features/complex-fill/ComplexFillCards.jsx";
 import PlaceholderFillCards from "../features/placeholders/PlaceholderFillCards.jsx";
+import { FillWorkspaceProvider } from "../features/fill/FillWorkspaceContext.jsx";
+import { useFillWorkspaceViewModel } from "../features/fill/useFillWorkspaceViewModel.js";
 import { buildExportFileName, downloadDocxBuffer } from "../utils/files.js";
 
 function FillWorkspace({
@@ -51,6 +53,7 @@ function FillWorkspace({
   onKnowledgeTopKChange,
   onUpdateValue,
   onConfirm,
+  onCancelGeneration,
 }) {
   const materialInputRef = useRef(null);
   const materialUploadModeRef = useRef("temporary");
@@ -59,45 +62,13 @@ function FillWorkspace({
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [trackRevisionsEnabled, setTrackRevisionsEnabled] = useState(false);
   const [uploadState, setUploadState] = useState("idle");
-  const [activeFillType, setActiveFillType] = useState("auto");
   const baseTemplateFile = sourceTemplateFile || templateFile;
-  const hasDynamicFieldPages = Object.keys(fieldPageMap || {}).length > 0;
-  const pageFields = fields.filter((field) => getFillFieldDisplayPage(field, fieldPageMap, hasDynamicFieldPages) === currentPage);
-  const currentPagePlaceholderCount = placeholderCards.reduce(
-    (count, card) => count + card.anchors.filter((anchor) => Number(anchor.page) === Number(currentPage)).length,
-    0,
-  );
-  const currentPageComplexFillCount = complexFillCards.reduce(
-    (count, card) => count + card.anchors.filter((anchor) => Number(anchor.page) === Number(currentPage)).length,
-    0,
-  );
   const activeTemplateName = baseTemplateFile?.name ?? "未选择模板";
   const editorReady = Boolean(officeDocId);
-  const fillableCount = fields.filter((field) => field.status !== "已确认" && field.status !== "生成中").length;
-  const placeholderFillableCount = placeholderCards.filter((card) => card.status !== "已确认" && card.status !== "生成中").length;
-  const complexFillableCount = complexFillCards.filter((card) => card.status !== "已确认" && card.status !== "生成中").length;
-  const activeFillableCount = activeFillType === "auto" ? placeholderFillableCount : activeFillType === "complex" ? complexFillableCount : fillableCount;
+  const workspaceModel = useFillWorkspaceViewModel({ fields, placeholderCards, complexFillCards, currentPage, fieldPageMap, generatingAll, editorReady });
   const bulkProgressText = generatingAll && bulkFillProgress?.total
     ? `${bulkFillProgress.current}/${bulkFillProgress.total}`
     : "";
-  const currentPageCount = activeFillType === "auto" ? currentPagePlaceholderCount : activeFillType === "complex" ? currentPageComplexFillCount : pageFields.length;
-  const generateAllLabel = `一键填充${activeFillableCount > 0 ? ` ${activeFillableCount}` : ""}`;
-
-  useEffect(() => {
-    const counts = { auto: placeholderCards.length, complex: complexFillCards.length, other: fields.length };
-    if (counts[activeFillType] > 0) return;
-    const nextType = ["auto", "complex", "other"].find((type) => counts[type] > 0);
-    if (nextType) setActiveFillType(nextType);
-  }, [activeFillType, complexFillCards.length, fields.length, placeholderCards.length]);
-
-  const tabItems = useMemo(
-    () => [
-      { id: "auto", label: "自动字段填充", count: placeholderCards.length },
-      { id: "complex", label: "复杂类填充", count: complexFillCards.length },
-      { id: "other", label: "其他类型填充", count: fields.length },
-    ],
-    [complexFillCards.length, fields.length, placeholderCards.length],
-  );
 
   async function handleMaterialChange(event) {
     const files = event.target.files || [];
@@ -148,19 +119,44 @@ function FillWorkspace({
   }
 
   function generateAllCurrentType() {
-    if (activeFillType === "auto") {
+    if (workspaceModel.activeFillType === "auto") {
       onGenerateAllPlaceholders?.();
       return;
     }
-    if (activeFillType === "complex") {
+    if (workspaceModel.activeFillType === "complex") {
       onGenerateAllComplexFills?.();
       return;
     }
     onGenerateAll?.();
   }
 
+  const fillState = useMemo(() => ({
+    fields,
+    placeholderCards,
+    complexFillCards,
+    currentPage,
+    fieldPageMap,
+    selectedFieldId,
+    generatingAll: generatingAll || !editorReady,
+  }), [complexFillCards, currentPage, editorReady, fieldPageMap, fields, generatingAll, placeholderCards, selectedFieldId]);
+  const fillActions = useMemo(() => ({
+    onSelectField,
+    onGenerate,
+    onGeneratePlaceholder,
+    onUpdatePlaceholderValue,
+    onApplyPlaceholderValue,
+    onJumpPlaceholderAnchor,
+    onGenerateComplexFill,
+    onUpdateComplexFillValue,
+    onApplyComplexFillValue,
+    onJumpComplexFillAnchor,
+    onUpdateValue,
+    onConfirm,
+  }), [onApplyComplexFillValue, onApplyPlaceholderValue, onConfirm, onGenerate, onGenerateComplexFill, onGeneratePlaceholder, onJumpComplexFillAnchor, onJumpPlaceholderAnchor, onSelectField, onUpdateComplexFillValue, onUpdatePlaceholderValue, onUpdateValue]);
+
   return (
-    <div className={panelCollapsed ? "work-grid fill-grid fill-grid-panel-collapsed" : "work-grid fill-grid"}>
+    <FillWorkspaceProvider state={fillState} actions={fillActions}>
+      <div className={panelCollapsed ? "work-grid fill-grid fill-grid-panel-collapsed" : "work-grid fill-grid"}>
       <section className="document-card">
         <DocumentFrame
           mode="fill"
@@ -197,7 +193,7 @@ function FillWorkspace({
           />
           <FillCommonToolbar
             activeTemplateName={activeTemplateName}
-            currentPageCount={currentPageCount}
+            currentPageCount={workspaceModel.currentPageCount}
             materialFiles={materialFiles}
             materialsOpen={materialsOpen}
             uploadState={uploadState}
@@ -205,10 +201,11 @@ function FillWorkspace({
             onOpenMaterialPicker={openMaterialPicker}
             onRemoveMaterial={onRemoveMaterial}
             onGenerateAll={generateAllCurrentType}
-            generateAllDisabled={!editorReady || generatingAll || activeFillableCount === 0}
-            generateAllLabel={generateAllLabel}
+            generateAllDisabled={workspaceModel.bulkDisabled}
+            generateAllLabel={workspaceModel.generateAllLabel}
             generatingAll={generatingAll}
             bulkProgressText={bulkProgressText}
+            onCancelGeneration={onCancelGeneration}
             onExportDocx={handleExportDocx}
             exportState={exportState}
             canExport={Boolean(baseTemplateFile?.buffer)}
@@ -223,14 +220,14 @@ function FillWorkspace({
             onKnowledgeTopKChange={onKnowledgeTopKChange}
           />
           <div className="fill-type-tabs" role="tablist" aria-label="填充类型">
-            {tabItems.map((item) => (
+            {workspaceModel.tabItems.map((item) => (
               <button
-                className={activeFillType === item.id ? "fill-type-tab active" : "fill-type-tab"}
+                className={workspaceModel.activeFillType === item.id ? "fill-type-tab active" : "fill-type-tab"}
                 type="button"
                 role="tab"
-                aria-selected={activeFillType === item.id}
+                aria-selected={workspaceModel.activeFillType === item.id}
                 key={item.id}
-                onClick={() => setActiveFillType(item.id)}
+                onClick={() => workspaceModel.setActiveFillType(item.id)}
               >
                 {item.label}
                 <span>{item.count}</span>
@@ -238,43 +235,18 @@ function FillWorkspace({
             ))}
           </div>
           <div className="fill-panel-content">
-            {activeFillType === "auto" ? (
-              <PlaceholderFillCards
-                cards={placeholderCards}
-                currentPage={currentPage}
-                generatingAll={generatingAll || !editorReady}
-                onGenerate={onGeneratePlaceholder}
-                onUpdateValue={onUpdatePlaceholderValue}
-                onApplyValue={onApplyPlaceholderValue}
-                onJumpAnchor={onJumpPlaceholderAnchor}
-              />
-            ) : activeFillType === "complex" ? (
-              <ComplexFillCards
-                cards={complexFillCards}
-                currentPage={currentPage}
-                generatingAll={generatingAll || !editorReady}
-                onGenerate={onGenerateComplexFill}
-                onUpdateValue={onUpdateComplexFillValue}
-                onApplyValue={onApplyComplexFillValue}
-                onJumpAnchor={onJumpComplexFillAnchor}
-              />
+            {workspaceModel.activeFillType === "auto" ? (
+              <PlaceholderFillCards />
+            ) : workspaceModel.activeFillType === "complex" ? (
+              <ComplexFillCards />
             ) : (
-              <OtherFieldFillPanel
-                fields={fields}
-                currentPage={currentPage}
-                fieldPageMap={fieldPageMap}
-                selectedFieldId={selectedFieldId}
-                onSelectField={onSelectField}
-                onGenerate={onGenerate}
-                generateDisabled={generatingAll || !editorReady}
-                onUpdateValue={onUpdateValue}
-                onConfirm={onConfirm}
-              />
+              <OtherFieldFillPanel />
             )}
           </div>
         </div>
       </aside>
-    </div>
+      </div>
+    </FillWorkspaceProvider>
   );
 }
 

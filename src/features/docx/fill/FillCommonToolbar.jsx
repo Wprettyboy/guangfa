@@ -1,8 +1,9 @@
-import React from "react";
-import { ChevronDown, Database, Download, FileText, FolderOpen, Loader2, PenLine, Upload, Wand2, X } from "lucide-react";
+import React, { useEffect, useRef } from "react";
+import { Ban, ChevronDown, Database, Download, FileText, FolderOpen, Loader2, PenLine, Upload, Wand2, X } from "lucide-react";
 import { getExportStatusText } from "../../../utils/files.js";
 
 function MultiKnowledgeSelect({ label, emptyLabel, bases, selectedIds, onChange, disabled }) {
+  const detailsRef = useRef(null);
   const selectedBases = bases.filter((base) => selectedIds.includes(base.id));
   const text = selectedBases.length
     ? `${label}：${selectedBases.length === 1 ? selectedBases[0].name : `${selectedBases.length}个已选`}`
@@ -12,8 +13,18 @@ function MultiKnowledgeSelect({ label, emptyLabel, bases, selectedIds, onChange,
     onChange(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
   }
 
+  useEffect(() => {
+    function closeOnOutsidePointer(event) {
+      const details = detailsRef.current;
+      if (details?.open && !details.contains(event.target)) details.open = false;
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, []);
+
   return (
-    <details className="knowledge-multi-select">
+    <details className="knowledge-multi-select" ref={detailsRef}>
       <summary aria-disabled={disabled} onClick={(event) => disabled && event.preventDefault()}>
         <FolderOpen size={14} />
         <span>{text}</span>
@@ -54,6 +65,7 @@ function FillCommonToolbar({
   generateAllLabel,
   generatingAll,
   bulkProgressText,
+  onCancelGeneration,
   onExportDocx,
   exportState,
   canExport,
@@ -170,6 +182,11 @@ function FillCommonToolbar({
           {generatingAll ? <Loader2 size={17} className="spin" /> : <Wand2 size={17} />}
           {generatingAll ? `一键填充${progressText}` : generateAllLabel}
         </button>
+        {generatingAll ? (
+          <button className="icon-button quiet" type="button" onClick={onCancelGeneration} aria-label="取消填充" title="取消填充">
+            <Ban size={17} />
+          </button>
+        ) : null}
         <button className="tool-button solid" type="button" onClick={onExportDocx} disabled={!canExport || exportState === "exporting"}>
           <Download size={17} />
           {exportState === "exporting" ? "导出中" : "导出DOCX"}

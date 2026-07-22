@@ -120,6 +120,8 @@ import {
   requestComplexFillAiFill,
 } from "./features/complex-fill/fill.js";
 import { validateComplexFillAnchorsInDocx, validatePlaceholderAnchorsInDocx } from "./features/complex-fill/docxBookmarks.js";
+import { useFillTaskController } from "./features/fill/useFillTaskController.js";
+import { useFillWorkflow } from "./features/fill/useFillWorkflow.js";
 import {
   createAnnotatedField,
   createFillFieldsFromTemplate,
@@ -132,7 +134,6 @@ import {
   hasInputPoint,
   normalizeFillMode,
   getFieldSetupIssue,
-  sortFieldsByDocumentOrder,
 } from "./utils/fields.js";
 import {
   downloadDocxBuffer,
@@ -214,8 +215,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
   const [citationFieldId, setCitationFieldId] = useState(initialSession.citationFieldId || "F-002");
   const [showCitations, setShowCitations] = useState(true);
   const [draftReady, setDraftReady] = useState(false);
-  const [generatingAll, setGeneratingAll] = useState(false);
-  const [bulkFillProgress, setBulkFillProgress] = useState({ current: 0, total: 0 });
+  const { generatingAll, bulkFillProgress, cancel: cancelFillTask, run: runFillTask } = useFillTaskController();
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [selectedProjectKnowledgeBaseIds, setSelectedProjectKnowledgeBaseIds] = useState([]);
@@ -260,6 +260,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
 
   const updateFillOfficeDocumentId = useCallback((documentId) => {
     const nextDocumentId = documentId || "";
+    if (nextDocumentId !== fillOfficeDocIdRef.current) cancelBulkFill();
     fillOfficeDocIdRef.current = nextDocumentId;
     setFillOfficeDocId(nextDocumentId);
   }, []);
@@ -278,8 +279,17 @@ export default function App({ onResetApiCredential = null, principal = null }) {
   }
 
   useEffect(() => {
+    cancelBulkFill();
     setFillFieldPageMap({});
   }, [fillPreviewFile?.previewId]);
+
+  useEffect(() => {
+    cancelBulkFill();
+  }, [fillOfficeDocId]);
+
+  useEffect(() => {
+    if (activeWorkspace !== "fill") cancelBulkFill();
+  }, [activeWorkspace]);
 
   useGSAP(
     () => {
@@ -554,6 +564,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
 
   function animateWorkspace(nextWorkspace) {
     if (!canEdit) return;
+    if (nextWorkspace !== "fill") cancelBulkFill();
     setActiveModule("workspace");
     if (nextWorkspace === activeWorkspace) return;
     const workspace = appRef.current?.querySelector(".workspace-body");
@@ -581,6 +592,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
   }
 
   function openAnnotateSidePanel(panelMode) {
+    cancelBulkFill();
     setActiveModule("workspace");
     setActiveWorkspace("annotate");
     setAnnotateSidePanelMode(panelMode);
@@ -1725,6 +1737,15 @@ export default function App({ onResetApiCredential = null, principal = null }) {
     return writeResult?.ok !== true;
   }
 
+  function isFillRequestCancelled(error, signal) {
+    return Boolean(signal?.aborted || error?.code === "REQUEST_ABORTED");
+  }
+
+  function cancelBulkFill() {
+    if (!cancelFillTask()) return;
+    fillPreviewPageLockRef.current = null;
+  }
+
   function hasOnlyOfficeFillValue(field) {
     return Boolean(
       String(field?.value || "").trim()
@@ -1779,11 +1800,13 @@ export default function App({ onResetApiCredential = null, principal = null }) {
     if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
     const card = placeholderFillCardsRef.current.find((item) => item.id === variableId);
     if (!card) return;
+    const previousFill = placeholderFillsRef.current[variableId] || {};
     setPlaceholderFill(variableId, { status: "生成中" });
     try {
       const appliedFill = await requestPlaceholderAiFill(card, {
         materials: materialFiles,
         knowledgeOptions: fillKnowledgeOptions,
+        signal: options.signal,
       });
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
       let nextFill = appliedFill;
@@ -1804,6 +1827,10 @@ export default function App({ onResetApiCredential = null, principal = null }) {
       return nextFill;
     } catch (error) {
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
+      if (isFillRequestCancelled(error, options.signal)) {
+        setPlaceholderFill(variableId, { ...previousFill, status: previousFill.status || "未填充" });
+        return null;
+      }
       const errorFill = createPlaceholderFillError(error, placeholderFillsRef.current[variableId]?.value || "");
       setPlaceholderFill(variableId, errorFill);
       return errorFill;
@@ -1833,29 +1860,6 @@ export default function App({ onResetApiCredential = null, principal = null }) {
 
   function updatePlaceholderFillValue(variableId, value) {
     setPlaceholderFill(variableId, createEditedPlaceholderFill(value));
-  }
-
-  async function generateAllPlaceholderFills() {
-    const fillIdentity = captureFillDocumentIdentity();
-    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
-    const pendingCards = placeholderFillCardsRef.current.filter((card) => card.status !== "已确认" && card.status !== "生成中");
-    if (pendingCards.length === 0 || generatingAll) return;
-    setGeneratingAll(true);
-    setBulkFillProgress({ current: 0, total: pendingCards.length });
-    try {
-      for (let index = 0; index < pendingCards.length; index += 1) {
-        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
-        setBulkFillProgress({ current: index + 1, total: pendingCards.length });
-        await fillPlaceholderWithAI(pendingCards[index].id, { fillIdentity, syncDocument: false });
-        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
-      }
-      if (isCurrentFillDocumentIdentity(fillIdentity)) {
-        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
-      }
-    } finally {
-      setGeneratingAll(false);
-      setBulkFillProgress({ current: 0, total: 0 });
-    }
   }
 
   function jumpToPlaceholderFillAnchor(anchor) {
@@ -1893,11 +1897,13 @@ export default function App({ onResetApiCredential = null, principal = null }) {
     if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
     const card = complexFillCardsRef.current.find((item) => item.id === fieldId);
     if (!card) return null;
+    const previousFill = complexFillFillsRef.current[fieldId] || {};
     setComplexFillFill(fieldId, { status: "生成中" });
     try {
       const appliedFill = await requestComplexFillAiFill(card, {
         materials: materialFiles,
         knowledgeOptions: fillKnowledgeOptions,
+        signal: options.signal,
       });
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
       let nextFill = appliedFill;
@@ -1918,6 +1924,10 @@ export default function App({ onResetApiCredential = null, principal = null }) {
       return nextFill;
     } catch (error) {
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
+      if (isFillRequestCancelled(error, options.signal)) {
+        setComplexFillFill(fieldId, { ...previousFill, status: previousFill.status || "未填充" });
+        return null;
+      }
       const errorFill = createComplexFillError(error, complexFillFillsRef.current[fieldId]?.value || "");
       setComplexFillFill(fieldId, errorFill);
       return errorFill;
@@ -1947,29 +1957,6 @@ export default function App({ onResetApiCredential = null, principal = null }) {
 
   function updateComplexFillValue(fieldId, value) {
     setComplexFillFill(fieldId, createEditedComplexFill(value));
-  }
-
-  async function generateAllComplexFills() {
-    const fillIdentity = captureFillDocumentIdentity();
-    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
-    const pendingCards = complexFillCardsRef.current.filter((card) => card.status !== "已确认" && card.status !== "生成中");
-    if (pendingCards.length === 0 || generatingAll) return;
-    setGeneratingAll(true);
-    setBulkFillProgress({ current: 0, total: pendingCards.length });
-    try {
-      for (let index = 0; index < pendingCards.length; index += 1) {
-        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
-        setBulkFillProgress({ current: index + 1, total: pendingCards.length });
-        await fillComplexFillWithAI(pendingCards[index].id, { fillIdentity, syncDocument: false });
-        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
-      }
-      if (isCurrentFillDocumentIdentity(fillIdentity)) {
-        queueFilledOfficeDocumentSync(enrichedFillFieldsRef.current, fillIdentity);
-      }
-    } finally {
-      setGeneratingAll(false);
-      setBulkFillProgress({ current: 0, total: 0 });
-    }
   }
 
   function jumpToComplexFillAnchorFromFill(anchor) {
@@ -2059,6 +2046,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
           knowledgeOptions: fillKnowledgeOptions,
         },
         fallbackMessage: "AI 填充失败",
+        signal: options.signal,
       });
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
       const appliedField = {
@@ -2101,6 +2089,12 @@ export default function App({ onResetApiCredential = null, principal = null }) {
       return nextFieldsSnapshot;
     } catch (error) {
       if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
+      if (isFillRequestCancelled(error, options.signal)) {
+        const nextFieldsSnapshot = enrichedFillFieldsRef.current.map((field) => (field.id === fieldId ? targetField : field));
+        enrichedFillFieldsRef.current = nextFieldsSnapshot;
+        setFillFields((fields) => fields.map((field) => (field.id === fieldId ? targetField : field)));
+        return nextFieldsSnapshot;
+      }
       const errorField = {
         ...targetField,
         status: "需补充资料",
@@ -2127,78 +2121,28 @@ export default function App({ onResetApiCredential = null, principal = null }) {
     await fillFieldWithAI(fieldId, enrichedFillFields);
   }
 
-  async function generateAllFields() {
-    const fillIdentity = captureFillDocumentIdentity();
-    if (!isCurrentFillDocumentIdentity(fillIdentity)) return;
-    const pendingFields = sortFieldsByDocumentOrder(enrichedFillFields.filter((field) => field.status !== "已确认" && field.status !== "生成中"));
-    if (pendingFields.length === 0 || generatingAll) return;
-    const preservedFillPreviewPage = fillPreviewPage;
-    const blockedFields = pendingFields
-      .map((field) => {
-        const templateField = templateFields.find((item) => item.id === field.id);
-        return { field, issue: getFieldSetupIssue({ ...field, ...templateField }) };
-      })
-      .filter((item) => item.issue);
-    const runnableFields = pendingFields.filter((field) => !blockedFields.some((item) => item.field.id === field.id));
-
-    setGeneratingAll(true);
-    fillPreviewPageLockRef.current = preservedFillPreviewPage;
-    setBulkFillProgress({ current: 0, total: runnableFields.length });
-    setShowCitations(false);
-    window.clearTimeout(fillSyncTimerRef.current);
-    let fieldsSnapshot = blockedFields.length
-      ? enrichedFillFields.map((field) => {
-          const blocked = blockedFields.find((item) => item.field.id === field.id);
-          return blocked
-            ? { ...field, status: "需补充资料", confidence: 0, source: "字段定位校验", evidence: blocked.issue, sourceSnippetText: "" }
-            : field;
-        })
-      : enrichedFillFields;
-    if (blockedFields.length > 0) {
-      enrichedFillFieldsRef.current = fieldsSnapshot;
-      setFillFields((fields) =>
-        fields.map((field) => {
-          const blocked = blockedFields.find((item) => item.field.id === field.id);
-          return blocked
-            ? { ...field, status: "需补充资料", confidence: 0, source: "字段定位校验", evidence: blocked.issue, sourceSnippetText: "" }
-            : field;
-        }),
-      );
-      window.alert(`有 ${blockedFields.length} 个字段缺少输入点或标注范围不完整，已跳过 AI 填充。`);
-    }
-    try {
-      for (let index = 0; index < runnableFields.length; index += 1) {
-        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
-        const field = runnableFields[index];
-        setBulkFillProgress({ current: index + 1, total: runnableFields.length });
-        fieldsSnapshot = await fillFieldWithAI(field.id, fieldsSnapshot, {
-          fillIdentity,
-          syncDocument: false,
-          suppressPageSync: true,
-        }) || fieldsSnapshot;
-        if (!isCurrentFillDocumentIdentity(fillIdentity)) break;
-      }
-      if (isCurrentFillDocumentIdentity(fillIdentity)) {
-        queueFilledOfficeDocumentSync(fieldsSnapshot, fillIdentity);
-      }
-    } finally {
-      if (isCurrentFillDocumentIdentity(fillIdentity)) {
-        setFillPreviewPage(preservedFillPreviewPage);
-        window.setTimeout(() => {
-          if (
-            isCurrentFillDocumentIdentity(fillIdentity)
-            && fillPreviewPageLockRef.current === preservedFillPreviewPage
-          ) {
-            fillPreviewPageLockRef.current = null;
-          }
-        }, 2200);
-      } else if (fillPreviewPageLockRef.current === preservedFillPreviewPage) {
-        fillPreviewPageLockRef.current = null;
-      }
-      setGeneratingAll(false);
-      setBulkFillProgress({ current: 0, total: 0 });
-    }
-  }
+  const { generateAllPlaceholderFills, generateAllComplexFills, generateAllFields } = useFillWorkflow({
+    generatingAll,
+    runFillTask,
+    captureFillDocumentIdentity,
+    isCurrentFillDocumentIdentity,
+    placeholderFillCardsRef,
+    complexFillCardsRef,
+    enrichedFillFields,
+    enrichedFillFieldsRef,
+    templateFields,
+    fillPreviewPage,
+    fillPreviewPageLockRef,
+    setFillPreviewPage,
+    setShowCitations,
+    setFillFields,
+    fillFields,
+    fillPlaceholderWithAI,
+    fillComplexFillWithAI,
+    fillFieldWithAI,
+    queueFilledOfficeDocumentSync,
+    clearFillSync: () => window.clearTimeout(fillSyncTimerRef.current),
+  });
 
   function confirmField(fieldId) {
     setFillFields((fields) =>
@@ -2600,6 +2544,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
                 onKnowledgeTopKChange={setKnowledgeTopK}
                 onUpdateValue={updateFillFieldValue}
                 onConfirm={confirmField}
+                onCancelGeneration={cancelBulkFill}
               />
             )}
           </div>

@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Info, Loader2, Wand2 } from "lucide-react";
 import StatusPill from "../../components/StatusPill.jsx";
+import { useFillWorkspaceActions, useFillWorkspaceState } from "../fill/FillWorkspaceContext.jsx";
 
-function ComplexFillCards({
-  cards,
-  currentPage,
-  generatingAll,
-  onGenerate,
-  onUpdateValue,
-  onApplyValue,
-  onJumpAnchor,
-}) {
+function ComplexFillCards() {
+  const { complexFillCards: cards, currentPage, generatingAll } = useFillWorkspaceState();
+  const {
+    onGenerateComplexFill: onGenerate,
+    onUpdateComplexFillValue: onUpdateValue,
+    onApplyComplexFillValue: onApplyValue,
+    onJumpComplexFillAnchor: onJumpAnchor,
+  } = useFillWorkspaceActions();
   const [collapsedCards, setCollapsedCards] = useState({});
   const [collapsedFields, setCollapsedFields] = useState({});
 

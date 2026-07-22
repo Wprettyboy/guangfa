@@ -67,7 +67,7 @@ function buildComplexFillAiField(card) {
   };
 }
 
-async function requestComplexFillAiFill(card, { materials, knowledgeOptions }) {
+async function requestComplexFillAiFill(card, { materials, knowledgeOptions, signal }) {
   const result = await apiRequest("/api/ai/fill-field", {
     method: "POST",
     json: {
@@ -76,6 +76,7 @@ async function requestComplexFillAiFill(card, { materials, knowledgeOptions }) {
       knowledgeOptions,
     },
     fallbackMessage: "AI 填充失败",
+    signal,
   });
   return {
     value: result.value || "",
