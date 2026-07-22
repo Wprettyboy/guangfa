@@ -95,6 +95,7 @@ function ComplexFillCards() {
                   <KnowledgeSourceLink
                     documentId={card.sourceDocumentId}
                     page={card.sourcePage}
+                    highlightText={card.sourceSnippetText || card.evidence}
                     available={card.sourcePdfAvailable}
                   />
                   <button

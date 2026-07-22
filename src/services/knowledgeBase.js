@@ -63,23 +63,11 @@ async function searchKnowledgeImages(payload) {
   return Array.isArray(result) ? result : [];
 }
 
-async function openKnowledgeSourcePdf(documentId, page = 1) {
-  const preview = window.open("about:blank", "_blank");
-  if (!preview) throw new Error("浏览器阻止了原文 PDF 窗口，请允许弹出窗口后重试。");
-  preview.opener = null;
-  preview.document.body.textContent = "正在加载原文 PDF...";
-  try {
-    const blob = await apiRequest(`/api/knowledge-documents/${encodeURIComponent(documentId)}/source-pdf`, {
-      responseType: "blob",
-      fallbackMessage: "原文 PDF 读取失败",
-    });
-    const url = URL.createObjectURL(blob);
-    preview.location.replace(`${url}#page=${Math.max(1, Number(page) || 1)}`);
-    window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
-  } catch (error) {
-    preview.close();
-    throw error;
-  }
+async function readKnowledgeSourcePdf(documentId) {
+  return apiRequest(`/api/knowledge-documents/${encodeURIComponent(documentId)}/source-pdf`, {
+    responseType: "blob",
+    fallbackMessage: "原文 PDF 读取失败",
+  });
 }
 
 function createUploadOperationId() {
@@ -90,7 +78,7 @@ export {
   readKnowledgeBases,
   postKnowledgeBase,
   postKnowledgeDocument,
-  openKnowledgeSourcePdf,
+  readKnowledgeSourcePdf,
   removeKnowledgeDocument,
   removeKnowledgeBase,
   searchKnowledgeTables,

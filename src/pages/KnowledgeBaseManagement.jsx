@@ -345,6 +345,7 @@ function KnowledgeBaseManagement({
               <KnowledgeSourceLink
                 documentId={selectedResult.documentId}
                 page={selectedResult.page}
+                highlightText={searchTerm}
                 available={selectedResult.sourcePdfAvailable}
               />
               <p>{renderKnowledgeText(selectedResult.sourceText || selectedResult.text, searchTerm)}</p>

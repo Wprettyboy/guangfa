@@ -141,6 +141,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
 - `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
 - 检索结果保留 `documentId + page + sourcePdfAvailable`；前端通过认证 API 获取溯源 PDF 并使用 `#page=N` 打开，不把短期资源票据写入草稿。
+- 知识库原文预览复用 `react-pdf-highlighter`：先按权威 `page` 读取该页 PDF.js 文本项，再用展示的引用短语做一次精确匹配并生成坐标高亮；匹配失败时只定位来源页并明确提示，不做模糊扩展或跨页猜测。
 - `server/knowledge/tables.js`：从知识库原 DOCX 文件抽取表格结构，按知识库范围检索可插入表格。
 
 ### 样式高频区
