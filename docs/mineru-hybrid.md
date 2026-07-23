@@ -15,22 +15,15 @@
 - `guangfa-mineru-vlm`：运行 MinerU 官方文档视觉模型 `opendatalab/MinerU2.5-Pro-2605-1.2B`，仅在 Compose 内网提供 OpenAI-compatible 端口 `30000`。
 - `guangfa-mineru-api`：运行 MinerU API、Hybrid Pipeline 和 Office parser，仅将 `127.0.0.1:8010` 暴露给本项目。
 
-## 硬件前提
+## 当前机器与硬件前提
 
-当前 Dockerfile 基于 `vllm/vllm-openai:v0.21.0`，需要 Docker 内可见的 NVIDIA GPU。启动前先验证：
+当前仓库内的 Dockerfile 基于 `vllm/vllm-openai:v0.21.0`，只适用于 Docker 内可见的 NVIDIA GPU。它不适用于本机的 AMD Radeon 8060S，不应在本机执行 `npm run mineru`。
 
-```powershell
-docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu22.04 nvidia-smi
-```
-
-仅在 `docker info` 中出现 `nvidia` runtime 不代表 GPU 可用。若命令返回 `no adapters were found`，应迁移到带 NVIDIA GPU 的 Docker 主机；不要把知识解析静默降级为旧 Pipeline 或 OnlyOffice 转换。
+本机已确认是 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04。AMD ROCm 7.2.1 正式支持该架构，正确部署路线是升级到 AMD 支持 Strix Halo WSL 的 Windows 驱动，再在 WSL 中安装 ROCDXG、ROCm 与对应 PyTorch。完成 `rocminfo`、PyTorch、MinerU 服务和真实文档解析验证前，不启用 MinerU 解析器。
 
 ## 启动
 
-```powershell
-npm run mineru
-Invoke-RestMethod http://127.0.0.1:8010/health
-```
+当前 NVIDIA Compose 在本机不可启动。AMD WSL 启动命令应在 ROCDXG/ROCm 运行时实测后补充，不能复用 NVIDIA 的 `--gpus` 配置。
 
 首次构建会下载 MinerU Pipeline 与 VLM 模型，耗时和磁盘占用较大。服务日志：
 
@@ -47,7 +40,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `KNOWLEDGE_PARSER` | `mineru` | 设为 `legacy` 才启用旧解析器；MinerU 失败时不会自动回退。 |
+| `KNOWLEDGE_PARSER` | `legacy` | MinerU 服务实测通过后显式设为 `mineru`；MinerU 失败时不会自动回退。 |
 | `MINERU_API_URL` | `http://127.0.0.1:8010` | Node 服务调用 MinerU API 的地址。 |
 | `MINERU_BACKEND` | `hybrid-http-client` | 只接受 `hybrid-http-client` 或 `hybrid-engine`。 |
 | `MINERU_EFFORT` | `medium` | `medium` 或 `high`。 |

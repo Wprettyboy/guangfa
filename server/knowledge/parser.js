@@ -33,7 +33,7 @@ async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPat
 }
 
 function isMinerUEnabled() {
-  return String(process.env.KNOWLEDGE_PARSER || "mineru").toLowerCase() !== "legacy";
+  return String(process.env.KNOWLEDGE_PARSER || "legacy").toLowerCase() === "mineru";
 }
 
 async function parsePdfDocument({ sourcePath, textPath }) {

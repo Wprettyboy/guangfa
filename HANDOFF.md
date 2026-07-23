@@ -184,11 +184,11 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### MinerU Hybrid 知识解析
 
-- 默认知识解析器切换为 MinerU 3.4.4，PDF 使用 `hybrid-http-client` 和官方 `MinerU2.5-Pro-2605-1.2B`；Office 文件使用 MinerU 自带解析器，不经过 OnlyOffice 转 PDF。旧解析器只可通过 `KNOWLEDGE_PARSER=legacy` 显式启用，失败时不静默回退。
+- MinerU 3.4.4 适配已接入，但在真实服务验证前默认仍使用旧解析器。只有显式设置 `KNOWLEDGE_PARSER=mineru` 后，PDF 才使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件才使用 MinerU 自带解析器；MinerU 失败时不静默回退。
 - MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
 - PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
-- Docker 由 `guangfa-mineru-api` 与 `guangfa-mineru-vlm` 组成，API 仅监听 `127.0.0.1:8010`，模型服务不暴露宿主端口。启动脚本在构建前检查 Docker 的 NVIDIA GPU 可见性。
-- 当前电脑仅识别 AMD Radeon 8060S；Docker GPU 实测返回 `WSL environment detected but no adapters were found`，因此这里不能完成真实 Hybrid 推理。代码与配置验证不等于 GPU 实机通过，真实文档回归必须在带 Docker 可见 NVIDIA GPU 的主机执行。
+- 仓库当前的 `guangfa-mineru-api` / `guangfa-mineru-vlm` Compose 是 NVIDIA 草案，不适用于本机 AMD Radeon 8060S，不能视为已部署。API 端口 `127.0.0.1:8010` 当前没有服务和模型。
+- 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04；应使用 AMD ROCm 7.2.1 的 WSL ROCDXG 路线。完成兼容驱动、ROCDXG/ROCm/PyTorch、MinerU 服务和真实文档回归前，不得把默认解析器切到 MinerU。
 - 已验证 MinerU 任务协议/产物、V1/V2 块映射、结构化切片和精确 PDF locator；全量测试 69/69、生产构建、Node/PowerShell 语法、Compose 展开和 `git diff --check` 均通过。
 
 ### 方案编写工作台迁移
