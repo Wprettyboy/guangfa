@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-10
+更新时间：2026-07-23
 
 ## 新会话先读
 
@@ -39,6 +39,7 @@ npm run dev
 npm run office
 npm run plantuml
 npm run embedding:skip-install
+npm run mineru
 ```
 
 服务端口：
@@ -48,6 +49,7 @@ npm run embedding:skip-install
 - PlantUML：`http://127.0.0.1:8090`
 - 本地 Qwen：`http://127.0.0.1:8129/v1`
 - Embedding：`http://127.0.0.1:8000/v1`
+- MinerU：`http://127.0.0.1:8010`
 
 常用检查：
 
@@ -111,8 +113,9 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/api/routes/office.routes.js`：Office 接口注册入口；handler 调用 `server/office.js` 和 `server/outline-probe.js`，不要在路由里写 Office 业务规则。
 - `server/office.js`：DOCX 上传保存、callback 保存、download-url、OnlyOffice 初始化配置等业务函数。
-- `server/knowledge/docx-convert.js`：调用 OnlyOffice ConvertService 把知识库 DOCX 转为 PDF；转换命令使用 OnlyOffice inbox JWT，源文件 URL 使用短期精确资源票据。
-- 知识库分页溯源：`server/knowledge/parser.js` 对 PDF 使用 `pdfjs` 分页，对 DOCX 优先使用 `onlyoffice-pdf` 分页；解析器写入 `knowledge_documents.page_source`。只有这两类成功来源允许通过 `GET /api/v1/knowledge-documents/:documentId/source-pdf` 读取转换 PDF。DOCX XML 兜底、TXT 和旧资料不得伪装成可按页查看的 PDF。
+- `server/knowledge/mineru-client.js`：MinerU 3.4.4 异步任务适配，提交 Hybrid 解析、轮询、下载并安全展开产物，将 content list 归一为页和结构块。
+- `server/knowledge/docx-convert.js`：旧解析器的 OnlyOffice DOCX 转 PDF 适配；只有显式设置 `KNOWLEDGE_PARSER=legacy` 时才进入这条链路。
+- 知识解析默认使用 MinerU：PDF/图片走 Hybrid，DOCX/PPTX/XLSX 走 MinerU Office parser，TXT 本地解析。原格式文件用于溯源，不再把 Office 文件转换成 PDF。部署和环境变量见 `docs/mineru-hybrid.md`。
 
 ### 本地 API 管理
 
@@ -178,6 +181,15 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/v1/_meta/routes` 和 `/api/v1/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
 
 ## 最近已完成
+
+### MinerU Hybrid 知识解析
+
+- 默认知识解析器切换为 MinerU 3.4.4，PDF 使用 `hybrid-http-client` 和官方 `MinerU2.5-Pro-2605-1.2B`；Office 文件使用 MinerU 自带解析器，不经过 OnlyOffice 转 PDF。旧解析器只可通过 `KNOWLEDGE_PARSER=legacy` 显式启用，失败时不静默回退。
+- MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
+- PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
+- Docker 由 `guangfa-mineru-api` 与 `guangfa-mineru-vlm` 组成，API 仅监听 `127.0.0.1:8010`，模型服务不暴露宿主端口。启动脚本在构建前检查 Docker 的 NVIDIA GPU 可见性。
+- 当前电脑仅识别 AMD Radeon 8060S；Docker GPU 实测返回 `WSL environment detected but no adapters were found`，因此这里不能完成真实 Hybrid 推理。代码与配置验证不等于 GPU 实机通过，真实文档回归必须在带 Docker 可见 NVIDIA GPU 的主机执行。
+- 已验证 MinerU 任务协议/产物、V1/V2 块映射、结构化切片和精确 PDF locator；全量测试 69/69、生产构建、Node/PowerShell 语法、Compose 展开和 `git diff --check` 均通过。
 
 ### 方案编写工作台迁移
 

@@ -128,10 +128,11 @@
 | `scripts/rebuild-knowledge-vectors.mjs` | 知识向量索引重建。删除派生索引，批量重算向量、写入元数据、执行检索冒烟并更新文档索引状态。 |
 | `scripts/samr-contracts-manifest.ps1` | 合同示范文本清单抓取。分页读取全国/地方模板，输出 JSON、CSV、Markdown 清单和统计。 |
 | `scripts/samr_contract_catalog.py` | 合同范本二级分类。按标题关键词划分买卖、租赁、工程、服务等类别并输出分类目录。 |
-| `scripts/start-all-dev.ps1` | 本地全栈编排。检查并后台启动 OnlyOffice 8080、PlantUML 8090、Embedding 8000、Qwen 8129、Vite 5173，等待就绪并汇总状态。 |
+| `scripts/start-all-dev.ps1` | 本地全栈编排。检查并后台启动 OnlyOffice 8080、PlantUML 8090、Embedding 8000、MinerU 8010、Qwen 8129、Vite 5173，等待就绪并汇总状态。 |
 | `scripts/start-local-embedding.ps1` | Embedding 启动脚本。创建 Python 虚拟环境，可选安装 CPU 依赖，选择本地/镜像 BGE-M3 后运行服务。 |
 | `scripts/start-local-qwen36-cpu.ps1` | Qwen CPU/Vulkan 启动脚本。校验 llama.cpp 与 GGUF，以较小上下文在 8129 提供 OpenAI 兼容接口。 |
 | `scripts/start-local-qwen36-rocm.ps1` | Qwen AMD ROCm 启动脚本。配置 ROCm DLL、上下文和 GPU 层数，在 8129 启动本地模型；一键启动默认走此路径。 |
+| `scripts/start-mineru.ps1` | MinerU Hybrid Docker 启动脚本。先验证 Docker 可访问 NVIDIA GPU，再构建并启动 API/VLM 服务并等待 8010 健康检查。 |
 | `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、同步指定中文/方正字体和别名、安装桥接并健康检查；还会生成或读取独立 JWT Secret，校验并重建不合规容器，配置 inbox/outbox JWT、签名资源 URL 例外及无外部权限的 AI 客户端占位 Key。 |
 | `scripts/start-plantuml.ps1` | PlantUML 部署启动。启动容器并映射 8090，复制中文字体、刷新缓存并验证服务。 |
 | `scripts/test-qwen-vulkan-variants.ps1` | Qwen Vulkan 参数诊断。轮换 Flash Attention、卸载和 GPU 层数配置，检查健康、聊天结果、耗时和错误。 |
@@ -186,12 +187,13 @@
 
 | 文件 | 功能说明 |
 | --- | --- |
-| `server/knowledge/chunker.js` | 文档切片。按页形成带段落序号的段落，再聚合为约 900 字、重叠一段的稳定知识块。 |
+| `server/knowledge/chunker.js` | 文档切片。旧文本按页和段落聚合；MinerU 结果按结构块与标题树切片，保留完整表格并注入章节路径。 |
 | `server/knowledge/db.js` | 知识库 SQLite 初始化。创建库、资料、页面、段落、切片和上传幂等表/索引，迁移旧 JSON，并初始化默认项目库/全局库。 |
 | `server/knowledge/documents.js` | 知识文档主服务。先做类型/内容安全校验，再按“知识库+身份+幂等键”预留、内容去重、解析、切片、Embedding 和 ZVec 入库；并处理并发上传、删除、重建和检索回溯。 |
 | `server/knowledge/docx-convert.js` | DOCX 转 PDF 的 OnlyOffice 适配。用带 inbox JWT 和短期文档地址的转换命令调用 `ConvertService.ashx`，有界下载 PDF 以保留页码。 |
 | `server/knowledge/images.js` | DOCX 图片提取。安全读取 OOXML 媒体并验证栅格魔数，识别标题/尺寸/页码，支持检索及带能力票据的预览和单图片 DOCX。 |
-| `server/knowledge/parser.js` | 有界资料解析调度。TXT 直接读取；DOCX 优先转 PDF 分页，失败时安全解析 `document.xml`，过滤目录/域代码并保存清洗文本。 |
+| `server/knowledge/mineru-client.js` | MinerU 3.4.4 适配。提交/轮询 Hybrid 任务、安全展开 ZIP 产物，并把 content list V1/V2 归一为页、块、标题级别和 bbox。 |
+| `server/knowledge/parser.js` | 有界资料解析调度。默认非 TXT 文件交给 MinerU；只有 `KNOWLEDGE_PARSER=legacy` 才恢复旧 PDF/DOCX 解析。 |
 | `server/knowledge/pdf-text.js` | PDF 分页文本抽取。使用 `pdfjs-dist` 在页数、文本量和截止时间限制内逐页读取并规范空白。 |
 | `server/knowledge/scope.js` | 检索范围控制。根据显式项目库/全局库选择计算可访问库和切片；未选择时不隐式全库搜索。 |
 | `server/knowledge/source-resolver.js` | 原文定位。按文档、页码、段落范围回查 SQLite，必要时退到整页，并生成可展示来源位置。 |

@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $LogDir = "C:\llm"
 $EmbeddingPort = 8000
+$MineruPort = 8010
 $QwenPort = 8129
 $OfficePort = 8080
 $PlantumlPort = 8090
@@ -68,6 +69,16 @@ if (Test-PortListening $EmbeddingPort) {
     -Stderr "$LogDir\guangfa-embedding.err.log"
 }
 
+if (Test-PortListening $MineruPort) {
+  Write-Host "MinerU already listening on http://127.0.0.1:$MineruPort"
+} else {
+  Start-HiddenPowerShell `
+    -Name "MinerU Hybrid" `
+    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-mineru.ps1`"" `
+    -Stdout "$LogDir\guangfa-mineru.log" `
+    -Stderr "$LogDir\guangfa-mineru.err.log"
+}
+
 if (Test-PortListening $QwenPort) {
   Write-Host "Qwen local LLM already listening on http://127.0.0.1:$QwenPort"
 } else {
@@ -107,6 +118,7 @@ Write-Host "  PlantUML:   $(if (Test-PortListening $PlantumlPort) { "OK http://1
 Write-Host "  Web app:   $(if (Test-PortListening $WebPort) { "OK http://127.0.0.1:$WebPort" } else { "NOT READY, see $LogDir\guangfa-vite.err.log" })"
 Write-Host "  Qwen LLM:  $(if (Test-PortListening $QwenPort) { "OK http://127.0.0.1:$QwenPort" } else { "NOT READY, see $LogDir\qwen36-rocm-server.err.log" })"
 Write-Host "  Embedding: $(if (Test-PortListening $EmbeddingPort) { "OK http://127.0.0.1:$EmbeddingPort" } else { "NOT READY, see $LogDir\guangfa-embedding.err.log" })"
+Write-Host "  MinerU:    $(if (Test-PortListening $MineruPort) { "OK http://127.0.0.1:$MineruPort" } else { "NOT READY, see $LogDir\guangfa-mineru.err.log" })"
 
 if (Test-PortListening $WebPort) {
   Start-Process "http://127.0.0.1:$WebPort"

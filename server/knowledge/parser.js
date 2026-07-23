@@ -2,11 +2,15 @@ import { readFile, writeFile } from "node:fs/promises";
 import { loadSafeDocx, readSafeZipEntry } from "../document-security.js";
 import { convertDocxToPdf } from "./docx-convert.js";
 import { extractPdfPages } from "./pdf-text.js";
+import { parseWithMinerU } from "./mineru-client.js";
 
 const parseTimeoutMs = clampNumber(Number(process.env.KNOWLEDGE_PARSE_TIMEOUT_MS || 60000), 5000, 120000);
 
-async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, fileExt, fileName }) {
+async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName }) {
   const ext = String(fileExt || "").toLowerCase();
+  if (isMinerUEnabled() && ext !== "txt") {
+    return parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath });
+  }
   if (ext === "docx") {
     return withTimeout(
       parseDocxDocument({ documentId, sourcePath, pdfPath, textPath, fileName }),
@@ -26,6 +30,10 @@ async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPat
   const pages = [{ page: 1, text: normalizeDocumentText(text) }].filter((page) => page.text);
   await writeFile(textPath, pages.map((page) => page.text).join("\n\n"), "utf8");
   return { pages, parser: "plain-text", warning: "" };
+}
+
+function isMinerUEnabled() {
+  return String(process.env.KNOWLEDGE_PARSER || "mineru").toLowerCase() !== "legacy";
 }
 
 async function parsePdfDocument({ sourcePath, textPath }) {

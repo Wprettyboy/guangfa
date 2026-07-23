@@ -29,6 +29,8 @@ import {
 import { defineRoute } from "../registry.js";
 
 const docxMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const pptxMimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const xlsxMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function registerKnowledgeRoutes() {
   defineRoute({
@@ -161,7 +163,7 @@ function registerKnowledgeRoutes() {
     auth: "optional",
     roles: ["viewer"],
     query: { [`${capabilityQueryName}?`]: { type: "string", maxLength: 4096 } },
-    responses: { 200: { schema: "binary", contentType: "application/octet-stream", description: "资料原文件（DOCX、PDF 或 TXT）" } },
+    responses: { 200: { schema: "binary", contentType: "application/octet-stream", description: "资料原文件（PDF、DOCX、PPTX、XLSX 或 TXT）" } },
     handler: async ({ params, principal, query }) => {
       assertCapabilityAccess({
         principal,
@@ -381,6 +383,8 @@ function registerKnowledgeRoutes() {
 function getKnowledgeFileContentType(row = {}) {
   if (row.mimeType) return row.mimeType;
   if (row.fileExt === "docx") return docxMimeType;
+  if (row.fileExt === "pptx") return pptxMimeType;
+  if (row.fileExt === "xlsx") return xlsxMimeType;
   if (row.fileExt === "pdf") return "application/pdf";
   if (row.fileExt === "txt") return "text/plain; charset=utf-8";
   return "application/octet-stream";

@@ -4,7 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createEmbedding, createEmbeddings, isEmbeddingConfigured } from "../embedding.js";
 import { validateKnowledgeDocument } from "../document-security.js";
-import { buildKnowledgeChunks, buildKnowledgeParagraphs } from "./chunker.js";
+import { buildKnowledgeChunks, buildKnowledgeParagraphs, buildStructuredKnowledgeChunks } from "./chunker.js";
 import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js";
 import { parseKnowledgeDocument } from "./parser.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
@@ -87,6 +87,7 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
   const sourcePath = path.join(documentDir, `source.${fileExt}`);
   const pdfPath = path.join(documentDir, "source.pdf");
   const textPath = path.join(documentDir, "source.txt");
+  const artifactsDir = path.join(documentDir, "mineru");
   try {
     await mkdir(documentDir, { recursive: true });
     await writeFile(sourcePath, fileBuffer);
@@ -135,17 +136,19 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
     let error = "";
     let parsed = null;
     try {
-      parsed = await parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, fileExt, fileName });
+      parsed = await parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName });
       const paragraphs = buildKnowledgeParagraphs(parsed.pages);
-      chunks = buildKnowledgeChunks({
+      const chunkContext = {
         documentId,
         kbId,
         documentName: fileName,
         scope: kb.scope,
         projectId: kb.projectId || defaultProjectId,
-        paragraphs,
         createdAt: now,
-      });
+      };
+      chunks = parsed.blocks?.length
+        ? buildStructuredKnowledgeChunks({ ...chunkContext, blocks: parsed.blocks, fileExt })
+        : buildKnowledgeChunks({ ...chunkContext, paragraphs });
       writeParsedDocument(database, { documentId, kbId, pages: parsed.pages, paragraphs, chunks, now });
       status = "关键词可用";
       error = parsed.warning || "未配置 embedding，当前资料仅支持关键词/全文检索。";
@@ -275,13 +278,18 @@ async function readKnowledgeDocumentFile(documentId) {
 async function readKnowledgeDocumentPdf(documentId) {
   const database = await getKnowledgeDatabase();
   const row = getKnowledgeDocumentRow(database, documentId);
-  if (!row || !["pdfjs", "onlyoffice-pdf"].includes(row.pageSource) || !row.pdfPath) return null;
+  if (!row || !isPdfSourceAvailable(row) || !row.pdfPath) return null;
   try {
     return { row, buffer: await readFile(row.pdfPath) };
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
   }
+}
+
+function isPdfSourceAvailable(row = {}) {
+  if (["pdfjs", "onlyoffice-pdf"].includes(row.pageSource)) return true;
+  return row.fileExt === "pdf" && String(row.pageSource || "").startsWith("mineru-");
 }
 
 function insertDocumentShell(database, document) {
@@ -400,8 +408,12 @@ function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, ch
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     const insertChunk = database.prepare(`
-      INSERT INTO knowledge_chunks (id, kb_id, document_id, chunk_index, page_number, paragraph_start, paragraph_end, text, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO knowledge_chunks (
+        id, kb_id, document_id, chunk_index, page_number, paragraph_start, paragraph_end, text,
+        source_text, block_type, heading_path, parent_chunk_id, bbox_json, anchor, locator_grade,
+        is_table, has_star, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     pages.forEach((page) => {
       insertPage.run(`${documentId}-P${page.page}`, documentId, page.page, page.text, now);
@@ -418,7 +430,12 @@ function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, ch
       );
     });
     chunks.forEach((chunk) => {
-      insertChunk.run(chunk.id, kbId, documentId, chunk.chunkIndex, chunk.page, chunk.paragraphStart, chunk.paragraphEnd, chunk.text, now);
+      insertChunk.run(
+        chunk.id, kbId, documentId, chunk.chunkIndex, chunk.page, chunk.paragraphStart, chunk.paragraphEnd, chunk.text,
+        chunk.sourceText || chunk.text, chunk.blockType || "", chunk.headingPath || "", chunk.parentChunkId || "",
+        chunk.bboxJson || "", chunk.anchor || "", chunk.locatorGrade || "contextual",
+        Number(chunk.isTable || 0), Number(chunk.hasStar || 0), now,
+      );
     });
   });
 }
@@ -471,6 +488,15 @@ function readChunks(database) {
       c.paragraph_start AS paragraphStart,
       c.paragraph_end AS paragraphEnd,
       c.text,
+      c.source_text AS sourceText,
+      c.block_type AS blockType,
+      c.heading_path AS headingPath,
+      c.parent_chunk_id AS parentChunkId,
+      c.bbox_json AS bboxJson,
+      c.anchor,
+      c.locator_grade AS locatorGrade,
+      c.is_table AS isTable,
+      c.has_star AS hasStar,
       c.created_at AS createdAt
     FROM knowledge_chunks c
     JOIN knowledge_documents d ON d.id = c.document_id
@@ -514,6 +540,10 @@ function formatSearchResult(database, item) {
     sourceText: resolved.sourceText,
     sourceLocation: resolved.sourceLocation,
     sourcePdfAvailable: resolved.sourcePdfAvailable,
+    blockType: resolved.blockType || "",
+    headingPath: resolved.headingPath || "",
+    locator: resolved.locator || null,
+    locatorGrade: resolved.locatorGrade || "contextual",
     score: Number((item.score || 0).toFixed(4)),
     mode: item.mode || "vector",
   };

@@ -153,6 +153,21 @@ function ensureKnowledgeSchemaMigrations(database) {
   if (!database.prepare("PRAGMA table_info(knowledge_documents)").all().some((column) => column.name === "page_source")) {
     database.exec("ALTER TABLE knowledge_documents ADD COLUMN page_source TEXT DEFAULT ''");
   }
+  const chunkColumns = new Set(database.prepare("PRAGMA table_info(knowledge_chunks)").all().map((column) => column.name));
+  const chunkMigrations = [
+    ["source_text", "TEXT DEFAULT ''"],
+    ["block_type", "TEXT DEFAULT ''"],
+    ["heading_path", "TEXT DEFAULT ''"],
+    ["parent_chunk_id", "TEXT DEFAULT ''"],
+    ["bbox_json", "TEXT DEFAULT ''"],
+    ["anchor", "TEXT DEFAULT ''"],
+    ["locator_grade", "TEXT DEFAULT 'contextual'"],
+    ["is_table", "INTEGER DEFAULT 0"],
+    ["has_star", "INTEGER DEFAULT 0"],
+  ];
+  chunkMigrations.forEach(([name, definition]) => {
+    if (!chunkColumns.has(name)) database.exec(`ALTER TABLE knowledge_chunks ADD COLUMN ${name} ${definition}`);
+  });
   const updatePageSource = database.prepare("UPDATE knowledge_documents SET page_source = ? WHERE id = ?");
   database.prepare(`
     SELECT id, file_ext AS fileExt, pdf_path AS pdfPath, error
@@ -261,6 +276,15 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
   paragraph_start INTEGER,
   paragraph_end INTEGER,
   text TEXT NOT NULL,
+  source_text TEXT DEFAULT '',
+  block_type TEXT DEFAULT '',
+  heading_path TEXT DEFAULT '',
+  parent_chunk_id TEXT DEFAULT '',
+  bbox_json TEXT DEFAULT '',
+  anchor TEXT DEFAULT '',
+  locator_grade TEXT DEFAULT 'contextual',
+  is_table INTEGER DEFAULT 0,
+  has_star INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
   FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE

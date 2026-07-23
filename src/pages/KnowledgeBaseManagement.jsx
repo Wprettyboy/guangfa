@@ -236,7 +236,7 @@ function KnowledgeBaseManagement({
                 <input
                   className="visually-hidden"
                   type="file"
-                  accept=".docx,.txt,.md,.json,.csv"
+                  accept=".pdf,.docx,.pptx,.xlsx,.txt"
                   multiple
                   ref={fileInputRef}
                   onChange={handleUploadChange}
@@ -265,7 +265,7 @@ function KnowledgeBaseManagement({
             {uploading ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
             <div>
               <strong>{uploading ? "正在入库资料" : "点击或拖拽资料入库"}</strong>
-              <span>支持 DOCX、TXT、MD、JSON、CSV；资料会切片后进入当前知识库。</span>
+              <span>支持 PDF、DOCX、PPTX、XLSX、TXT；资料会经 MinerU 解析后进入当前知识库。</span>
             </div>
           </div> : null}
           {uploadMessage ? <div className="knowledge-upload-message ok">{uploadMessage}</div> : null}

@@ -2,6 +2,8 @@ import path from "node:path";
 import JSZip from "jszip";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DEFAULT_DOCX_LIMITS = Object.freeze({
   maxArchiveBytes: 120 * 1024 * 1024,
   maxEntries: 2048,
@@ -13,6 +15,8 @@ const maxKnowledgeDocumentBytes = 80 * 1024 * 1024;
 const maxKnowledgeTextBytes = 20 * 1024 * 1024;
 const knowledgeMimeTypes = new Map([
   ["docx", new Set([DOCX_MIME, "application/zip", "application/octet-stream"])],
+  ["pptx", new Set([PPTX_MIME, "application/zip", "application/octet-stream"])],
+  ["xlsx", new Set([XLSX_MIME, "application/zip", "application/octet-stream"])],
   ["pdf", new Set(["application/pdf", "application/octet-stream"])],
   ["txt", new Set(["text/plain", "application/octet-stream"])],
 ]);
@@ -21,7 +25,7 @@ async function validateKnowledgeDocument(buffer, { fileName, mimeType = "" } = {
   const content = toBuffer(buffer);
   const extension = path.extname(String(fileName || "")).slice(1).toLowerCase();
   if (!knowledgeMimeTypes.has(extension)) {
-    throw createDocumentError("仅支持 DOCX、PDF 或 TXT 资料", 415);
+    throw createDocumentError("仅支持 PDF、DOCX、PPTX、XLSX 或 TXT 资料", 415);
   }
   const maxBytes = extension === "txt" ? maxKnowledgeTextBytes : maxKnowledgeDocumentBytes;
   if (content.length > maxBytes) throw createDocumentError("资料文件过大", 413);
@@ -30,8 +34,8 @@ async function validateKnowledgeDocument(buffer, { fileName, mimeType = "" } = {
     throw createDocumentError("文件扩展名与 Content-Type 不一致", 415);
   }
 
-  if (extension === "docx") {
-    await loadSafeDocx(content);
+  if (["docx", "pptx", "xlsx"].includes(extension)) {
+    await loadSafeOfficePackage(content, extension);
   } else if (extension === "pdf") {
     if (!content.subarray(0, 8).toString("latin1").match(/^%PDF-\d\.\d/)) {
       throw createDocumentError("PDF 文件签名无效", 415);
@@ -39,48 +43,60 @@ async function validateKnowledgeDocument(buffer, { fileName, mimeType = "" } = {
   } else {
     validateUtf8Text(content);
   }
-  return { extension, mimeType: extension === "docx" ? DOCX_MIME : extension === "pdf" ? "application/pdf" : "text/plain" };
+  const mimeTypes = { docx: DOCX_MIME, pptx: PPTX_MIME, xlsx: XLSX_MIME, pdf: "application/pdf", txt: "text/plain" };
+  return { extension, mimeType: mimeTypes[extension] };
 }
 
 async function loadSafeDocx(input, limits = {}) {
+  return loadSafeOfficePackage(input, "docx", limits);
+}
+
+async function loadSafeOfficePackage(input, extension, limits = {}) {
   const content = toBuffer(input);
   const policy = { ...DEFAULT_DOCX_LIMITS, ...limits };
-  if (!content.length) throw createDocumentError("DOCX 文件为空", 400);
-  if (content.length > policy.maxArchiveBytes) throw createDocumentError("DOCX 文件过大", 413);
-  if (!isZipSignature(content)) throw createDocumentError("DOCX ZIP 签名无效", 415);
+  if (!content.length) throw createDocumentError("Office 文件为空", 400);
+  if (content.length > policy.maxArchiveBytes) throw createDocumentError("Office 文件过大", 413);
+  if (!isZipSignature(content)) throw createDocumentError("Office ZIP 签名无效", 415);
 
   let zip;
   try {
     zip = await JSZip.loadAsync(content, { checkCRC32: false, createFolders: false });
   } catch {
-    throw createDocumentError("DOCX 压缩包损坏", 415);
+    throw createDocumentError("Office 压缩包损坏", 415);
   }
 
   const entries = Object.values(zip.files).filter((entry) => !entry.dir);
-  if (entries.length > policy.maxEntries) throw createDocumentError("DOCX 文件条目过多", 413);
+  if (entries.length > policy.maxEntries) throw createDocumentError("Office 文件条目过多", 413);
   let totalUncompressed = 0;
   for (const entry of entries) {
     const size = Number(entry?._data?.uncompressedSize);
     const compressedSize = Number(entry?._data?.compressedSize);
     if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(compressedSize) || compressedSize < 0) {
-      throw createDocumentError("DOCX 条目大小无效", 415);
+      throw createDocumentError("Office 条目大小无效", 415);
     }
-    if (size > policy.maxEntryBytes) throw createDocumentError("DOCX 单个条目解压后过大", 413);
+    if (size > policy.maxEntryBytes) throw createDocumentError("Office 单个条目解压后过大", 413);
     totalUncompressed += size;
-    if (totalUncompressed > policy.maxUncompressedBytes) throw createDocumentError("DOCX 解压后内容过大", 413);
+    if (totalUncompressed > policy.maxUncompressedBytes) throw createDocumentError("Office 解压后内容过大", 413);
   }
   if (content.length > 0 && totalUncompressed / content.length > policy.maxCompressionRatio) {
-    throw createDocumentError("DOCX 压缩比异常", 413);
+    throw createDocumentError("Office 压缩比异常", 413);
   }
 
-  const requiredEntries = ["[Content_Types].xml", "_rels/.rels", "word/document.xml"];
-  if (requiredEntries.some((name) => !zip.file(name))) throw createDocumentError("DOCX 包结构不完整", 415);
+  const packageTypes = {
+    docx: ["word/document.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"],
+    pptx: ["ppt/presentation.xml", "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"],
+    xlsx: ["xl/workbook.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"],
+  };
+  const packageType = packageTypes[extension];
+  if (!packageType) throw createDocumentError("Office 文件类型不受支持", 415);
+  const requiredEntries = ["[Content_Types].xml", "_rels/.rels", packageType[0]];
+  if (requiredEntries.some((name) => !zip.file(name))) throw createDocumentError("Office 包结构不完整", 415);
   if (zip.file("word/vbaProject.bin") || entries.some((entry) => /(^|\/)vbaProject\.bin$/i.test(entry.name))) {
-    throw createDocumentError("不允许上传包含宏的 DOCX 文件", 415);
+    throw createDocumentError("不允许上传包含宏的 Office 文件", 415);
   }
   const contentTypes = await readSafeZipEntry(zip, "[Content_Types].xml", 1024 * 1024);
-  if (!contentTypes.toString("utf8").includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")) {
-    throw createDocumentError("DOCX 主文档类型无效", 415);
+  if (!contentTypes.toString("utf8").includes(packageType[1])) {
+    throw createDocumentError("Office 主文档类型无效", 415);
   }
   return zip;
 }
@@ -178,6 +194,8 @@ function createDocumentError(message, statusCode) {
 export {
   DEFAULT_DOCX_LIMITS,
   DOCX_MIME,
+  PPTX_MIME,
+  XLSX_MIME,
   inspectRasterImage,
   loadSafeDocx,
   readSafeZipEntry,

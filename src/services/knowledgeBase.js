@@ -26,7 +26,7 @@ async function postKnowledgeDocument(kbId, material) {
       size: material.size,
       fileBase64: material.fileBase64,
     },
-    timeoutMs: 120_000,
+    timeoutMs: 60 * 60 * 1000,
     fallbackMessage: "资料入库失败",
   });
 }

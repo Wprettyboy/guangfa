@@ -1,7 +1,14 @@
 function resolveChunkSource(database, chunk) {
   if (!chunk?.documentId) return formatResolvedSource(chunk);
+  const storedChunk = database.prepare(`
+    SELECT source_text AS sourceText, block_type AS blockType, heading_path AS headingPath,
+      bbox_json AS bboxJson, anchor, locator_grade AS locatorGrade
+    FROM knowledge_chunks
+    WHERE id = ? AND document_id = ?
+  `).get(chunk.id, chunk.documentId) || {};
+  chunk = { ...storedChunk, ...chunk };
   const document = database.prepare(`
-    SELECT page_source AS pageSource
+    SELECT page_source AS pageSource, file_ext AS fileExt
     FROM knowledge_documents
     WHERE id = ? AND deleted_at IS NULL
   `).get(chunk.documentId);
@@ -30,8 +37,9 @@ function resolveChunkSource(database, chunk) {
   }
   return formatResolvedSource({
     ...chunk,
-    sourceText: sourceText || chunk.text || "",
-    sourcePdfAvailable: ["pdfjs", "onlyoffice-pdf"].includes(document?.pageSource),
+    sourceText: chunk.sourceText || sourceText || chunk.text || "",
+    sourcePdfAvailable: ["pdfjs", "onlyoffice-pdf"].includes(document?.pageSource)
+      || (document?.fileExt === "pdf" && String(document?.pageSource || "").startsWith("mineru-")),
   });
 }
 
@@ -44,7 +52,20 @@ function formatResolvedSource(chunk) {
     sourceText: chunk?.sourceText || chunk?.text || "",
     sourceLocation: page ? `${documentName} 第${page}页` : `${documentName}（旧资料缺少原文页码）`,
     sourcePdfAvailable: Boolean(chunk?.sourcePdfAvailable),
+    locator: buildLocator(chunk, page),
+    locatorGrade: chunk?.locatorGrade || "contextual",
   };
+}
+
+function buildLocator(chunk, page) {
+  let bbox = null;
+  try {
+    bbox = chunk?.bboxJson ? JSON.parse(chunk.bboxJson) : null;
+  } catch {}
+  if (page && Array.isArray(bbox) && bbox.length === 4) return { type: "pdf", page, bbox };
+  if (chunk?.anchor) return { type: "bookmark", anchor: chunk.anchor };
+  if (chunk?.headingPath) return { type: "section", headingPath: chunk.headingPath };
+  return null;
 }
 
 export { resolveChunkSource };
