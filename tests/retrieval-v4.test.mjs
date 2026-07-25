@@ -11,6 +11,8 @@ process.chdir(testRoot);
 const { CircuitBreaker } = await import("../server/retrieval/circuit-breaker.js");
 const { validateEncodeResponse, validateRerankResponse } = await import("../server/retrieval/model-client.js");
 const { buildKnowledgeIndexGeneration, encodeIndexBatch } = await import("../server/knowledge/indexer.js");
+const { reciprocalRankFusion, searchKnowledgeV4 } = await import("../server/knowledge/search.js");
+const { applyKnowledgeSearchFilters, normalizeKnowledgeSearchFilters } = await import("../server/knowledge/search-filters.js");
 const { activeManifestPath, readActiveKnowledgeZvecManifest } = await import("../server/knowledge/zvec-store.js");
 
 after(async () => {
@@ -61,6 +63,23 @@ test("index OOM halves one batch before failing closed", async () => {
   assert.equal(rows.length, 4);
 });
 
+test("structured filters are exact and RRF uses ranks instead of raw scores", () => {
+  const filters = normalizeKnowledgeSearchFilters({ documentIds: ["DOC-1"], pageFrom: 2, pageTo: 2, isTable: true, hasStar: false });
+  const rows = applyKnowledgeSearchFilters([
+    chunk("C-1", "one", 1),
+    chunk("C-2", "two", 2),
+    { ...chunk("C-3", "three", 2), documentId: "DOC-2" },
+  ], filters);
+  assert.deepEqual(rows.map((item) => item.id), ["C-2"]);
+  const fused = reciprocalRankFusion({
+    dense: [{ id: "A", text: "a", channelScore: 0.1 }, { id: "B", text: "b", channelScore: 100 }],
+    sparse: [{ id: "A", text: "a", channelScore: 0.01 }],
+    fts: [],
+  });
+  assert.equal(fused[0].id, "A");
+  assert.equal(fused[0].matchedChannels.length, 2);
+});
+
 test("immutable generation publishes only after close and reopen validation", async () => {
   const chunks = [
     chunk("C-1", "ISO27001 qualification requirement", 1),
@@ -77,6 +96,55 @@ test("immutable generation publishes only after close and reopen validation", as
   assert.notEqual(second.generation, first.generation);
   assert.equal((await readActiveKnowledgeZvecManifest()).generation, second.generation);
   const activeBeforeFailure = await readFile(activeManifestPath, "utf8");
+
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (String(url).endsWith("/retrieval/encode")) {
+        return Response.json({ data: body.input.map((_, index) => ({
+          dense_embedding: denseVector(index + 1),
+          sparse_embedding: { "101": 0.8, "201": 0.2 },
+        })) });
+      }
+      if (String(url).endsWith("/rerank")) {
+        return Response.json({ data: body.documents.map((_, index) => ({ index, score: 1 - index / 10 })) });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    };
+    const result = await searchKnowledgeV4({
+      query: "qualification",
+      allowedKbIds: new Set(["KB-1"]),
+      eligibleChunks: chunks,
+      liveChunkIds: new Set(chunks.map((item) => item.id)),
+      filters: { pageFrom: 1, pageTo: 1, isTable: false, hasStar: true },
+      topK: 5,
+    });
+    assert.deepEqual(result.items.map((item) => item.id), ["C-1"]);
+    assert.equal(result.diagnostics.reranker, "applied");
+    assert.equal(result.diagnostics.candidateCount, 1);
+    assert.equal(result.items[0].page, 1);
+
+    globalThis.fetch = async (url, options) => {
+      const body = JSON.parse(options.body);
+      if (String(url).endsWith("/retrieval/encode")) {
+        return Response.json({ data: body.input.map(() => ({ dense_embedding: denseVector(1), sparse_embedding: { "101": 0.8 } })) });
+      }
+      return Response.json({ detail: "reranker unavailable" }, { status: 503 });
+    };
+    const degraded = await searchKnowledgeV4({
+      query: "qualification",
+      allowedKbIds: new Set(["KB-1"]),
+      eligibleChunks: chunks,
+      liveChunkIds: new Set(chunks.map((item) => item.id)),
+      topK: 2,
+    });
+    assert.equal(degraded.diagnostics.reranker, "degraded");
+    assert.equal(degraded.diagnostics.degradedReasons.includes("reranker_timeout"), true);
+    assert.equal(degraded.items.every((item) => item.rerankScore == null), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   await assert.rejects(
     buildKnowledgeIndexGeneration(chunks, {

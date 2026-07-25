@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createEmbedding, createEmbeddings, isEmbeddingConfigured } from "../embedding.js";
 import { validateKnowledgeDocument } from "../document-security.js";
 import {
   buildKnowledgeChunks,
@@ -11,10 +10,10 @@ import {
   filterRetrievalKnowledgeChunks,
 } from "./chunker.js";
 import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js";
+import { rebuildKnowledgeIndexV4 } from "./indexer.js";
 import { parseKnowledgeDocument } from "./parser.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
-import { rankKeywordChunks } from "./text-ranking.js";
-import { deleteKnowledgeZvecChunks, insertKnowledgeZvecChunks, searchKnowledgeZvec } from "./zvec-store.js";
+import { searchKnowledgeV4 } from "./search.js";
 import { resolveChunkContext, resolveChunkSource } from "./source-resolver.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
@@ -129,10 +128,7 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
   activeKnowledgeDocumentIds.add(documentId);
   try {
     if (reservation.replaced) {
-      await Promise.all([
-        deleteKnowledgeZvecChunks({ documentId: reservation.replaced.id, kbId }).catch(() => {}),
-        rm(path.join(filesDir, reservation.replaced.id), { recursive: true, force: true }).catch(() => {}),
-      ]);
+      await rm(path.join(filesDir, reservation.replaced.id), { recursive: true, force: true }).catch(() => {});
     }
 
     let chunks = [];
@@ -162,13 +158,11 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
       error = parseError?.message || "资料解析失败";
     }
 
-    if (parsed && isEmbeddingConfigured() && chunks.length > 0) {
+    if (parsed && chunks.length > 0) {
       try {
-        const retrievalChunks = filterRetrievalKnowledgeChunks(chunks);
-        const embeddings = await createEmbeddings(retrievalChunks.map((chunk) => chunk.text));
-        await insertKnowledgeZvecChunks(retrievalChunks, embeddings);
+        await rebuildKnowledgeIndexV4(database);
         status = "已索引";
-        indexMode = "hybrid";
+        indexMode = "dense-sparse-fts";
         error = parsed.warning || "";
       } catch (embeddingError) {
         status = "关键词可用";
@@ -192,10 +186,8 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
       return hydrateKnowledgeDocument(database, getKnowledgeDocumentRow(database, documentId));
     });
     if (!completedDocument) {
-      await Promise.all([
-        deleteKnowledgeZvecChunks({ chunkIds: chunks.map((chunk) => chunk.id), documentId, kbId }).catch(() => {}),
-        rm(documentDir, { recursive: true, force: true }).catch(() => {}),
-      ]);
+      await rm(documentDir, { recursive: true, force: true }).catch(() => {});
+      await rebuildKnowledgeIndexV4(database).catch(() => {});
       throwHttpError("资料在上传处理过程中已被删除", 409);
     }
     return { ...completedDocument, idempotentReplay: false };
@@ -218,7 +210,7 @@ async function deleteKnowledgeDocument(kbId, documentId) {
     return rows;
   });
   if (!chunks) return { ok: true, deletedChunks: 0 };
-  await deleteKnowledgeZvecChunks({ chunkIds: chunks.map((chunk) => chunk.id), documentId, kbId }).catch(() => {});
+  await rebuildKnowledgeIndexV4(database).catch((error) => console.warn("[knowledge] V4 rebuild after document delete failed:", error.message || error));
   await rm(path.join(filesDir, documentId), { recursive: true, force: true }).catch(() => {});
   return { ok: true, deletedChunks: chunks.length };
 }
@@ -230,7 +222,7 @@ async function deleteKnowledgeBase(kbId) {
     database.prepare("DELETE FROM knowledge_bases WHERE id = ?").run(kbId);
     return rows;
   });
-  await deleteKnowledgeZvecChunks({ kbId }).catch(() => {});
+  await rebuildKnowledgeIndexV4(database).catch((error) => console.warn("[knowledge] V4 rebuild after knowledge-base delete failed:", error.message || error));
   await Promise.all(documents.map((document) => rm(path.join(filesDir, document.id), { recursive: true, force: true }).catch(() => {})));
   return { ok: true, deletedKnowledgeBaseId: kbId, deletedDocuments: documents.length };
 }
@@ -239,36 +231,32 @@ async function reindexKnowledgeBase(kbId) {
   const database = await getKnowledgeDatabase();
   const chunks = readChunks(database).filter((chunk) => chunk.kbId === kbId);
   if (chunks.length === 0) return { ok: true, updated: 0, chunkCount: 0 };
-  await deleteKnowledgeZvecChunks({ chunkIds: chunks.map((chunk) => chunk.id), kbId }).catch(() => {});
-  if (isEmbeddingConfigured()) {
-    const retrievalChunks = filterRetrievalKnowledgeChunks(chunks);
-    const embeddings = await createEmbeddings(retrievalChunks.map((chunk) => chunk.text));
-    await insertKnowledgeZvecChunks(retrievalChunks, embeddings);
-  }
-  const liveChunkIds = new Set(readChunks(database).filter((chunk) => chunk.kbId === kbId).map((chunk) => chunk.id));
-  const staleChunks = chunks.filter((chunk) => !liveChunkIds.has(chunk.id));
-  if (staleChunks.length > 0) {
-    await deleteKnowledgeZvecChunks({ chunkIds: staleChunks.map((chunk) => chunk.id), kbId }).catch(() => {});
-  }
-  const liveChunks = chunks.filter((chunk) => liveChunkIds.has(chunk.id));
-  return { ok: true, updated: new Set(liveChunks.map((chunk) => chunk.documentId)).size, chunkCount: liveChunks.length };
+  const manifest = await rebuildKnowledgeIndexV4(database);
+  return { ok: true, updated: new Set(chunks.map((chunk) => chunk.documentId)).size, chunkCount: chunks.length, generation: manifest.generation };
 }
 
 async function searchKnowledgeBase(payload = {}) {
+  return (await searchKnowledgeBaseDetailed(payload)).items;
+}
+
+async function searchKnowledgeBaseDetailed(payload = {}) {
   const query = String(payload.query || "").trim();
-  if (!query) return [];
+  if (!query) return { items: [], diagnostics: null };
   const database = await getKnowledgeDatabase();
   const metadata = readKnowledgeMetadata(database);
   const topK = clampNumber(Number(payload.topK || 8), 1, 20);
   const { allowedKbIds, eligibleChunks, liveChunkIds } = resolveKnowledgeSearchScope(payload, metadata, defaultProjectId);
   const retrievalChunks = filterRetrievalKnowledgeChunks(eligibleChunks);
-  if (retrievalChunks.length === 0) return [];
-  const keywordResults = rankKeywordChunks(retrievalChunks, query).slice(0, topK);
-  const zvecResults = await searchHybridChunks(query, topK, allowedKbIds, liveChunkIds).catch((error) => {
-    console.warn("[knowledge] zvec search unavailable:", error.message || error);
-    return [];
+  if (retrievalChunks.length === 0) return { items: [], diagnostics: null };
+  const result = await searchKnowledgeV4({
+    query,
+    allowedKbIds,
+    eligibleChunks: retrievalChunks,
+    liveChunkIds,
+    filters: payload.filters,
+    topK,
   });
-  return mergeSearchResults(database, zvecResults, keywordResults, topK);
+  return { ...result, items: result.items.map((item) => formatSearchResult(database, item)) };
 }
 
 async function readKnowledgeDocumentFile(documentId) {
@@ -513,24 +501,6 @@ function readChunks(database) {
   `).all();
 }
 
-function mergeSearchResults(database, primaryResults, fallbackResults, topK) {
-  const merged = [];
-  const seen = new Set();
-  const isLive = database.prepare(`
-    SELECT 1
-    FROM knowledge_chunks c
-    JOIN knowledge_documents d ON d.id = c.document_id
-    JOIN knowledge_bases b ON b.id = c.kb_id
-    WHERE c.id = ? AND d.deleted_at IS NULL AND b.deleted_at IS NULL
-  `);
-  [...primaryResults, ...fallbackResults].forEach((item) => {
-    if (!item || seen.has(item.id) || !isLive.get(item.id)) return;
-    seen.add(item.id);
-    merged.push(formatSearchResult(database, item));
-  });
-  return merged.slice(0, topK);
-}
-
 function formatSearchResult(database, item) {
   const resolved = resolveChunkSource(database, item);
   return {
@@ -553,19 +523,11 @@ function formatSearchResult(database, item) {
     locator: resolved.locator || null,
     locatorGrade: resolved.locatorGrade || "contextual",
     score: Number((item.score || 0).toFixed(4)),
+    fusionScore: Number.isFinite(item.fusionScore) ? Number(item.fusionScore.toFixed(6)) : null,
+    rerankScore: Number.isFinite(item.rerankScore) ? Number(item.rerankScore.toFixed(6)) : null,
     mode: item.mode || "vector",
+    degradedReasons: Array.isArray(item.degradedReasons) ? item.degradedReasons : [],
   };
-}
-
-async function searchHybridChunks(query, topK, allowedKbIds, liveChunkIds) {
-  let embedding = null;
-  if (isEmbeddingConfigured()) {
-    embedding = await createEmbedding(query).catch((error) => {
-      console.warn("[knowledge] embedding query unavailable:", error.message || error);
-      return null;
-    });
-  }
-  return searchKnowledgeZvec({ query, embedding, topK, allowedKbIds, liveChunkIds });
 }
 
 function hydrateKnowledgeBase(database, base) {
@@ -691,4 +653,5 @@ export {
   readKnowledgeDocumentPdf,
   reindexKnowledgeBase,
   searchKnowledgeBase,
+  searchKnowledgeBaseDetailed,
 };

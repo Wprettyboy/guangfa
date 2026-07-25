@@ -14,6 +14,7 @@ const sparseVectorFieldName = "sparseEmbedding";
 const vectorFieldName = "embedding";
 const textFieldName = "text";
 const outputFields = ["kbId", "scope", "projectId", "documentId", "documentName", "chunkIndex", "page", "paragraphStart", "paragraphEnd", "text", "createdAt"];
+const v4OutputFields = ["kbId", "scope", "projectId", "documentId", "documentName", "chunkIndex", "page", "isTable", "hasStar", "blockType", "headingPath", "text", "createdAt"];
 
 function createKnowledgeZvecSchema(zvec, dimension = getEmbeddingConfig().dimension) {
   return new zvec.ZVecCollectionSchema({
@@ -294,6 +295,69 @@ async function openActiveKnowledgeZvec({ readOnly = true } = {}) {
   return { collection, manifest };
 }
 
+async function queryActiveKnowledgeZvecChannels({ query, denseEmbedding, sparseEmbedding, filter, topK = 60, liveChunkIds } = {}) {
+  const { collection, manifest } = await openActiveKnowledgeZvec({ readOnly: true });
+  if (!collection || !filter) return { manifest, channels: { dense: [], sparse: [], fts: [] }, channelErrors: {} };
+  const zvec = await import("@zvec/zvec");
+  const requests = {
+    dense: Array.isArray(denseEmbedding) ? { fieldName: denseVectorFieldName, vector: denseEmbedding } : null,
+    sparse: sparseEmbedding && Object.keys(sparseEmbedding).length ? { fieldName: sparseVectorFieldName, vector: sparseEmbedding } : null,
+    fts: String(query || "").trim() ? {
+      fieldName: "text",
+      fts: { matchString: String(query).trim().slice(0, 240) },
+      params: { indexType: zvec.ZVecIndexType.FTS, defaultOperator: "OR" },
+    } : null,
+  };
+  const channels = {};
+  const channelErrors = {};
+  try {
+    for (const [name, request] of Object.entries(requests)) {
+      if (!request) {
+        channels[name] = [];
+        continue;
+      }
+      try {
+        channels[name] = collection.querySync({
+          ...request,
+          filter,
+          topk: topK,
+          includeVector: false,
+          outputFields: v4OutputFields,
+        }).map((row) => normalizeV4Result(row, name)).filter((row) => row && (!liveChunkIds?.size || liveChunkIds.has(row.id)));
+      } catch (error) {
+        channels[name] = [];
+        channelErrors[name] = error;
+      }
+    }
+    return { manifest, channels, channelErrors };
+  } finally {
+    collection.closeSync();
+  }
+}
+
+function normalizeV4Result(row, channel) {
+  const fields = row?.fields || {};
+  if (!fields.kbId || !fields.documentId) return null;
+  return {
+    id: row.id,
+    channel,
+    channelScore: Number(row.score || 0),
+    kbId: fields.kbId,
+    scope: fields.scope,
+    projectId: fields.projectId,
+    documentId: fields.documentId,
+    documentName: fields.documentName,
+    chunkIndex: fields.chunkIndex,
+    page: fields.page || "",
+    isTable: Boolean(fields.isTable),
+    hasStar: Boolean(fields.hasStar),
+    blockType: fields.blockType || "",
+    headingPath: fields.headingPath || "",
+    text: fields.text || "",
+    createdAt: fields.createdAt || "",
+  };
+}
+
 async function readActiveKnowledgeZvecManifest() {
   const raw = await readFile(activeManifestPath, "utf8").catch((error) => {
     if (error.code === "ENOENT") return "";
@@ -377,6 +441,7 @@ export {
   openKnowledgeZvecGeneration,
   pruneKnowledgeZvecGenerations,
   publishActiveKnowledgeZvecManifest,
+  queryActiveKnowledgeZvecChannels,
   queryKnowledgeZvecCollection,
   readActiveKnowledgeZvecManifest,
   removeKnowledgeZvecGeneration,

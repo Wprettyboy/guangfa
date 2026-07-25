@@ -9,10 +9,12 @@ const originalEmbeddingEnvironment = {
   baseUrl: process.env.EMBEDDING_BASE_URL,
   model: process.env.EMBEDDING_MODEL,
 };
+const originalRetrievalDisabled = process.env.RETRIEVAL_DISABLED;
 const testRoot = await mkdtemp(path.join(tmpdir(), "guangfa-multi-user-"));
 process.chdir(testRoot);
 delete process.env.EMBEDDING_BASE_URL;
 delete process.env.EMBEDDING_MODEL;
+process.env.RETRIEVAL_DISABLED = "1";
 
 const { assertDraftActorId, readDraft, writeDraft } = await import("../server/draft.js");
 const {
@@ -36,6 +38,7 @@ after(async () => {
   process.chdir(originalCwd);
   restoreEnvironment("EMBEDDING_BASE_URL", originalEmbeddingEnvironment.baseUrl);
   restoreEnvironment("EMBEDDING_MODEL", originalEmbeddingEnvironment.model);
+  restoreEnvironment("RETRIEVAL_DISABLED", originalRetrievalDisabled);
   await rm(testRoot, { recursive: true, force: true });
 });
 

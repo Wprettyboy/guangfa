@@ -8,6 +8,7 @@ const rerankerBreaker = new CircuitBreaker({ failureThreshold, resetMs });
 
 function getRetrievalModelConfig() {
   return {
+    enabled: process.env.RETRIEVAL_DISABLED !== "1" && process.env.RETRIEVAL_DISABLED !== "true",
     baseUrl: String(process.env.RETRIEVAL_BASE_URL || "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
     queryEncodeTimeoutMs: positiveNumber(process.env.RETRIEVAL_ENCODE_TIMEOUT_MS, 2_000),
     rerankTimeoutMs: positiveNumber(process.env.RETRIEVAL_RERANK_TIMEOUT_MS, 5_000),
@@ -18,6 +19,7 @@ function getRetrievalModelConfig() {
 async function encodeRetrieval(input, { indexing = false, timeoutMs, fetchImpl = fetch } = {}) {
   const texts = normalizeTexts(input, 64);
   const config = getRetrievalModelConfig();
+  if (!config.enabled) throw unavailableError("encode_timeout");
   const effectiveTimeout = timeoutMs || (indexing ? config.indexEncodeTimeoutMs : config.queryEncodeTimeoutMs);
   const attempts = indexing ? 2 : 1;
   let lastError;
@@ -46,6 +48,7 @@ async function rerankRetrieval(query, documents, { timeoutMs, fetchImpl = fetch 
   const texts = normalizeTexts(documents, 20);
   if (!cleanQuery) throw new TypeError("Rerank query cannot be empty");
   const config = getRetrievalModelConfig();
+  if (!config.enabled) throw unavailableError("reranker_timeout");
   const effectiveTimeout = timeoutMs || config.rerankTimeoutMs;
   return rerankerBreaker.run(async () => {
     const payload = await requestJson(`${config.baseUrl}/rerank`, {
@@ -148,6 +151,12 @@ function validateRerankResponse(payload, expectedCount) {
 
 function protocolError(message, code) {
   const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function unavailableError(code) {
+  const error = new Error("Retrieval model service is disabled");
   error.code = code;
   return error;
 }
