@@ -794,7 +794,7 @@ function bindImageAssets(blocks = [], images = [], documentId) {
     recordsByPath.get(imagePath).push(image);
   }
   for (const block of blocks || []) {
-    if (block.type !== "image") continue;
+    if (!block.imagePath) continue;
     const records = recordsByPath.get(normalizeArtifactPath(block.imagePath));
     const record = records?.shift();
     if (!record || !Number.isSafeInteger(Number(record.imageIndex))) continue;

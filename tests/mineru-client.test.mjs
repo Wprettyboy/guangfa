@@ -38,6 +38,16 @@ test("MinerU v1 blocks preserve page, bbox, heading level and whole-table text",
   assert.match(pages[1].text, /一级/);
 });
 
+test("MinerU keeps image-backed table candidates when table HTML is empty", () => {
+  const blocks = buildBlocksFromMinerU([
+    { type: "table", img_path: "images/flow.jpg", page_idx: 2, bbox: [1, 2, 3, 4], table_body: "" },
+  ], null);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].type, "table");
+  assert.equal(blocks[0].imagePath, "images/flow.jpg");
+  assert.match(blocks[0].text, /图片资产/);
+});
+
 test("MinerU v2 remains a fallback when the stable v1 list is absent", () => {
   const contentListV2 = [[
     {

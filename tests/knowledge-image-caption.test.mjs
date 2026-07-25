@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildImageCaption,
   enrichMinerUImageCaptions,
+  isMinerUVisualCandidate,
   parseImageAnalysisContent,
 } from "../server/knowledge/image-caption.js";
 
@@ -72,4 +73,24 @@ test("MinerU V2-only image blocks still receive captions by exact artifact path"
   assert.equal(result.records.length, 1);
   assert.equal(result.records[0].imagePath, "images/v2-only.png");
   assert.match(contentListV2[0][0].content.image_caption[0], /管理员发布餐次/);
+});
+
+test("empty MinerU table assets are captioned but structured tables are not", async () => {
+  const visualTable = { type: "table", img_path: "images/flow.jpg", page_idx: 2, table_body: "", image_caption: [] };
+  const structuredTable = { type: "table", img_path: "images/table.jpg", page_idx: 3, table_body: "<table><tr><td>真实表格</td></tr></table>" };
+  assert.equal(isMinerUVisualCandidate(visualTable), true);
+  assert.equal(isMinerUVisualCandidate(structuredTable), false);
+  let calls = 0;
+  const result = await enrichMinerUImageCaptions({
+    artifacts: new Map([["images/flow.jpg", Buffer.from("flow")], ["images/table.jpg", Buffer.from("table")]]),
+    contentList: [visualTable, structuredTable],
+    contentListV2: null,
+    analyze: async () => {
+      calls += 1;
+      return { ...analysis, model: "gemini-test" };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.records.length, 1);
+  assert.match(visualTable.image_caption[0], /管理员发布餐次/);
 });

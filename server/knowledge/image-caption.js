@@ -137,7 +137,7 @@ function buildImageCaption(analysis) {
 
 function collectV1ImageItems(contentList) {
   return Array.isArray(contentList)
-    ? contentList.map((item, imageIndex) => ({ item, imageIndex })).filter(({ item }) => item?.type === "image")
+    ? contentList.map((item, imageIndex) => ({ item, imageIndex })).filter(({ item }) => isMinerUVisualCandidate(item))
     : [];
 }
 
@@ -149,11 +149,11 @@ function collectV2ImageItems(contentListV2) {
       return;
     }
     if (!value || typeof value !== "object") return;
-    if (value.type === "image") {
+    if (isMinerUVisualCandidate(value)) {
       items.push({
         imageIndex: items.length,
         item: {
-          type: "image",
+          type: value.type || "image",
           img_path: value?.content?.image_source?.path || value.img_path || "",
           page_idx: value.page_idx ?? pageIndex,
           bbox: value.bbox,
@@ -176,7 +176,7 @@ function applyV2ImageCaption(value, imagePath, caption) {
     return;
   }
   if (!value || typeof value !== "object") return;
-  if (value.type === "image") {
+  if (isMinerUVisualCandidate(value)) {
     const candidate = normalizeArtifactPath(value?.content?.image_source?.path || value.img_path || "");
     if (candidate === imagePath) {
       if (value.content && typeof value.content === "object") value.content.image_caption = [caption];
@@ -184,6 +184,14 @@ function applyV2ImageCaption(value, imagePath, caption) {
     }
   }
   Object.values(value).forEach((item) => applyV2ImageCaption(item, imagePath, caption));
+}
+
+function isMinerUVisualCandidate(item) {
+  const imagePath = item?.img_path || item?.image_path || item?.content?.image_source?.path || "";
+  if (!String(imagePath).trim()) return false;
+  if (item?.type === "image") return true;
+  if (item?.type !== "table") return false;
+  return !String(item.table_body || item.html || "").trim();
 }
 
 function failedImageRecord(item, imageIndex, imagePath, error, imageHash = "") {
@@ -255,5 +263,6 @@ export {
   applyV2ImageCaption,
   buildImageCaption,
   enrichMinerUImageCaptions,
+  isMinerUVisualCandidate,
   parseImageAnalysisContent,
 };

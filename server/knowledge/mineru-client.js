@@ -222,11 +222,12 @@ function buildPagesFromMinerU(contentList, contentListV2) {
 
 function buildBlocksFromMinerU(contentList, contentListV2) {
   if (Array.isArray(contentList) && contentList.length > 0) {
-    return contentList.map((item, index) => normalizeV1Block(item, index)).filter((block) => block.text);
+    return contentList.map((item, index) => normalizeV1Block(item, index))
+      .filter((block) => block.text || block.imagePath);
   }
   if (!Array.isArray(contentListV2)) return [];
   return contentListV2.flatMap((page, pageIndex) => (Array.isArray(page) ? page : []).map((item, index) =>
-    normalizeV2Block(item, pageIndex, index))).filter((block) => block.text);
+    normalizeV2Block(item, pageIndex, index))).filter((block) => block.text || block.imagePath);
 }
 
 function normalizeV1Block(item, index) {
@@ -238,12 +239,14 @@ function normalizeV1Block(item, index) {
     bbox: normalizeBbox(item?.bbox),
     level: Math.max(0, Number(item?.text_level) || 0),
     anchor: String(item?.anchor || ""),
-    imagePath: item?.type === "image" ? normalizeStoredArtifactPath(item.img_path || item.image_path || "") : "",
+    imagePath: normalizeStoredArtifactPath(item?.img_path || item?.image_path || ""),
     text: extractV1Text(item),
   };
 }
 
 function normalizeV2Block(item, pageIndex, index) {
+  const imagePath = normalizeStoredArtifactPath(item?.content?.image_source?.path || item?.img_path || item?.image_path || "");
+  const text = stripInlineFormatting(collectText(item?.content));
   return {
     id: `P${pageIndex + 1}-B${String(index + 1).padStart(4, "0")}`,
     imageIndex: null,
@@ -252,8 +255,8 @@ function normalizeV2Block(item, pageIndex, index) {
     bbox: normalizeBbox(item?.bbox),
     level: Math.max(0, Number(item?.content?.level) || 0),
     anchor: String(item?.anchor || ""),
-    imagePath: item?.type === "image" ? normalizeStoredArtifactPath(item?.content?.image_source?.path || item.img_path || "") : "",
-    text: stripInlineFormatting(collectText(item?.content)),
+    imagePath,
+    text: text || (imagePath ? `图片资产（第${pageIndex + 1}页，待生成语义说明）` : ""),
   };
 }
 
@@ -286,8 +289,18 @@ function normalizeStoredArtifactPath(value) {
 }
 
 function extractV1Text(item = {}) {
-  if (item.type === "table") return stripMinerUTableHtml(item.table_body || item.html || "");
-  if (item.type === "image") return [...(item.image_caption || []), ...(item.image_footnote || [])].join("\n").trim();
+  if (item.type === "table") {
+    const tableText = stripMinerUTableHtml(item.table_body || item.html || "");
+    if (tableText) return tableText;
+  }
+  if (item.type === "image" || item.img_path || item.image_path) {
+    const caption = [...(item.image_caption || []), ...(item.image_footnote || [])].join("\n").trim();
+    if (caption) return caption;
+    if (item.img_path || item.image_path) {
+      const page = Math.max(1, Number(item.page_idx) + 1 || 1);
+      return `图片资产（第${page}页，待生成语义说明）`;
+    }
+  }
   return stripInlineFormatting(item.text || item.content || collectText(item));
 }
 
