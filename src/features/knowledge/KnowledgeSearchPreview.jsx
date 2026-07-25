@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, Image, Info, Loader2, Search } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronDown, Image, Info, Loader2, Maximize2, Search, X } from "lucide-react";
 import useApiAssetUrl from "../../hooks/useApiAssetUrl.js";
 import { readKnowledgeTableEvidence } from "../../services/knowledgeBase.js";
 import KnowledgeSourceLink from "./KnowledgeSourceLink.jsx";
@@ -127,6 +128,7 @@ function KnowledgeResultDetail({ result, query, onOpenImageEvidence }) {
 
 function KnowledgeTableEvidence({ result, query }) {
   const [state, setState] = useState({ status: "loading", table: null, error: "" });
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -149,18 +151,67 @@ function KnowledgeTableEvidence({ result, query }) {
   }
   const { table } = state;
   return (
-    <div className="knowledge-result-table-scroll" aria-label={`表格证据，共${table.rows.length}行${table.columnCount}列`}>
-      <table>
-        {table.header?.length ? <thead><tr>{table.header.map((cell, index) => <th key={`header-${index}`} colSpan={cell.colSpan} rowSpan={cell.rowSpan}>{renderKnowledgeText(cell.text, query)}</th>)}</tr></thead> : null}
-        <tbody>
-          {table.rows.map((row, rowIndex) => (
-            <tr key={`row-${rowIndex}`}>
-              {row.map((cell, cellIndex) => <td key={`row-${rowIndex}-cell-${cellIndex}`} colSpan={cell.colSpan} rowSpan={cell.rowSpan}>{renderKnowledgeText(cell.text, query)}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="knowledge-table-evidence-toolbar">
+        <span>{table.rows.length} 行 · {table.columnCount} 列</span>
+        <button className="tool-button" type="button" onClick={() => setExpanded(true)}>
+          <Maximize2 size={15} />
+          放大查看
+        </button>
+      </div>
+      <div className="knowledge-result-table-scroll" aria-label={`表格证据，共${table.rows.length}行${table.columnCount}列`}>
+        <KnowledgeTableGrid table={table} query={query} />
+      </div>
+      {expanded ? <KnowledgeTableEvidenceModal result={result} table={table} query={query} onClose={() => setExpanded(false)} /> : null}
+    </>
+  );
+}
+
+function KnowledgeTableGrid({ table, query }) {
+  return (
+    <table>
+      {table.header?.length ? <thead><tr>{table.header.map((cell, index) => <th key={`header-${index}`} colSpan={cell.colSpan} rowSpan={cell.rowSpan}>{renderKnowledgeText(cell.text, query)}</th>)}</tr></thead> : null}
+      <tbody>
+        {table.rows.map((row, rowIndex) => (
+          <tr key={`row-${rowIndex}`}>
+            {row.map((cell, cellIndex) => <td key={`row-${rowIndex}-cell-${cellIndex}`} colSpan={cell.colSpan} rowSpan={cell.rowSpan}>{renderKnowledgeText(cell.text, query)}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function KnowledgeTableEvidenceModal({ result, table, query, onClose }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="knowledge-table-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="knowledge-table-evidence-modal" role="dialog" aria-modal="true" aria-label="放大查看表格证据" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="knowledge-table-evidence-modal-header">
+          <div>
+            <span>表格证据 · {table.rows.length} 行 · {table.columnCount} 列</span>
+            <strong>{result.headingPath || result.documentName}</strong>
+            <em>{result.documentName} · {getSourceLabel(result)}</em>
+          </div>
+          <button className="icon-button quiet" type="button" onClick={onClose} aria-label="关闭表格放大查看" title="关闭">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="knowledge-table-evidence-modal-body">
+          <div className="knowledge-result-table-scroll knowledge-table-evidence-modal-scroll">
+            <KnowledgeTableGrid table={table} query={query} />
+          </div>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }
 

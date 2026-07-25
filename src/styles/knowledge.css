@@ -640,6 +640,70 @@
   background: #ffffff;
 }
 
+.knowledge-table-evidence-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #738096;
+  font-size: 12px;
+}
+
+.knowledge-table-evidence-modal {
+  width: min(1400px, calc(100vw - 48px));
+  height: min(860px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 52px rgba(20, 32, 52, 0.24);
+}
+
+.knowledge-table-evidence-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5ecf5;
+}
+
+.knowledge-table-evidence-modal-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.knowledge-table-evidence-modal-header span,
+.knowledge-table-evidence-modal-header em {
+  color: #738096;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.knowledge-table-evidence-modal-header strong {
+  color: #25324a;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-table-evidence-modal-body {
+  min-height: 0;
+  padding: 16px 18px 18px;
+  overflow: hidden;
+  background: #f7f9fc;
+}
+
+.knowledge-table-evidence-modal-scroll {
+  height: 100%;
+}
+
+.knowledge-table-evidence-modal-scroll table {
+  font-size: 13px;
+}
+
 .knowledge-result-table-scroll table {
   width: max-content;
   min-width: 100%;
