@@ -59,24 +59,33 @@ async function requestMineruCompletion(payload) {
   const provider = String(process.env.MINERU_VLM_PROVIDER || "cloud").toLowerCase();
   const cloud = config.cloud;
   let cloudError = null;
-  if (provider !== "local" && Date.now() >= cloudDisabledUntil && isGeminiRuntime(cloud)) {
+  const cloudReady = provider === "cloud" || Date.now() >= cloudDisabledUntil;
+  if (provider !== "local" && cloudReady && isGeminiRuntime(cloud)) {
     try {
       const result = await requestChatCompletion(
         { ...cloud, timeoutMs: readTimeout("MINERU_GEMINI_VLM_TIMEOUT_MS", 90_000) },
-        payload,
+        normalizeMineruPayloadForGemini(payload),
         { allowLocal: false, ...(config.proxyUrl ? { proxyUrl: config.proxyUrl } : {}) },
       );
       cloudDisabledUntil = 0;
       return result;
     } catch (error) {
       cloudError = error;
-      cloudDisabledUntil = Date.now() + cloudCooldownMs;
+      console.warn(JSON.stringify({
+        event: "mineru_vlm_cloud_error",
+        message: error?.message || String(error),
+        upstreamStatus: error?.upstreamStatus || null,
+      }));
+      if (provider !== "cloud") cloudDisabledUntil = Date.now() + cloudCooldownMs;
       if (provider === "cloud") throw error;
     }
   }
 
   if (provider === "cloud") {
-    throw createGatewayError("Gemini VLM 当前不可用", 502);
+    throw createGatewayError(
+      `Gemini VLM 当前不可用：${cloudError?.message || "云端配置无效或未配置"}`,
+      502,
+    );
   }
 
   const local = {
@@ -94,6 +103,22 @@ async function requestMineruCompletion(payload) {
       502,
     );
   }
+}
+
+function normalizeMineruPayloadForGemini(payload) {
+  const next = { ...payload };
+  for (const key of [
+    "top_k",
+    "repetition_penalty",
+    "skip_special_tokens",
+    "vllm_xargs",
+    "priority",
+    "frequency_penalty",
+    "presence_penalty",
+  ]) {
+    delete next[key];
+  }
+  return next;
 }
 
 function isGeminiRuntime(runtime = {}) {
