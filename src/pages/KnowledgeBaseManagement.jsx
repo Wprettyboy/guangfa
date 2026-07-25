@@ -13,8 +13,9 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { apiRequest } from "../services/apiClient.js";
 import KnowledgeSourceLink from "../features/knowledge/KnowledgeSourceLink.jsx";
+import KnowledgeSearchFilters, { emptyKnowledgeSearchFilters } from "../features/knowledge/KnowledgeSearchFilters.jsx";
+import { searchKnowledgeBase } from "../services/knowledgeBase.js";
 
 function KnowledgeBaseManagement({
   canEdit = true,
@@ -34,6 +35,9 @@ function KnowledgeBaseManagement({
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const [searchDiagnostics, setSearchDiagnostics] = useState(null);
+  const [searchFilters, setSearchFilters] = useState({ ...emptyKnowledgeSearchFilters });
+  const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const [selectedResultId, setSelectedResultId] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
@@ -63,6 +67,13 @@ function KnowledgeBaseManagement({
       onSelectKnowledgeBase(selectedBase.id);
     }
   }, [onSelectKnowledgeBase, selectedBase, selectedKnowledgeBaseId]);
+
+  useEffect(() => {
+    setSearchFilters({ ...emptyKnowledgeSearchFilters });
+    setSearchResults([]);
+    setSearchDiagnostics(null);
+    setSelectedResultId("");
+  }, [selectedBase?.id]);
 
   async function handleCreateBase(event) {
     event.preventDefault();
@@ -114,14 +125,29 @@ function KnowledgeBaseManagement({
     event.preventDefault();
     if (!searchTerm.trim()) {
       setSearchResults([]);
+      setSearchDiagnostics(null);
       setSelectedResultId("");
       return;
     }
     setSearching(true);
+    setSearchError("");
     try {
-      const results = await searchKnowledge(searchTerm, projectId, selectedBase);
-      setSearchResults(results);
-      setSelectedResultId(results[0]?.id || "");
+      const result = await searchKnowledgeBase({
+        query: searchTerm,
+        projectId,
+        kbIds: selectedBase?.id ? [selectedBase.id] : [],
+        includeGlobal: false,
+        topK: 8,
+        filters: toSearchFilters(searchFilters),
+      });
+      setSearchResults(result.items);
+      setSearchDiagnostics(result.diagnostics);
+      setSelectedResultId(result.items[0]?.id || "");
+    } catch (error) {
+      setSearchError(error.message || "知识库检索失败");
+      setSearchResults([]);
+      setSearchDiagnostics(null);
+      setSelectedResultId("");
     } finally {
       setSearching(false);
     }
@@ -313,6 +339,13 @@ function KnowledgeBaseManagement({
               检索
             </button>
           </form>
+          <KnowledgeSearchFilters
+            documents={selectedBase?.documents || []}
+            value={searchFilters}
+            onChange={setSearchFilters}
+          />
+          {searchDiagnostics ? <KnowledgeSearchDiagnostics diagnostics={searchDiagnostics} /> : null}
+          {searchError ? <div className="knowledge-search-error">{searchError}</div> : null}
           {searchTerm.trim() ? (
             <div className="knowledge-result-summary">
               {searching ? "正在检索..." : `共 ${searchResults.length} 条结果`}
@@ -406,20 +439,32 @@ function createKnowledgeDisplayTerms(query) {
 function escapeKnowledgeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-async function searchKnowledge(query, projectId, knowledgeBase) {
-  const kbId = knowledgeBase?.id || "";
-  const result = await apiRequest("/api/knowledge-bases/search", {
-    method: "POST",
-    json: {
-      query,
-      projectId,
-      kbIds: kbId ? [kbId] : [],
-      includeGlobal: false,
-      topK: 8,
-    },
-    fallbackMessage: "知识库检索失败",
-  });
-  return Array.isArray(result) ? result : [];
+function toSearchFilters(filters) {
+  return {
+    documentIds: filters.documentIds || [],
+    pageFrom: filters.pageFrom === "" ? null : Number(filters.pageFrom),
+    pageTo: filters.pageTo === "" ? null : Number(filters.pageTo),
+    isTable: filters.isTable,
+    hasStar: filters.hasStar ? true : null,
+  };
+}
+
+function KnowledgeSearchDiagnostics({ diagnostics }) {
+  const mode = diagnostics.channels?.keyword
+    ? "关键词降级"
+    : diagnostics.channels?.sparse
+      ? "Dense + Sparse + FTS"
+      : "Dense + FTS";
+  const degraded = diagnostics.degradedReasons || [];
+  return (
+    <div className={degraded.length ? "knowledge-search-diagnostics degraded" : "knowledge-search-diagnostics"}>
+      <span>索引 {diagnostics.indexVersion || "不可用"}</span>
+      <span>{mode}</span>
+      <span>候选 {diagnostics.candidateCount || 0} / 返回 {diagnostics.finalCount || 0}</span>
+      <span>{diagnostics.elapsedMs || 0}ms</span>
+      {degraded.length ? <strong>降级：{degraded.join("、")}</strong> : null}
+    </div>
+  );
 }
 
 export default KnowledgeBaseManagement;

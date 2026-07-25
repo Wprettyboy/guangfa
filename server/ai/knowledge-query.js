@@ -45,7 +45,7 @@ async function searchKnowledgeForAi(runtime, { rawQuery = "", field = {}, messag
     kbIds,
     globalKbIds,
     includeGlobal: knowledgeOptions.includeGlobal,
-    topK: knowledgeOptions.topK || 6,
+    topK: normalizeKnowledgeTopK(knowledgeOptions.topK, 5),
   });
   return { snippets, rawQuery: fallbackQuery, query, plan };
 }
@@ -96,6 +96,11 @@ async function createKnowledgeRetrievalPlan(runtime, { rawQuery = "", field = {}
     ...plan,
     query: buildKnowledgeSearchQuery(plan),
   };
+}
+
+function normalizeKnowledgeTopK(value, fallback) {
+  const topK = Number(value);
+  return Number.isInteger(topK) && topK >= 1 && topK <= 10 ? topK : fallback;
 }
 
 function normalizeKnowledgeRetrievalPlan(parsed = {}, rawQuery = "") {

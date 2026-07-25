@@ -93,6 +93,10 @@ test("OpenAPI request schemas match the JSON and raw DOCX protocols", () => {
     { resourceTokenAuth: [] },
   ]);
   assert.equal(openApi.components.securitySchemes.resourceTokenAuth.name, "accessToken");
+
+  const knowledgeSearch = operationsById.get("knowledge.bases.search");
+  assert.equal(knowledgeSearch.requestBody.content["application/json"].schema.properties.filters.type, "object");
+  assert.equal(knowledgeSearch.responses["200"].content["application/json"].schema.type, "object");
 });
 
 test("OpenAPI advertises concrete MIME types for generated binary files", () => {

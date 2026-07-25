@@ -41,7 +41,6 @@ async function fillField(payload) {
   const materials = Array.isArray(payload?.materials) ? payload.materials : [];
   const rawRetrievalQuery = buildFieldRetrievalQuery(promptField);
   const knowledgeOptions = { ...(payload?.knowledgeOptions || {}) };
-  if (fillMode === "paragraph") knowledgeOptions.topK = Math.max(Number(knowledgeOptions.topK || 0), 10);
   const runtime = getAiRuntimeConfig();
   const knowledgeSearch = await searchKnowledgeForAi(runtime, {
     rawQuery: rawRetrievalQuery,

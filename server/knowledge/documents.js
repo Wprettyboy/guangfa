@@ -245,7 +245,7 @@ async function searchKnowledgeBaseDetailed(payload = {}) {
   if (!query) return { items: [], diagnostics: null };
   const database = await getKnowledgeDatabase();
   const metadata = readKnowledgeMetadata(database);
-  const topK = clampNumber(Number(payload.topK || 8), 1, 20);
+  const topK = clampNumber(Number(payload.topK || 8), 1, 10);
   const { allowedKbIds, eligibleChunks, liveChunkIds } = resolveKnowledgeSearchScope(payload, metadata, defaultProjectId);
   const retrievalChunks = filterRetrievalKnowledgeChunks(eligibleChunks);
   if (retrievalChunks.length === 0) return { items: [], diagnostics: null };

@@ -220,7 +220,8 @@ export default function App({ onResetApiCredential = null, principal = null }) {
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
   const [selectedProjectKnowledgeBaseIds, setSelectedProjectKnowledgeBaseIds] = useState([]);
   const [selectedGlobalKnowledgeBaseIds, setSelectedGlobalKnowledgeBaseIds] = useState([]);
-  const [knowledgeTopK, setKnowledgeTopK] = useState(8);
+  const [fillKnowledgeTopK, setFillKnowledgeTopK] = useState(5);
+  const [solutionKnowledgeTopK, setSolutionKnowledgeTopK] = useState(8);
   const appRef = useRef(null);
   const annotatedTemplateBufferRef = useRef(null);
   const filledTemplateBufferRef = useRef(null);
@@ -383,8 +384,8 @@ export default function App({ onResetApiCredential = null, principal = null }) {
     projectId: currentProjectId,
     kbIds: selectedFillKnowledgeBaseIds,
     globalKbIds: selectedGlobalKnowledgeBaseIds,
-    topK: knowledgeTopK,
-  }), [currentProjectId, knowledgeTopK, selectedFillKnowledgeBaseIds, selectedGlobalKnowledgeBaseIds]);
+    topK: fillKnowledgeTopK,
+  }), [currentProjectId, fillKnowledgeTopK, selectedFillKnowledgeBaseIds, selectedGlobalKnowledgeBaseIds]);
   const onlyOfficeAiKnowledgeContext = useMemo(() => {
     return {
       ...fillKnowledgeOptions,
@@ -2470,7 +2471,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
                 knowledgeBases={knowledgeBases}
                 selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
                 selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
-                knowledgeTopK={knowledgeTopK}
+                knowledgeTopK={solutionKnowledgeTopK}
                 currentProjectId={currentProjectId}
                 selectedField={selectedTemplateField}
                 selectedFieldId={selectedTemplateFieldId}
@@ -2502,7 +2503,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
                 onOpenComplexFillPanel={() => openAnnotateSidePanel("complex-fill")}
                 onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
                 onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
-                onKnowledgeTopKChange={setKnowledgeTopK}
+                onKnowledgeTopKChange={setSolutionKnowledgeTopK}
                 onAddComplexFillField={addComplexFillField}
                 onUpdateComplexFillField={updateComplexFillField}
                 onDeleteComplexFillField={deleteComplexFillField}
@@ -2546,11 +2547,11 @@ export default function App({ onResetApiCredential = null, principal = null }) {
                 knowledgeBases={knowledgeBases}
                 selectedProjectKnowledgeBaseIds={selectedProjectKnowledgeBaseIds}
                 selectedGlobalKnowledgeBaseIds={selectedGlobalKnowledgeBaseIds}
-                knowledgeTopK={knowledgeTopK}
+                knowledgeTopK={fillKnowledgeTopK}
                 aiKnowledgeContext={onlyOfficeAiKnowledgeContext}
                 onSelectedProjectKnowledgeBaseChange={setSelectedProjectKnowledgeBaseIds}
                 onSelectedGlobalKnowledgeBaseChange={setSelectedGlobalKnowledgeBaseIds}
-                onKnowledgeTopKChange={setKnowledgeTopK}
+                onKnowledgeTopKChange={setFillKnowledgeTopK}
                 onUpdateValue={updateFillFieldValue}
                 onConfirm={confirmField}
                 onCancelGeneration={cancelBulkFill}

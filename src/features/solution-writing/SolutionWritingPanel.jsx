@@ -503,7 +503,7 @@ function SolutionWritingPanel({
             <input
               type="number"
               min="1"
-              max="20"
+              max="10"
               value={knowledgeTopK}
               onChange={(event) => onKnowledgeTopKChange?.(Number(event.target.value) || 8)}
             />

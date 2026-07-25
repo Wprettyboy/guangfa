@@ -7,7 +7,7 @@ import {
   readKnowledgeDocumentFile,
   readKnowledgeDocumentPdf,
   reindexKnowledgeBase,
-  searchKnowledgeBase,
+  searchKnowledgeBaseDetailed,
 } from "../../knowledge/documents.js";
 import {
   listKnowledgeDocumentTables,
@@ -86,9 +86,10 @@ function registerKnowledgeRoutes() {
       globalKbIds: "array?",
       includeGlobal: "boolean?",
       topK: "integer?",
+      filters: "object?",
     },
-    responses: { 200: "array" },
-    handler: ({ body }) => searchKnowledgeBase(body),
+    responses: { 200: "object" },
+    handler: ({ body }) => searchKnowledgeBaseDetailed(body),
   });
 
   defineRoute({

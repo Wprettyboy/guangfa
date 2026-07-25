@@ -21,10 +21,10 @@ async function identifySolutionModules(payload = {}) {
   const knowledgeSearch = await searchKnowledgeForAi(runtime, {
     rawQuery: query,
     message: query,
-    knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 10) },
+    knowledgeOptions,
     debugFileName: "solution-writing-identify-query-last.json",
   });
-  const snippets = knowledgeSearch.snippets.slice(0, 10);
+  const snippets = knowledgeSearch.snippets.slice(0, knowledgeOptions.topK);
   const knowledgeText = formatKnowledgeSnippets(snippets);
   const systemPrompt = [
     "你是政企软件方案文档的高级产品经理。",
@@ -89,10 +89,10 @@ async function generateSolutionModuleSections(payload = {}) {
   const knowledgeSearch = await searchKnowledgeForAi(runtime, {
     rawQuery: query,
     message: query,
-    knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 10) },
+    knowledgeOptions,
     debugFileName: "solution-writing-generate-query-last.json",
   });
-  const snippets = knowledgeSearch.snippets.slice(0, 10);
+  const snippets = knowledgeSearch.snippets.slice(0, knowledgeOptions.topK);
   const knowledgeText = formatKnowledgeSnippets(snippets);
   const systemPrompt = [
     "你是政企软件方案文档的高级产品经理。",
@@ -202,10 +202,10 @@ async function testSolutionTaskKnowledge(payload = {}) {
   const knowledgeSearch = await searchKnowledgeForAi(runtime, {
     rawQuery: query,
     message: query,
-    knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 6) },
+    knowledgeOptions,
     debugFileName: "solution-writing-task-knowledge-test.json",
   });
-  const snippets = knowledgeSearch.snippets.slice(0, 8);
+  const snippets = knowledgeSearch.snippets.slice(0, knowledgeOptions.topK);
   return {
     ok: true,
     query: knowledgeSearch.query,
@@ -234,10 +234,10 @@ async function generateTaskCategoryPlan(runtime, { outlineText, category, userIn
     const knowledgeSearch = await searchKnowledgeForAi(runtime, {
       rawQuery: query,
       message: query,
-      knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 8) },
+      knowledgeOptions,
       debugFileName: `solution-writing-task-plan-knowledge-${safeDebugName(category.title)}-${batchIndex + 1}.json`,
     });
-    const snippets = knowledgeSearch.snippets.slice(0, 8);
+    const snippets = knowledgeSearch.snippets.slice(0, knowledgeOptions.topK);
     const knowledgeText = formatKnowledgeSnippets(snippets);
     const userPrompt = buildTaskPlanBatchPrompt({
       outlineText,
@@ -370,10 +370,10 @@ async function generateDraftCategory(runtime, { category, globalPrompt, knowledg
     const knowledgeSearch = await searchKnowledgeForAi(runtime, {
       rawQuery: query,
       message: query,
-      knowledgeOptions: { ...knowledgeOptions, topK: Math.max(Number(knowledgeOptions.topK || 0), 8) },
+      knowledgeOptions,
       debugFileName: `solution-writing-draft-knowledge-${safeDebugName(category.title)}-${batchIndex + 1}.json`,
     });
-    const snippets = knowledgeSearch.snippets.slice(0, 8);
+    const snippets = knowledgeSearch.snippets.slice(0, knowledgeOptions.topK);
     const knowledgeText = formatKnowledgeSnippets(snippets);
     const userPrompt = buildDraftBatchPrompt({
       category,
@@ -1012,7 +1012,7 @@ function normalizeKnowledgeOptions(options = {}) {
     projectId: value.projectId || "default-project",
     kbIds: Array.isArray(value.kbIds) ? value.kbIds.filter(Boolean) : [],
     globalKbIds: Array.isArray(value.globalKbIds) ? value.globalKbIds.filter(Boolean) : [],
-    topK: value.topK || 10,
+    topK: Number.isInteger(Number(value.topK)) && Number(value.topK) >= 1 && Number(value.topK) <= 10 ? Number(value.topK) : 8,
     bases: Array.isArray(value.bases) ? value.bases : [],
   };
 }

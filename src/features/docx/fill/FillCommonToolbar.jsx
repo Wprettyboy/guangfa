@@ -111,7 +111,9 @@ function FillCommonToolbar({
             disabled={!anyKnowledgeSelected}
             aria-label="知识库召回数量"
           >
+            <option value={1}>召回1段</option>
             <option value={3}>召回3段</option>
+            <option value={5}>召回5段</option>
             <option value={8}>召回8段</option>
             <option value={10}>召回10段</option>
           </select>

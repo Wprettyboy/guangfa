@@ -59,7 +59,7 @@ async function createKnowledgeChat(payload) {
         projectId: knowledgeOptions.projectId || "default-project",
         kbIds,
         globalKbIds: Array.isArray(knowledgeOptions.globalKbIds) ? knowledgeOptions.globalKbIds.filter(Boolean) : [],
-        topK: knowledgeOptions.topK || 8,
+        topK: Number(knowledgeOptions.topK) || 5,
         bases: knowledgeOptions.bases || [],
       },
       rawRetrievalQuery: knowledgeSearch.rawQuery,
