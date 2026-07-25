@@ -1,0 +1,24 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      libdrm-amdgpu1 \
+      libdrm2 \
+      libelf1 \
+      libexpat1 \
+      libgomp1 \
+      libnuma1 \
+      libstdc++6 \
+      python3.12 \
+      zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/retrieval_model_server.py /app/retrieval_model_server.py
+
+ENV HSA_ENABLE_DXG_DETECTION=1 \
+    HF_HUB_DISABLE_XET=1 \
+    LD_LIBRARY_PATH=/opt/rocm/lib:/usr/lib/wsl/lib \
+    PATH=/opt/guangfa-retrieval/venv/bin:/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PYTORCH_ALLOC_CONF=max_split_size_mb:128,garbage_collection_threshold:0.8

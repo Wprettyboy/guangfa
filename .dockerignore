@@ -3,5 +3,9 @@
 !docker/mineru/
 !docker/mineru/Dockerfile
 !docker/mineru/Dockerfile.amd
+!docker/retrieval/
+!docker/retrieval/Dockerfile.amd
+!docker/retrieval/compose.amd.yaml
 !scripts/
 !scripts/mineru_transformers_server.py
+!scripts/retrieval_model_server.py

@@ -60,13 +60,13 @@ if (Test-PortListening $PlantumlPort) {
 }
 
 if (Test-PortListening $EmbeddingPort) {
-  Write-Host "Embedding server already listening on http://127.0.0.1:$EmbeddingPort"
+  Write-Host "Retrieval server already listening on http://127.0.0.1:$EmbeddingPort"
 } else {
   Start-HiddenPowerShell `
-    -Name "Embedding server" `
-    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-local-embedding.ps1`" -SkipInstall" `
-    -Stdout "$LogDir\guangfa-embedding.log" `
-    -Stderr "$LogDir\guangfa-embedding.err.log"
+    -Name "Retrieval server" `
+    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-retrieval-docker-amd.ps1`"" `
+    -Stdout "$LogDir\guangfa-retrieval.log" `
+    -Stderr "$LogDir\guangfa-retrieval.err.log"
 }
 
 if (Test-PortListening $MineruPort) {
@@ -118,7 +118,7 @@ Write-Host "  OnlyOffice: $(if (Test-PortListening $OfficePort) { "OK http://127
 Write-Host "  PlantUML:   $(if (Test-PortListening $PlantumlPort) { "OK http://127.0.0.1:$PlantumlPort" } else { "NOT READY, see $LogDir\guangfa-plantuml.err.log" })"
 Write-Host "  Web app:   $(if (Test-PortListening $WebPort) { "OK http://127.0.0.1:$WebPort" } else { "NOT READY, see $LogDir\guangfa-vite.err.log" })"
 Write-Host "  Qwen LLM:  $(if (Test-PortListening $QwenPort) { "OK http://127.0.0.1:$QwenPort" } else { "NOT READY, see $LogDir\qwen36-rocm-server.err.log" })"
-Write-Host "  Embedding: $(if (Test-PortListening $EmbeddingPort) { "OK http://127.0.0.1:$EmbeddingPort" } else { "NOT READY, see $LogDir\guangfa-embedding.err.log" })"
+Write-Host "  Retrieval: $(if (Test-PortListening $EmbeddingPort) { "OK http://127.0.0.1:$EmbeddingPort" } else { "NOT READY, see $LogDir\guangfa-retrieval.err.log" })"
 Write-Host "  MinerU:    $(if (Test-PortListening $MineruPort) { "OK http://127.0.0.1:$MineruPort" } else { "NOT READY, see $LogDir\guangfa-mineru.err.log" })"
 
 if (Test-PortListening $WebPort) {

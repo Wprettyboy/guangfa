@@ -1,0 +1,57 @@
+name: guangfa-retrieval-amd
+
+services:
+  retrieval:
+    build:
+      context: C:/llm/guangfa-repo
+      dockerfile: docker/retrieval/Dockerfile.amd
+    image: guangfa/retrieval-amd:4.0.0-rocm7.2.1
+    container_name: guangfa-retrieval
+    restart: unless-stopped
+    devices:
+      - /dev/dxg:/dev/dxg
+    environment:
+      HSA_ENABLE_DXG_DETECTION: "1"
+      HF_HUB_DISABLE_XET: "1"
+      PYTORCH_ALLOC_CONF: "max_split_size_mb:128,garbage_collection_threshold:0.8"
+      RETRIEVAL_EMBEDDING_MODEL_PATH: /opt/guangfa-retrieval/models/bge-m3
+      RETRIEVAL_RERANKER_MODEL_PATH: /opt/guangfa-retrieval/models/bge-reranker-v2-m3
+      RETRIEVAL_EMBEDDING_BATCH_SIZE: "8"
+      RETRIEVAL_RERANK_BATCH_SIZE: "4"
+      RETRIEVAL_SPARSE_MIN_WEIGHT: "0.01"
+      RETRIEVAL_SPARSE_MAX_TERMS: "192"
+    volumes:
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+      - mineru-rocm:/opt/rocm:ro
+      - retrieval-runtime:/opt/guangfa-retrieval:ro
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ports:
+      - "127.0.0.1:${RETRIEVAL_PORT:-8000}:8000"
+    entrypoint: /opt/guangfa-retrieval/venv/bin/python
+    command:
+      - -m
+      - uvicorn
+      - retrieval_model_server:app
+      - --app-dir
+      - /app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    healthcheck:
+      test: ["CMD", "/opt/guangfa-retrieval/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 180
+      start_period: 5m
+
+volumes:
+  mineru-rocm:
+    external: true
+    name: guangfa-mineru-rocm
+  retrieval-runtime:
+    external: true
+    name: guangfa-retrieval-runtime
