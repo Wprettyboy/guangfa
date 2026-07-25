@@ -19,15 +19,18 @@ import { buildContextWindow, resolveChunkContext } from "../server/knowledge/sou
 
 test("MinerU v1 blocks preserve page, bbox, heading level and whole-table text", () => {
   const contentList = [
-    { type: "text", text: "第一章 招标要求", text_level: 1, page_idx: 0, bbox: [10, 20, 900, 80] },
+    { type: "text", text: "<sub>第一章</sub> 招标要求", text_level: 1, page_idx: 0, bbox: [10, 20, 900, 80] },
     { type: "table", table_body: "<table><tr><th>资格</th><th>要求</th></tr><tr><td>资质</td><td>一级</td></tr></table>", page_idx: 1, bbox: [20, 100, 950, 700] },
+    { type: "text", text: "注册资本<5000万且>1000万", page_idx: 1, bbox: [20, 720, 950, 760] },
   ];
   const blocks = buildBlocksFromMinerU(contentList, null);
-  assert.equal(blocks.length, 2);
+  assert.equal(blocks.length, 3);
   assert.equal(blocks[0].level, 1);
+  assert.equal(blocks[0].text, "第一章 招标要求");
   assert.deepEqual(blocks[0].bbox, [10, 20, 900, 80]);
   assert.match(blocks[1].text, /资格 \| 要求/);
   assert.match(blocks[1].text, /资质 \| 一级/);
+  assert.equal(blocks[2].text, "注册资本<5000万且>1000万");
 
   const pages = buildPagesFromMinerU(contentList, null);
   assert.deepEqual(pages.map((page) => page.page), [1, 2]);
@@ -38,7 +41,7 @@ test("MinerU v2 remains a fallback when the stable v1 list is absent", () => {
   const contentListV2 = [[
     {
       type: "title",
-      content: { title_content: [{ type: "text", content: "投标人资格" }], level: 2 },
+      content: { title_content: [{ type: "text", content: "<sup>投标人</sup>资格" }], level: 2 },
       bbox: [50, 80, 900, 130],
       anchor: "_Toc100",
     },

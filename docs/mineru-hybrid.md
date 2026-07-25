@@ -19,7 +19,7 @@ NVIDIA 容器拓扑：
 
 当前仓库内的 Dockerfile 基于 `vllm/vllm-openai:v0.21.0`，只适用于 Docker 内可见的 NVIDIA GPU。它不适用于本机的 AMD Radeon 8060S；本机的 `npm run mineru` 已固定走 WSL/ROCm，NVIDIA 主机使用 `npm run mineru:nvidia`。
 
-本机已确认是 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04，并已完成 AMD ROCm 7.2.1、ROCm PyTorch 和 MinerU 3.4.4 部署。部署就绪不等于自动切换业务解析器；`KNOWLEDGE_PARSER` 默认仍为 `legacy`，切换到 `mineru` 需要显式配置。
+本机已确认是 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04，并已完成 AMD ROCm 7.2.1、ROCm PyTorch 和 MinerU 3.4.4 部署。`KNOWLEDGE_PARSER` 默认使用 `mineru`；只有临时诊断旧链路时才显式改为 `legacy`。
 
 ## AMD WSL 部署与启动
 
@@ -56,7 +56,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `KNOWLEDGE_PARSER` | `legacy` | 业务链路验收时显式设为 `mineru`；MinerU 失败时不会自动回退。 |
+| `KNOWLEDGE_PARSER` | `mineru` | 默认使用 MinerU；设为 `legacy` 可临时诊断旧解析链路，MinerU 失败时不会自动回退。 |
 | `MINERU_API_URL` | `http://127.0.0.1:8010` | Node 服务调用 MinerU API 的地址。 |
 | `MINERU_BACKEND` | `hybrid-http-client` | 只接受 `hybrid-http-client` 或 `hybrid-engine`。 |
 | `MINERU_EFFORT` | `medium` | `medium` 或 `high`。 |
@@ -80,6 +80,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 - 一份真实 11 页 PDF 使用 `hybrid-http-client + effort=medium` 约 3 分 10 秒完成；结果 ZIP 包含 Markdown、middle JSON、content list V1/V2。
 - V1 共 70 个结构块，全部带 `page_idx` 与 `bbox`；V2 保留 11 页及标题级别。样本没有表格，因此表格抽取仍由结构化单元测试覆盖。
 - 将真实页面 PNG 直接提交给 VLM 后，模型正确返回中文文档标题、章节与正文，确认视觉模型不是仅健康检查可用。
+- 默认解析器切换后，真实知识库 API 验收得到 11 页、54 段和 65 个父子结构块；Embedding/ZVec 状态为“已索引”，查询命中包含 PDF 页码、bbox 和可读取的原文 PDF。验收临时知识库及索引已删除。
 
 ## 入库与溯源语义
 

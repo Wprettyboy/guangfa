@@ -188,14 +188,14 @@ function normalizeV2Block(item, pageIndex, index) {
     bbox: normalizeBbox(item?.bbox),
     level: Math.max(0, Number(item?.content?.level) || 0),
     anchor: String(item?.anchor || ""),
-    text: collectText(item?.content),
+    text: stripInlineFormatting(collectText(item?.content)),
   };
 }
 
 function extractV1Text(item = {}) {
   if (item.type === "table") return stripHtml(item.table_body || item.html || "");
   if (item.type === "image") return [...(item.image_caption || []), ...(item.image_footnote || [])].join("\n").trim();
-  return String(item.text || item.content || collectText(item)).trim();
+  return stripInlineFormatting(item.text || item.content || collectText(item));
 }
 
 function collectText(value) {
@@ -224,6 +224,16 @@ function stripHtml(value) {
     .replace(/&amp;/gi, "&")
     .replace(/[ \t]+/g, " ")
     .replace(/\n\s+/g, "\n")
+    .trim();
+}
+
+function stripInlineFormatting(value) {
+  return String(value || "")
+    .replace(/<\/?(?:sub|sup|b|strong|i|em|u|s|strike|span)(?:\s[^>]*)?>/gi, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
     .trim();
 }
 
