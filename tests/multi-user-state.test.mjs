@@ -207,6 +207,22 @@ test("knowledge uploads are idempotent and deleted documents cannot appear in se
   assert.equal(mappings.every((mapping) => !mapping.scopedKey.includes("upload-")), true);
 });
 
+test("knowledge upload validates large base64 payloads without overflowing the stack", async () => {
+  const knowledgeBase = await createKnowledgeBase({ name: "large-base64", scope: "project", projectId: "P-TEST" });
+  const payload = {
+    name: "large.pdf",
+    fileName: "large.pdf",
+    fileType: "application/pdf",
+    size: "4 MiB",
+    fileBase64: Buffer.alloc(4 * 1024 * 1024).toString("base64"),
+  };
+
+  await assert.rejects(
+    addKnowledgeDocument(knowledgeBase.id, payload),
+    (error) => error.statusCode === 415 && error.name !== "RangeError",
+  );
+});
+
 function template(id, fileName) {
   return {
     id,

@@ -607,13 +607,36 @@ function touchKnowledgeBase(database, kbId) {
 function decodeDocumentPayload(payload) {
   if (payload.fileBase64) {
     const value = String(payload.fileBase64).replace(/\s+/g, "");
-    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    if (!isValidBase64(value)) {
       throwHttpError("资料内容不是有效 Base64", 400);
     }
     return Buffer.from(value, "base64");
   }
   if (payload.text) return Buffer.from(String(payload.text), "utf8");
   return Buffer.alloc(0);
+}
+
+function isValidBase64(value) {
+  if (value.length === 0) return true;
+  if (value.length % 4 !== 0) return false;
+
+  let contentLength = value.length;
+  if (value.endsWith("=")) contentLength -= 1;
+  if (value[contentLength - 1] === "=") contentLength -= 1;
+
+  for (let index = 0; index < contentLength; index += 1) {
+    const code = value.charCodeAt(index);
+    const valid = (code >= 48 && code <= 57)
+      || (code >= 65 && code <= 90)
+      || (code >= 97 && code <= 122)
+      || code === 43
+      || code === 47;
+    if (!valid) return false;
+  }
+  for (let index = contentLength; index < value.length; index += 1) {
+    if (value[index] !== "=") return false;
+  }
+  return true;
 }
 
 function normalizeScopedIdempotencyKey(value, principal) {
