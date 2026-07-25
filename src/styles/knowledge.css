@@ -590,6 +590,32 @@
   display: flex;
 }
 
+.knowledge-result-detail-expanded-placeholder {
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: #738096;
+  text-align: center;
+}
+
+.knowledge-result-detail-modal {
+  width: min(1240px, calc(100vw - 56px));
+  height: min(900px, calc(100vh - 56px));
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #fbfcfe;
+  box-shadow: 0 22px 52px rgba(20, 32, 52, 0.24);
+}
+
+.knowledge-result-detail-modal-content {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
 .knowledge-result-detail-header {
   display: flex;
   justify-content: space-between;
@@ -1262,6 +1288,15 @@
 
   .knowledge-result-actions {
     justify-content: flex-start;
+  }
+
+  .knowledge-source-trace dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .knowledge-result-detail-modal {
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
   }
 }
 

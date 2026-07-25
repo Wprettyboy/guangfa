@@ -97,13 +97,54 @@ function SearchEmptyState({ searching, hasSearched }) {
 }
 
 function KnowledgeResultDetail({ result, query, onOpenImageEvidence }) {
-  const imageUrl = result?.sourceAssetId ? `/api/knowledge-document-images/${encodeURIComponent(result.sourceAssetId)}/file` : "";
-  const asset = useApiAssetUrl(imageUrl);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!expanded) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setExpanded(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [expanded]);
+
   if (!result) {
     return <div className="knowledge-result-detail empty-state compact"><Info size={17} /><span>选择检索结果后查看证据</span></div>;
   }
+  const content = (
+    <KnowledgeResultDetailContent
+      result={result}
+      query={query}
+      onOpenImageEvidence={onOpenImageEvidence}
+      expanded={expanded}
+      onExpand={() => setExpanded(true)}
+      onClose={() => setExpanded(false)}
+    />
+  );
+  if (!expanded) return content;
   return (
-    <article className="knowledge-result-detail">
+    <>
+      <div className="knowledge-result-detail knowledge-result-detail-expanded-placeholder">
+        <Maximize2 size={18} />
+        <span>详情已在浮窗中打开</span>
+        <button className="text-button" type="button" onClick={() => setExpanded(false)}>返回详情</button>
+      </div>
+      {createPortal(
+        <div className="knowledge-table-backdrop knowledge-detail-backdrop" role="presentation" onMouseDown={() => setExpanded(false)}>
+          <section className="knowledge-result-detail-modal" role="dialog" aria-modal="true" aria-label="放大查看检索详情" onMouseDown={(event) => event.stopPropagation()}>
+            {content}
+          </section>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+function KnowledgeResultDetailContent({ result, query, onOpenImageEvidence, expanded, onExpand, onClose }) {
+  const imageUrl = result?.sourceAssetId ? `/api/knowledge-document-images/${encodeURIComponent(result.sourceAssetId)}/file` : "";
+  const asset = useApiAssetUrl(imageUrl);
+  return (
+    <article className={expanded ? "knowledge-result-detail knowledge-result-detail-modal-content" : "knowledge-result-detail"}>
       <header className="knowledge-result-detail-header">
         <div>
           <span className="knowledge-result-type">{getResultTypeLabel(result)}</span>
@@ -118,6 +159,9 @@ function KnowledgeResultDetail({ result, query, onOpenImageEvidence }) {
               打开原图
             </button>
           ) : null}
+          <button className="icon-button quiet" type="button" onClick={expanded ? onClose : onExpand} aria-label={expanded ? "关闭详情浮窗" : "展开详情浮窗"} title={expanded ? "关闭详情浮窗" : "展开详情浮窗"}>
+            {expanded ? <X size={18} /> : <Maximize2 size={17} />}
+          </button>
         </div>
       </header>
       <KnowledgeSourceTrace result={result} />
