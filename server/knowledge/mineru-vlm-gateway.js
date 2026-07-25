@@ -56,8 +56,9 @@ function createMineruVlmGateway() {
 
 async function requestMineruCompletion(payload) {
   const config = await getModelConfig();
-  const provider = String(process.env.MINERU_VLM_PROVIDER || "gemini-first").toLowerCase();
+  const provider = String(process.env.MINERU_VLM_PROVIDER || "cloud").toLowerCase();
   const cloud = config.cloud;
+  let cloudError = null;
   if (provider !== "local" && Date.now() >= cloudDisabledUntil && isGeminiRuntime(cloud)) {
     try {
       const result = await requestChatCompletion(
@@ -68,6 +69,7 @@ async function requestMineruCompletion(payload) {
       cloudDisabledUntil = 0;
       return result;
     } catch (error) {
+      cloudError = error;
       cloudDisabledUntil = Date.now() + cloudCooldownMs;
       if (provider === "cloud") throw error;
     }
@@ -83,7 +85,15 @@ async function requestMineruCompletion(payload) {
     apiKey: "",
     timeoutMs: readTimeout("MINERU_LOCAL_VLM_TIMEOUT_MS", 10 * 60_000),
   };
-  return requestChatCompletion(local, payload, { allowLocal: true });
+  try {
+    return await requestChatCompletion(local, payload, { allowLocal: true });
+  } catch (localError) {
+    if (!cloudError) throw localError;
+    throw createGatewayError(
+      `Gemini VLM 调用失败：${cloudError.message || cloudError}；本地 MinerU VLM 回退失败：${localError.message || localError}`,
+      502,
+    );
+  }
 }
 
 function isGeminiRuntime(runtime = {}) {

@@ -76,7 +76,7 @@ function readMinerUConfig() {
   const apiUrl = String(process.env.MINERU_API_URL || defaultApiUrl).replace(/\/$/, "");
   const backend = String(process.env.MINERU_BACKEND || "hybrid-http-client");
   const effort = String(process.env.MINERU_EFFORT || "medium");
-  const provider = String(process.env.MINERU_VLM_PROVIDER || "gemini-first").toLowerCase();
+  const provider = String(process.env.MINERU_VLM_PROVIDER || "cloud").toLowerCase();
   if (!new Set(["local", "gemini-first", "cloud"]).has(provider)) {
     throw createMinerUError("MINERU_VLM_PROVIDER 只能是 local、gemini-first 或 cloud");
   }

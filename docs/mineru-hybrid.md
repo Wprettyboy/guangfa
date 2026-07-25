@@ -68,7 +68,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 | `MINERU_BACKEND` | `hybrid-http-client` | 只接受 `hybrid-http-client` 或 `hybrid-engine`。 |
 | `MINERU_EFFORT` | `medium` | `medium` 或 `high`。 |
 | `MINERU_VLM_URL` | 空（按 provider 选择） | 显式覆盖 MinerU API 的 VLM 地址；通常留空，让 Gemini 优先模式使用 `MINERU_VLM_GATEWAY_URL`，本地模式使用 `http://mineru-vlm:30000`。 |
-| `MINERU_VLM_PROVIDER` | `gemini-first` | VLM 路由：`gemini-first` 优先 Gemini、失败回退本地；`cloud` 只用 Gemini；`local` 只用本地。 |
+| `MINERU_VLM_PROVIDER` | `cloud` | VLM 路由：`cloud` 只用 Gemini；`gemini-first` 优先 Gemini、失败回退本地；`local` 只用本地。默认不启动本地 VLM。 |
 | `MINERU_VLM_GATEWAY_URL` | `http://host.docker.internal:5173` | Gemini 优先模式下，MinerU API 容器访问宿主 Node VLM 网关的地址。 |
 | `MINERU_VLM_LOCAL_BASE_URL` | `http://127.0.0.1:30000` | Node 网关回退本地 MinerU VLM 时使用的地址。 |
 | `MINERU_DOWNLOAD_SOURCE` | `modelscope` | WSL 首次部署下载 Pipeline 模型的来源。 |
