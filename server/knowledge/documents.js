@@ -10,11 +10,12 @@ import {
   filterRetrievalKnowledgeChunks,
 } from "./chunker.js";
 import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js";
+import { applyKnowledgeContextBudget } from "./context-budget.js";
 import { rebuildKnowledgeIndexV4 } from "./indexer.js";
 import { parseKnowledgeDocument } from "./parser.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
 import { searchKnowledgeV4 } from "./search.js";
-import { resolveChunkContext, resolveChunkSource } from "./source-resolver.js";
+import { resolveChunkSource } from "./source-resolver.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const filesDir = path.join(knowledgeDir, "files");
@@ -256,7 +257,17 @@ async function searchKnowledgeBaseDetailed(payload = {}) {
     filters: payload.filters,
     topK,
   });
-  return { ...result, items: result.items.map((item) => formatSearchResult(database, item)) };
+  const formattedItems = result.items.map((item) => formatSearchResult(database, item));
+  const context = applyKnowledgeContextBudget(database, formattedItems);
+  return {
+    items: context.items,
+    diagnostics: {
+      ...result.diagnostics,
+      contextTokensEstimated: context.contextTokensEstimated,
+      contextTruncated: context.contextTruncated,
+      droppedExpansionCount: context.droppedExpansionCount,
+    },
+  };
 }
 
 async function readKnowledgeDocumentFile(documentId) {
@@ -514,7 +525,7 @@ function formatSearchResult(database, item) {
     page: item.page || "",
     paragraphStart: item.paragraphStart || "",
     paragraphEnd: item.paragraphEnd || "",
-    text: resolveChunkContext(database, resolved),
+    text: resolved.sourceText || item.text || "",
     sourceText: resolved.sourceText,
     sourceLocation: resolved.sourceLocation,
     sourcePdfAvailable: resolved.sourcePdfAvailable,
