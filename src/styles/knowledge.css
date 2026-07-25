@@ -87,6 +87,12 @@
   font-size: 14px;
 }
 
+.knowledge-result-row strong {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .knowledge-result-row span,
 .knowledge-document-row span,
 .knowledge-result-detail span {
@@ -245,7 +251,7 @@
   padding: 10px 12px;
   border-bottom: 1px solid #eef2f7;
   display: grid;
-  grid-template-columns: 28px 1fr 34px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
 }
@@ -336,6 +342,11 @@
   color: #738096;
   font-size: 12px;
   background: #fbfcfe;
+}
+
+.knowledge-document-actions {
+  display: inline-flex;
+  gap: 4px;
 }
 
 .knowledge-search-filters {

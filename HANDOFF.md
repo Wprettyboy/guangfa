@@ -117,7 +117,8 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `scripts/start-onlyoffice.ps1`：启动 OnlyOffice Docker、拷贝字体、打补丁、写入 AI 配置。
 - `server/api/routes/office.routes.js`：Office 接口注册入口；handler 调用 `server/office.js` 和 `server/outline-probe.js`，不要在路由里写 Office 业务规则。
 - `server/office.js`：DOCX 上传保存、callback 保存、download-url、OnlyOffice 初始化配置等业务函数。
-- `server/knowledge/mineru-client.js`：MinerU 3.4.4 异步任务适配，提交 Hybrid 解析、轮询、下载并安全展开产物，将 content list 归一为页和结构块。
+- `server/knowledge/mineru-client.js`：MinerU 3.4.4 异步任务适配，提交 Hybrid 解析、轮询、下载并安全展开产物，将 content list 归一为页和结构块，并协调知识库图片 caption 写回。
+- `server/knowledge/image-caption.js`：知识库图片语义适配层；按 MinerU 精确产物路径读取图片，使用 Gemini 生成严格结构化说明，不生成 Mermaid。
 - `server/knowledge/docx-convert.js`：旧解析器的 OnlyOffice DOCX 转 PDF 适配；只有显式设置 `KNOWLEDGE_PARSER=legacy` 时才进入这条链路。
 - 知识解析默认使用 MinerU：PDF/图片走 Hybrid，DOCX/PPTX/XLSX 走 MinerU Office parser，TXT 仍本地解析。原格式文件用于溯源，不再把 Office 文件转换成 PDF；MinerU 失败时不自动回退旧解析器。部署和环境变量见 `docs/mineru-hybrid.md`。
 
@@ -217,6 +218,17 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - 结构切片采用标题/完整表格父块与有界检索子块；父块只用于 SQLite 上下文扩展，Embedding、ZVec 和关键词召回只处理子块。引用文本、页码和 bbox 始终绑定实际命中的子块。
 - `npm run mineru` 和 `scripts/start-all-dev.ps1` 在本机走 AMD Docker；`npm run mineru:wsl` 仅保留为运行时准备/诊断后备，NVIDIA Docker 路线保留为 `npm run mineru:nvidia`。AMD 日志使用 `docker compose -f docker/mineru/compose.amd.yaml logs` 查看。
 - 本轮验证通过 `npm test` 72/72、生产构建、混合检索/知识库选择检查、PowerShell/Node/Compose 语法与 `git diff --check`。
+
+### MinerU 图片语义与检索证据
+
+- MinerU 只负责提取图片文件、结构块、页码/bbox/anchor/标题路径；请求固定设置 `image_analysis=false`，不再调用本地 VLM 重建 Mermaid。Gemini `gemini-3.1-flash-lite` 只负责图片语义，结果写回 content list V1/V2 的 `image_caption`。
+- Gemini 结果必须是严格 JSON，`kind/summary/visibleText/actors/relations/keywords/uncertain` 均经过类型和长度校验；所有数组元素必须是字符串。格式不合格时图片进入显式失败态，不把 `[object Object]` 或宽松解析结果送入检索。
+- 图片与 MinerU 块只按规范化后的精确 artifact path 关联，不按标题、附近文本或模糊路径猜测；相同物理图片只按精确 SHA-256 复用一次 Gemini 结果。文档图片计数表示结构块出现次数，磁盘图片数可因重复引用更少。
+- `knowledge_document_images` 保存每个图片块的路径、哈希、状态、caption、模型、错误和定位；PDF 图片保留真实页码/bbox，Office 图片只保存结构 anchor/标题路径，不伪造 PDF 坐标。图片检索块通过 `source_asset_id` 指向对应原图。
+- 上传 API 在文件校验和落盘后返回 `202`，后台阶段依次为“解析中 / 图片解析 x/y / 索引中”；管理页只在存在活动阶段时每 2 秒轮询。图片部分失败时正文仍可检索，文档状态为“部分可用”，界面显示“图片 成功数/总数”并提供失败图片重试。
+- 图片重试只读取已保存的 MinerU JSON 和图片产物，不重新执行 MinerU；旧 MinerU 资料没有图片记录时，同一服务函数可基于现有产物执行一次图片补录。重试完成后统一重写 content list、SQLite 图片记录、图片切片和 V4 索引。
+- 管理页图片筛选使用精确 `blockTypes: ["image", "image-segment"]`；图片结果标记为“图片证据”，通过只读图片证据接口打开 `source_asset_id` 对应原图，不复用 `KnowledgeImagePicker` / OnlyOffice 图片插入链路。
+- 2026-07-25 真实 7.4MB DOCX 验收：13 个物理图片文件对应 14 个图片结构块，SHA 去重数为 13，最终 14/14 caption 成功；单图不合格 JSON 被明确置为失败，收紧提示词后重试成功。图片限定检索命中流程图，Reranker 首条得分约 0.9055，证据 ID、标题路径和原图绑定正常，MinerU 队列未执行本地图片 VLM。
 
 ### 方案编写工作台迁移
 

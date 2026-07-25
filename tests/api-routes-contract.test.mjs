@@ -142,8 +142,12 @@ test("state-changing contracts expose concurrency and idempotency outcomes", () 
   assert.equal(idempotencyKey?.schema.maxLength, 128);
   assert.equal(idempotencyKey?.schema.pattern, "^[\\x21-\\x7E]+$");
   assert.ok(knowledgeUpload.responses["200"]);
-  assert.ok(knowledgeUpload.responses["201"]);
+  assert.ok(knowledgeUpload.responses["202"]);
   assert.ok(knowledgeUpload.responses["409"]);
+
+  const retryImages = operationsById.get("knowledge.documents.retryImages");
+  assert.ok(retryImages.responses["202"]);
+  assert.deepEqual(routesById.get("knowledge.documents.retryImages")?.roles, ["editor"]);
 
   const templateList = operationsById.get("templates.list");
   assert.equal(templateList.responses["200"].headers.ETag.schema.type, "string");

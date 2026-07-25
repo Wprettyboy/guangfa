@@ -7,6 +7,7 @@ import {
   FileText,
   FolderOpen,
   Info,
+  Image,
   Loader2,
   RotateCcw,
   Search,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import KnowledgeSourceLink from "../features/knowledge/KnowledgeSourceLink.jsx";
 import KnowledgeSearchFilters, { emptyKnowledgeSearchFilters } from "../features/knowledge/KnowledgeSearchFilters.jsx";
-import { searchKnowledgeBase } from "../services/knowledgeBase.js";
+import { openKnowledgeImageEvidence, retryKnowledgeDocumentImages, searchKnowledgeBase } from "../services/knowledgeBase.js";
 
 function KnowledgeBaseManagement({
   canEdit = true,
@@ -30,6 +31,7 @@ function KnowledgeBaseManagement({
   onRefresh,
 }) {
   const fileInputRef = useRef(null);
+  const refreshRef = useRef(onRefresh);
   const [newBaseName, setNewBaseName] = useState("");
   const [newBaseScope, setNewBaseScope] = useState("project");
   const [uploading, setUploading] = useState(false);
@@ -42,6 +44,7 @@ function KnowledgeBaseManagement({
   const [selectedResultId, setSelectedResultId] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [retryingDocumentId, setRetryingDocumentId] = useState("");
   const [expandedKnowledgeGroups, setExpandedKnowledgeGroups] = useState({ project: true, global: true });
   const selectedBase = knowledgeBases.find((base) => base.id === selectedKnowledgeBaseId) || knowledgeBases[0];
   const selectedResult = searchResults.find((item) => item.id === selectedResultId) || searchResults[0];
@@ -61,6 +64,29 @@ function KnowledgeBaseManagement({
       items: knowledgeBases.filter((base) => base.scope === "global"),
     },
   ];
+  const hasActiveDocuments = knowledgeBases.some((base) =>
+    base.documents?.some((document) => Boolean(document.processingStage)));
+
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  }, [onRefresh]);
+
+  useEffect(() => {
+    if (!hasActiveDocuments) return undefined;
+    let refreshing = false;
+    const timer = window.setInterval(async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        await refreshRef.current?.();
+      } catch {
+        // A later poll can recover from a transient refresh failure.
+      } finally {
+        refreshing = false;
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveDocuments]);
 
   useEffect(() => {
     if (!selectedKnowledgeBaseId && selectedBase?.id) {
@@ -96,15 +122,37 @@ function KnowledgeBaseManagement({
     if (!selectedBase || fileList.length === 0 || uploading) return;
     setUploading(true);
     setUploadError("");
-    setUploadMessage(`正在解析并入库 ${fileList.length} 个资料...`);
+    setUploadMessage(`正在上传 ${fileList.length} 个资料...`);
     try {
       const count = await onUploadDocuments(selectedBase.id, fileList);
-      setUploadMessage(`已完成 ${count} 个资料入库，可在右侧检索预览中搜索验证。`);
+      setUploadMessage(`已接收 ${count} 个资料，解析和图片识别将在后台继续。`);
     } catch (error) {
       setUploadError(error.message || "资料入库失败，请检查文件格式或后端配置。");
       setUploadMessage("");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleRetryImages(document) {
+    if (!selectedBase || retryingDocumentId) return;
+    setRetryingDocumentId(document.id);
+    setUploadError("");
+    try {
+      await retryKnowledgeDocumentImages(selectedBase.id, document.id);
+      await onRefresh();
+    } catch (error) {
+      setUploadError(error.message || "图片语义解析重试失败");
+    } finally {
+      setRetryingDocumentId("");
+    }
+  }
+
+  async function handleOpenImageEvidence(imageId) {
+    try {
+      await openKnowledgeImageEvidence(imageId);
+    } catch (error) {
+      setSearchError(error.message || "图片证据读取失败");
     }
   }
 
@@ -134,7 +182,7 @@ function KnowledgeBaseManagement({
     try {
       const result = await searchKnowledgeBase({
         query: searchTerm,
-        projectId,
+        projectId: selectedBase?.scope === "global" ? projectId : selectedBase?.projectId || projectId,
         kbIds: selectedBase?.id ? [selectedBase.id] : [],
         includeGlobal: false,
         topK: 8,
@@ -303,13 +351,20 @@ function KnowledgeBaseManagement({
                   <FileText size={17} />
                   <div>
                     <strong>{document.name}</strong>
-                    <span>{document.size || "--"} · {document.chunkCount || 0} 片段 · {document.status}</span>
+                    <span>{formatDocumentStatus(document)}</span>
                     {document.error ? <em>{document.error}</em> : null}
                   </div>
                   {canEdit ? (
-                    <button className="icon-button quiet" onClick={() => onDeleteDocument(selectedBase.id, document.id)} aria-label={`删除${document.name}`}>
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="knowledge-document-actions">
+                      {document.imageFailedCount > 0 && !document.processingStage ? (
+                        <button className="icon-button quiet" onClick={() => handleRetryImages(document)} disabled={Boolean(retryingDocumentId)} aria-label={`重试${document.name}的图片解析`} title="重试失败图片">
+                          {retryingDocumentId === document.id ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}
+                        </button>
+                      ) : null}
+                      <button className="icon-button quiet" onClick={() => onDeleteDocument(selectedBase.id, document.id)} aria-label={`删除${document.name}`}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               ))
@@ -364,7 +419,7 @@ function KnowledgeBaseManagement({
                   key={result.id}
                   onClick={() => setSelectedResultId(result.id)}
                 >
-                  <strong>{result.documentName}</strong>
+                  <strong>{result.evidenceType === "image" ? <><Image size={14} /> 图片证据 · </> : null}{result.documentName}</strong>
                   <span>{result.scope === "global" ? "全局库" : "项目库"} · {result.sourceLocation || `片段${result.chunkIndex}`} · {result.mode} · 相关度 {result.score}</span>
                   <p>{renderKnowledgeText(getKnowledgePreview(result.sourceText || result.text, searchTerm), searchTerm)}</p>
                 </button>
@@ -380,6 +435,12 @@ function KnowledgeBaseManagement({
                 page={selectedResult.page}
                 available={selectedResult.sourcePdfAvailable}
               />
+              {selectedResult.sourceAssetId ? (
+                <button className="tool-button" type="button" onClick={() => handleOpenImageEvidence(selectedResult.sourceAssetId)}>
+                  <Image size={15} />
+                  查看图片证据
+                </button>
+              ) : null}
               <p>{renderKnowledgeText(selectedResult.sourceText || selectedResult.text, searchTerm)}</p>
             </div>
           ) : null}
@@ -446,7 +507,14 @@ function toSearchFilters(filters) {
     pageTo: filters.pageTo === "" ? null : Number(filters.pageTo),
     isTable: filters.isTable,
     hasStar: filters.hasStar ? true : null,
+    blockTypes: filters.blockTypes || [],
   };
+}
+
+function formatDocumentStatus(document) {
+  const parts = [document.size || "--", `${document.chunkCount || 0} 片段`, document.processingStage || document.status];
+  if (document.imageCount > 0) parts.push(`图片 ${document.imageCaptionCount || 0}/${document.imageCount}`);
+  return parts.join(" · ");
 }
 
 function KnowledgeSearchDiagnostics({ diagnostics }) {

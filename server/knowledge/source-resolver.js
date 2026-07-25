@@ -2,7 +2,8 @@ function resolveChunkSource(database, chunk) {
   if (!chunk?.documentId) return formatResolvedSource(chunk);
   const storedChunk = database.prepare(`
     SELECT source_text AS sourceText, block_type AS blockType, heading_path AS headingPath,
-      parent_chunk_id AS parentChunkId, bbox_json AS bboxJson, anchor, locator_grade AS locatorGrade
+      parent_chunk_id AS parentChunkId, bbox_json AS bboxJson, anchor, locator_grade AS locatorGrade,
+      source_asset_id AS sourceAssetId
     FROM knowledge_chunks
     WHERE id = ? AND document_id = ?
   `).get(chunk.id, chunk.documentId) || {};

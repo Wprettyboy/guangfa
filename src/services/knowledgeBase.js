@@ -26,7 +26,7 @@ async function postKnowledgeDocument(kbId, material) {
       size: material.size,
       fileBase64: material.fileBase64,
     },
-    timeoutMs: 60 * 60 * 1000,
+    timeoutMs: 2 * 60 * 1000,
     fallbackMessage: "资料入库失败",
   });
 }
@@ -63,6 +63,13 @@ async function searchKnowledgeImages(payload) {
   return Array.isArray(result) ? result : [];
 }
 
+async function retryKnowledgeDocumentImages(kbId, documentId) {
+  return apiRequest(`/api/knowledge-bases/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(documentId)}/retry-images`, {
+    method: "POST",
+    fallbackMessage: "图片语义解析重试失败",
+  });
+}
+
 async function searchKnowledgeBase(payload) {
   const result = await apiRequest("/api/knowledge-bases/search", {
     method: "POST",
@@ -94,6 +101,25 @@ async function openKnowledgeSourcePdf(documentId, page = 1) {
   }
 }
 
+async function openKnowledgeImageEvidence(imageId) {
+  const preview = window.open("about:blank", "_blank");
+  if (!preview) throw new Error("浏览器阻止了图片证据窗口，请允许弹出窗口后重试。");
+  preview.opener = null;
+  preview.document.body.textContent = "正在加载图片证据...";
+  try {
+    const blob = await apiRequest(`/api/knowledge-document-images/${encodeURIComponent(imageId)}/file`, {
+      responseType: "blob",
+      fallbackMessage: "图片证据读取失败",
+    });
+    const url = URL.createObjectURL(blob);
+    preview.location.replace(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  } catch (error) {
+    preview.close();
+    throw error;
+  }
+}
+
 function createUploadOperationId() {
   return globalThis.crypto?.randomUUID?.() || `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -103,8 +129,10 @@ export {
   postKnowledgeBase,
   postKnowledgeDocument,
   openKnowledgeSourcePdf,
+  openKnowledgeImageEvidence,
   removeKnowledgeDocument,
   removeKnowledgeBase,
+  retryKnowledgeDocumentImages,
   searchKnowledgeBase,
   searchKnowledgeTables,
   searchKnowledgeImages,

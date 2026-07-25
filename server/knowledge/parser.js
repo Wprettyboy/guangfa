@@ -6,10 +6,10 @@ import { parseWithMinerU } from "./mineru-client.js";
 
 const parseTimeoutMs = clampNumber(Number(process.env.KNOWLEDGE_PARSE_TIMEOUT_MS || 60000), 5000, 120000);
 
-async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName }) {
+async function parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName, onImageProgress }) {
   const ext = String(fileExt || "").toLowerCase();
   if (isMinerUEnabled() && ext !== "txt") {
-    return parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath });
+    return parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath, onImageProgress });
   }
   if (ext === "docx") {
     return withTimeout(

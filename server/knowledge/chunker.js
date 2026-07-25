@@ -184,6 +184,9 @@ function appendStructuredChunk({
     locatorGrade: hasLocator ? locatorIsContainer ? "container" : "exact" : headingPath ? "container" : "contextual",
     isTable: block.type === "table" ? 1 : 0,
     hasStar: hasExplicitStarMarker(sourceText) ? 1 : 0,
+    sourceAssetId: block.sourceAssetId || (block.type === "image" && Number.isInteger(block.imageIndex)
+      ? `${documentId}-I${String(block.imageIndex + 1).padStart(6, "0")}`
+      : ""),
     createdAt,
   };
   chunks.push(chunk);

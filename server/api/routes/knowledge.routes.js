@@ -5,8 +5,10 @@ import {
   deleteKnowledgeDocument,
   listKnowledgeBases,
   readKnowledgeDocumentFile,
+  readKnowledgeDocumentImage,
   readKnowledgeDocumentPdf,
   reindexKnowledgeBase,
+  retryKnowledgeDocumentImages,
   searchKnowledgeBaseDetailed,
 } from "../../knowledge/documents.js";
 import {
@@ -129,17 +131,56 @@ function registerKnowledgeRoutes() {
     },
     responses: {
       200: { schema: "object", description: "幂等重放已存在的资料" },
-      201: { schema: "object", description: "资料已创建" },
+      202: { schema: "object", description: "资料已接收并在后台解析" },
       409: { schema: "object", description: "幂等键冲突或资料处理期间被删除" },
     },
     handler: async ({ params, body, principal, request }) => {
       const document = await addKnowledgeDocument(params.kbId, body, {
         idempotencyKey: request.headers["idempotency-key"],
         principal,
+        background: true,
       });
       return {
-        statusCode: document.idempotentReplay ? 200 : 201,
+        statusCode: document.idempotentReplay ? 200 : 202,
         body: document,
+      };
+    },
+  });
+
+  defineRoute({
+    id: "knowledge.documents.retryImages",
+    method: "POST",
+    path: "/api/knowledge-bases/:kbId/documents/:documentId/retry-images",
+    tags: ["knowledge"],
+    summary: "重试资料中失败的图片语义解析",
+    roles: ["editor"],
+    responses: { 200: "object", 202: "object" },
+    handler: async ({ params }) => {
+      const result = await retryKnowledgeDocumentImages(params.kbId, params.documentId, { background: true });
+      return { statusCode: result.retryStarted ? 202 : 200, body: result };
+    },
+  });
+
+  defineRoute({
+    id: "knowledge.documentImages.file",
+    method: "GET",
+    path: "/api/knowledge-document-images/:imageId/file",
+    tags: ["knowledge"],
+    summary: "读取 MinerU 图片证据原图",
+    roles: ["viewer"],
+    responses: { 200: { schema: "binary", contentType: "image/*", description: "MinerU 提取的图片证据" } },
+    handler: async ({ params }) => {
+      const image = await readKnowledgeDocumentImage(params.imageId);
+      if (!image) {
+        const error = new Error("图片证据不存在");
+        error.statusCode = 404;
+        throw error;
+      }
+      return {
+        kind: "buffer",
+        buffer: image.buffer,
+        contentType: image.contentType,
+        headers: { "Cache-Control": "private, max-age=300" },
       };
     },
   });

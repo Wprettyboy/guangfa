@@ -151,9 +151,17 @@ function ensureDefaultKnowledgeBases(database) {
 }
 
 function ensureKnowledgeSchemaMigrations(database) {
-  if (!database.prepare("PRAGMA table_info(knowledge_documents)").all().some((column) => column.name === "page_source")) {
-    database.exec("ALTER TABLE knowledge_documents ADD COLUMN page_source TEXT DEFAULT ''");
-  }
+  const documentColumns = new Set(database.prepare("PRAGMA table_info(knowledge_documents)").all().map((column) => column.name));
+  const documentMigrations = [
+    ["page_source", "TEXT DEFAULT ''"],
+    ["processing_stage", "TEXT DEFAULT ''"],
+    ["image_count", "INTEGER DEFAULT 0"],
+    ["image_caption_count", "INTEGER DEFAULT 0"],
+    ["image_failed_count", "INTEGER DEFAULT 0"],
+  ];
+  documentMigrations.forEach(([name, definition]) => {
+    if (!documentColumns.has(name)) database.exec(`ALTER TABLE knowledge_documents ADD COLUMN ${name} ${definition}`);
+  });
   const chunkColumns = new Set(database.prepare("PRAGMA table_info(knowledge_chunks)").all().map((column) => column.name));
   const chunkMigrations = [
     ["source_text", "TEXT DEFAULT ''"],
@@ -165,6 +173,7 @@ function ensureKnowledgeSchemaMigrations(database) {
     ["locator_grade", "TEXT DEFAULT 'contextual'"],
     ["is_table", "INTEGER DEFAULT 0"],
     ["has_star", "INTEGER DEFAULT 0"],
+    ["source_asset_id", "TEXT DEFAULT ''"],
   ];
   chunkMigrations.forEach(([name, definition]) => {
     if (!chunkColumns.has(name)) database.exec(`ALTER TABLE knowledge_chunks ADD COLUMN ${name} ${definition}`);
@@ -228,11 +237,15 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   pdf_path TEXT,
   text_path TEXT,
   page_source TEXT DEFAULT '',
+  processing_stage TEXT DEFAULT '',
   status TEXT NOT NULL,
   index_mode TEXT NOT NULL,
   page_count INTEGER DEFAULT 0,
   paragraph_count INTEGER DEFAULT 0,
   chunk_count INTEGER DEFAULT 0,
+  image_count INTEGER DEFAULT 0,
+  image_caption_count INTEGER DEFAULT 0,
+  image_failed_count INTEGER DEFAULT 0,
   error TEXT,
   legacy INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
@@ -275,6 +288,27 @@ CREATE TABLE IF NOT EXISTS knowledge_document_paragraphs (
   FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS knowledge_document_images (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  image_index INTEGER NOT NULL,
+  artifact_path TEXT NOT NULL,
+  image_hash TEXT DEFAULT '',
+  page_number INTEGER,
+  bbox_json TEXT DEFAULT '',
+  anchor TEXT DEFAULT '',
+  status TEXT NOT NULL,
+  caption TEXT DEFAULT '',
+  metadata_json TEXT DEFAULT '',
+  model TEXT DEFAULT '',
+  prompt_version TEXT DEFAULT '',
+  error TEXT DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(document_id, image_index),
+  FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_chunks (
   id TEXT PRIMARY KEY,
   kb_id TEXT NOT NULL,
@@ -293,6 +327,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
   locator_grade TEXT DEFAULT 'contextual',
   is_table INTEGER DEFAULT 0,
   has_star INTEGER DEFAULT 0,
+  source_asset_id TEXT DEFAULT '',
   created_at INTEGER NOT NULL,
   FOREIGN KEY (kb_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
   FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
@@ -302,6 +337,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_bases_scope ON knowledge_bases(scope, p
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_kb ON knowledge_documents(kb_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_pages_document ON knowledge_document_pages(document_id, page_number);
 CREATE INDEX IF NOT EXISTS idx_knowledge_paragraphs_document ON knowledge_document_paragraphs(document_id, page_number, paragraph_index);
+CREATE INDEX IF NOT EXISTS idx_knowledge_images_document ON knowledge_document_images(document_id, status);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_kb ON knowledge_chunks(kb_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id);
 `;

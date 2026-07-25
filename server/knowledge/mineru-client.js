@@ -1,6 +1,7 @@
 import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import JSZip from "jszip";
+import { enrichMinerUImageCaptions } from "./image-caption.js";
 
 const defaultApiUrl = "http://127.0.0.1:8010";
 const terminalStatuses = new Set(["completed", "failed"]);
@@ -8,7 +9,7 @@ const maxResultBytes = 512 * 1024 * 1024;
 const maxArtifactBytes = 256 * 1024 * 1024;
 const maxArtifactEntries = 4096;
 
-async function parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath }) {
+async function parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath, onImageProgress }) {
   const config = readMinerUConfig();
   const source = await readFile(sourcePath);
   const task = await submitTask(config, source, fileName);
@@ -17,14 +18,56 @@ async function parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath })
   const artifacts = await extractMinerUArtifacts(resultZip, artifactsDir);
   const contentList = parseJsonArtifact(artifacts, "_content_list.json");
   const contentListV2 = parseJsonArtifact(artifacts, "_content_list_v2.json");
+  const imageAnalysis = await enrichMinerUImageCaptions({
+    artifacts,
+    contentList,
+    contentListV2,
+    onProgress: onImageProgress,
+  });
+  await rewriteJsonArtifact(artifacts, artifactsDir, "_content_list.json", contentList);
+  await rewriteJsonArtifact(artifacts, artifactsDir, "_content_list_v2.json", contentListV2);
+  await writeFile(path.join(artifactsDir, "image-analysis.json"), JSON.stringify(imageAnalysis.records, null, 2), "utf8");
   const pages = buildPagesFromMinerU(contentList, contentListV2);
   if (pages.length === 0) throw createMinerUError("MinerU 未返回可入库的文本内容");
   await writeFile(textPath, pages.map((page) => `第${page.page}页\n${page.text}`).join("\n\n"), "utf8");
   return {
     pages,
     blocks: buildBlocksFromMinerU(contentList, contentListV2),
+    images: imageAnalysis.records,
     parser: path.extname(fileName).toLowerCase() === ".pdf" ? `mineru-${config.effort}` : "mineru-office",
-    warning: "",
+    warning: imageAnalysis.warning,
+  };
+}
+
+async function retryMinerUImageCaptions({ artifactsDir, fileName, textPath, imagePaths, onImageProgress }) {
+  const artifacts = await readArtifactDirectory(artifactsDir);
+  const contentList = parseJsonArtifact(artifacts, "_content_list.json");
+  const contentListV2 = parseJsonArtifact(artifacts, "_content_list_v2.json");
+  const previousRecords = await readStoredImageRecords(artifactsDir);
+  const retried = await enrichMinerUImageCaptions({
+    artifacts,
+    contentList,
+    contentListV2,
+    onlyPaths: imagePaths,
+    onProgress: onImageProgress,
+  });
+  const retriedByIndex = new Map(retried.records.map((record) => [record.imageIndex, record]));
+  const records = previousRecords.map((record) => retriedByIndex.get(record.imageIndex) || record);
+  for (const record of retried.records) {
+    if (!records.some((item) => item.imageIndex === record.imageIndex)) records.push(record);
+  }
+  records.sort((left, right) => left.imageIndex - right.imageIndex);
+  await rewriteJsonArtifact(artifacts, artifactsDir, "_content_list.json", contentList);
+  await rewriteJsonArtifact(artifacts, artifactsDir, "_content_list_v2.json", contentListV2);
+  await writeFile(path.join(artifactsDir, "image-analysis.json"), JSON.stringify(records, null, 2), "utf8");
+  const pages = buildPagesFromMinerU(contentList, contentListV2);
+  await writeFile(textPath, pages.map((page) => `第${page.page}页\n${page.text}`).join("\n\n"), "utf8");
+  return {
+    pages,
+    blocks: buildBlocksFromMinerU(contentList, contentListV2),
+    images: records,
+    parser: path.extname(fileName).toLowerCase() === ".pdf" ? `mineru-${readMinerUConfig().effort}` : "mineru-office",
+    warning: records.some((record) => record.status === "failed") ? "部分图片仍未生成语义说明，可稍后重试。" : "",
   };
 }
 
@@ -56,7 +99,7 @@ async function submitTask(config, source, fileName) {
   form.append("lang_list", "ch");
   form.append("formula_enable", "true");
   form.append("table_enable", "true");
-  form.append("image_analysis", config.effort === "high" ? "true" : "false");
+  form.append("image_analysis", "false");
   if (config.backend === "hybrid-http-client") form.append("server_url", config.serverUrl);
   form.append("return_md", "true");
   form.append("return_middle_json", "true");
@@ -144,6 +187,15 @@ function parseJsonArtifact(artifacts, suffix) {
   }
 }
 
+async function rewriteJsonArtifact(artifacts, artifactsDir, suffix, value) {
+  if (value == null) return;
+  const name = [...artifacts.keys()].find((candidate) => candidate.endsWith(suffix));
+  if (!name) return;
+  const content = Buffer.from(JSON.stringify(value, null, 2), "utf8");
+  artifacts.set(name, content);
+  await writeFile(path.join(artifactsDir, ...name.split("/")), content);
+}
+
 function buildPagesFromMinerU(contentList, contentListV2) {
   const blocks = buildBlocksFromMinerU(contentList, contentListV2);
   const pages = new Map();
@@ -171,11 +223,13 @@ function buildBlocksFromMinerU(contentList, contentListV2) {
 function normalizeV1Block(item, index) {
   return {
     id: `B${String(index + 1).padStart(6, "0")}`,
+    imageIndex: index,
     type: String(item?.type || "text"),
     pageIndex: Math.max(0, Number(item?.page_idx) || 0),
     bbox: normalizeBbox(item?.bbox),
     level: Math.max(0, Number(item?.text_level) || 0),
     anchor: String(item?.anchor || ""),
+    imagePath: item?.type === "image" ? normalizeStoredArtifactPath(item.img_path || item.image_path || "") : "",
     text: extractV1Text(item),
   };
 }
@@ -183,13 +237,43 @@ function normalizeV1Block(item, index) {
 function normalizeV2Block(item, pageIndex, index) {
   return {
     id: `P${pageIndex + 1}-B${String(index + 1).padStart(4, "0")}`,
+    imageIndex: null,
     type: String(item?.type || "paragraph"),
     pageIndex,
     bbox: normalizeBbox(item?.bbox),
     level: Math.max(0, Number(item?.content?.level) || 0),
     anchor: String(item?.anchor || ""),
+    imagePath: item?.type === "image" ? normalizeStoredArtifactPath(item?.content?.image_source?.path || item.img_path || "") : "",
     text: stripInlineFormatting(collectText(item?.content)),
   };
+}
+
+async function readArtifactDirectory(rootDir) {
+  const artifacts = new Map();
+  async function visit(currentDir, prefix = "") {
+    const entries = await readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const absolutePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) await visit(absolutePath, relativePath);
+      else if (entry.isFile() && entry.name !== "image-analysis.json") artifacts.set(relativePath, await readFile(absolutePath));
+    }
+  }
+  await visit(rootDir);
+  return artifacts;
+}
+
+async function readStoredImageRecords(artifactsDir) {
+  try {
+    const value = JSON.parse(await readFile(path.join(artifactsDir, "image-analysis.json"), "utf8"));
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeStoredArtifactPath(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
 }
 
 function extractV1Text(item = {}) {
@@ -274,4 +358,5 @@ export {
   buildPagesFromMinerU,
   parseWithMinerU,
   readMinerUConfig,
+  retryMinerUImageCaptions,
 };

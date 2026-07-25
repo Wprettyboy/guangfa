@@ -6,11 +6,14 @@ const emptyKnowledgeSearchFilters = {
   pageFrom: "",
   pageTo: "",
   isTable: null,
+  blockTypes: [],
   hasStar: false,
 };
 
 function KnowledgeSearchFilters({ documents = [], value = emptyKnowledgeSearchFilters, onChange }) {
-  const tableMode = value.isTable == null ? "all" : value.isTable ? "table" : "body";
+  const tableMode = value.blockTypes?.some((type) => type === "image" || type === "image-segment")
+    ? "image"
+    : value.isTable == null ? "all" : value.isTable ? "table" : "body";
 
   function update(patch) {
     onChange?.({ ...value, ...patch });
@@ -47,13 +50,16 @@ function KnowledgeSearchFilters({ documents = [], value = emptyKnowledgeSearchFi
         />
       </label>
       <div className="knowledge-block-segments" role="group" aria-label="分段类型">
-        {[{ id: "all", label: "全部" }, { id: "body", label: "正文" }, { id: "table", label: "表格" }].map((item) => (
+        {[{ id: "all", label: "全部" }, { id: "body", label: "正文" }, { id: "table", label: "表格" }, { id: "image", label: "图片" }].map((item) => (
           <button
             className={tableMode === item.id ? "active" : ""}
             type="button"
             key={item.id}
             aria-pressed={tableMode === item.id}
-            onClick={() => update({ isTable: item.id === "all" ? null : item.id === "table" })}
+            onClick={() => update({
+              isTable: item.id === "all" || item.id === "image" ? null : item.id === "table",
+              blockTypes: item.id === "image" ? ["image", "image-segment"] : [],
+            })}
           >
             {item.label}
           </button>

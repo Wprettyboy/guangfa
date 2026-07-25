@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { validateKnowledgeDocument } from "../document-security.js";
+import { inspectRasterImage, validateKnowledgeDocument } from "../document-security.js";
 import {
   buildKnowledgeChunks,
   buildKnowledgeParagraphs,
@@ -13,6 +13,7 @@ import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js"
 import { applyKnowledgeContextBudget } from "./context-budget.js";
 import { rebuildKnowledgeIndexV4 } from "./indexer.js";
 import { parseKnowledgeDocument } from "./parser.js";
+import { retryMinerUImageCaptions } from "./mineru-client.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
 import { searchKnowledgeV4 } from "./search.js";
 import { resolveChunkSource } from "./source-resolver.js";
@@ -20,13 +21,15 @@ import { resolveChunkSource } from "./source-resolver.js";
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const filesDir = path.join(knowledgeDir, "files");
 const activeKnowledgeDocumentIds = new Set();
+const knowledgeDocumentTasks = new Map();
 const knowledgeDocumentSelectSql = `
   SELECT id, kb_id AS kbId, name, file_name AS fileName, file_ext AS fileExt, mime_type AS mimeType,
     file_size AS size, file_hash AS fileHash,
     file_path AS filePath, pdf_path AS pdfPath, text_path AS textPath,
-    page_source AS pageSource,
+    page_source AS pageSource, processing_stage AS processingStage,
     status, index_mode AS indexMode, page_count AS pageCount, paragraph_count AS paragraphCount,
-    chunk_count AS chunkCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
+    chunk_count AS chunkCount, image_count AS imageCount, image_caption_count AS imageCaptionCount,
+    image_failed_count AS imageFailedCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
   FROM knowledge_documents
 `;
 
@@ -126,19 +129,46 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
     await rm(documentDir, { recursive: true, force: true }).catch(() => {});
     return { ...hydrateKnowledgeDocument(database, reservation.row), idempotentReplay: true };
   }
+  if (reservation.replaced) {
+    await rm(path.join(filesDir, reservation.replaced.id), { recursive: true, force: true }).catch(() => {});
+  }
+  const processingContext = {
+    database, kb, documentId, kbId, fileName, fileExt, sourcePath, pdfPath, textPath, artifactsDir, documentDir, now,
+  };
+  if (options.background) {
+    startKnowledgeDocumentTask(documentId, () => processKnowledgeDocument(processingContext));
+    return { ...hydrateKnowledgeDocument(database, getKnowledgeDocumentRow(database, documentId)), idempotentReplay: false };
+  }
+  return processKnowledgeDocument(processingContext);
+}
+
+async function processKnowledgeDocument(context) {
+  const { database, kb, documentId, kbId, fileName, fileExt, sourcePath, pdfPath, textPath, artifactsDir, documentDir, now } = context;
   activeKnowledgeDocumentIds.add(documentId);
   try {
-    if (reservation.replaced) {
-      await rm(path.join(filesDir, reservation.replaced.id), { recursive: true, force: true }).catch(() => {});
-    }
-
     let chunks = [];
     let status = "解析失败";
     let indexMode = "keyword";
     let error = "";
     let parsed = null;
+    let imageProgress = { captioned: 0, failed: 0 };
     try {
-      parsed = await parseKnowledgeDocument({ documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName });
+      parsed = await parseKnowledgeDocument({
+        documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName,
+        onImageProgress: ({ completed, total, record }) => {
+          imageProgress = {
+            captioned: imageProgress.captioned + (record.status === "captioned" ? 1 : 0),
+            failed: imageProgress.failed + (record.status === "failed" ? 1 : 0),
+          };
+          updateDocumentProgress(database, {
+            documentId,
+            processingStage: `图片解析 ${completed}/${total}`,
+            imageCount: total,
+            imageCaptionCount: imageProgress.captioned,
+            imageFailedCount: imageProgress.failed,
+          });
+        },
+      });
       const paragraphs = buildKnowledgeParagraphs(parsed.pages);
       const chunkContext = {
         documentId,
@@ -148,10 +178,18 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
         projectId: kb.projectId || defaultProjectId,
         createdAt: now,
       };
+      bindImageAssets(parsed.blocks, parsed.images, documentId);
       chunks = parsed.blocks?.length
         ? buildStructuredKnowledgeChunks({ ...chunkContext, blocks: parsed.blocks, fileExt })
         : buildKnowledgeChunks({ ...chunkContext, paragraphs });
-      writeParsedDocument(database, { documentId, kbId, pages: parsed.pages, paragraphs, chunks, now });
+      writeParsedDocument(database, { documentId, kbId, fileExt, pages: parsed.pages, paragraphs, chunks, images: parsed.images || [], now });
+      updateDocumentProgress(database, {
+        documentId,
+        processingStage: "索引中",
+        imageCount: parsed.images?.length || 0,
+        imageCaptionCount: parsed.images?.filter((image) => image.status === "captioned").length || 0,
+        imageFailedCount: parsed.images?.filter((image) => image.status === "failed").length || 0,
+      });
       status = "关键词可用";
       error = parsed.warning || "未配置 embedding，当前资料仅支持关键词/全文检索。";
     } catch (parseError) {
@@ -162,7 +200,7 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
     if (parsed && chunks.length > 0) {
       try {
         await rebuildKnowledgeIndexV4(database);
-        status = "已索引";
+        status = parsed.images?.some((image) => image.status === "failed") ? "部分可用" : "已索引";
         indexMode = "dense-sparse-fts";
         error = parsed.warning || "";
       } catch (embeddingError) {
@@ -181,6 +219,9 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
         pageCount: countDocumentRows(database, "knowledge_document_pages", documentId),
         paragraphCount: countDocumentRows(database, "knowledge_document_paragraphs", documentId),
         chunkCount: chunks.length,
+        imageCount: parsed?.images?.length || 0,
+        imageCaptionCount: parsed?.images?.filter((image) => image.status === "captioned").length || 0,
+        imageFailedCount: parsed?.images?.filter((image) => image.status === "failed").length || 0,
         error,
       });
       touchKnowledgeBase(database, kbId);
@@ -195,6 +236,15 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
   } finally {
     activeKnowledgeDocumentIds.delete(documentId);
   }
+}
+
+function startKnowledgeDocumentTask(key, taskFactory) {
+  if (knowledgeDocumentTasks.has(key)) return knowledgeDocumentTasks.get(key);
+  const task = Promise.resolve(taskFactory())
+    .catch((error) => console.error("[knowledge] background task failed:", error?.message || error))
+    .finally(() => knowledgeDocumentTasks.delete(key));
+  knowledgeDocumentTasks.set(key, task);
+  return task;
 }
 
 async function deleteKnowledgeDocument(kbId, documentId) {
@@ -294,6 +344,150 @@ async function readKnowledgeDocumentPdf(documentId) {
   }
 }
 
+async function readKnowledgeDocumentImage(imageId) {
+  const database = await getKnowledgeDatabase();
+  const image = database.prepare(`
+    SELECT i.id, i.document_id AS documentId, i.artifact_path AS artifactPath
+    FROM knowledge_document_images i
+    JOIN knowledge_documents d ON d.id = i.document_id
+    WHERE i.id = ? AND d.deleted_at IS NULL
+  `).get(imageId);
+  if (!image?.artifactPath) return null;
+  const artifactsDir = path.join(filesDir, image.documentId, "mineru");
+  const imagePath = path.resolve(artifactsDir, ...String(image.artifactPath).replace(/\\/g, "/").split("/").filter(Boolean));
+  const relativePath = path.relative(artifactsDir, imagePath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) return null;
+  try {
+    const buffer = await readFile(imagePath);
+    return { buffer, contentType: inspectRasterImage(buffer, image.artifactPath) };
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function retryKnowledgeDocumentImages(kbId, documentId, options = {}) {
+  const database = await getKnowledgeDatabase();
+  const row = getKnowledgeDocumentRow(database, documentId);
+  if (!row || row.kbId !== kbId) throwHttpError("知识库资料不存在", 404);
+  const failedImages = database.prepare(`
+    SELECT artifact_path AS artifactPath
+    FROM knowledge_document_images
+    WHERE document_id = ? AND status = 'failed'
+    ORDER BY image_index
+  `).all(documentId);
+  const canBackfill = failedImages.length === 0
+    && row.imageCount === 0
+    && String(row.pageSource || "").startsWith("mineru-")
+    && existsSync(path.join(filesDir, row.id, "mineru"));
+  if (failedImages.length === 0 && !canBackfill) {
+    return { ...hydrateKnowledgeDocument(database, row), retryStarted: false };
+  }
+  const retryItems = canBackfill ? null : failedImages;
+  const taskKey = `retry:${documentId}`;
+  const taskFactory = () => processKnowledgeImageRetry({ database, row, failedImages: retryItems });
+  if (options.background !== false) {
+    updateDocumentProgress(database, {
+      documentId,
+      processingStage: canBackfill ? "图片补录" : `图片重试 0/${failedImages.length}`,
+      imageCount: row.imageCount,
+      imageCaptionCount: row.imageCaptionCount,
+      imageFailedCount: row.imageFailedCount,
+    });
+    startKnowledgeDocumentTask(taskKey, taskFactory);
+    return { ...hydrateKnowledgeDocument(database, getKnowledgeDocumentRow(database, documentId)), retryStarted: true };
+  }
+  return taskFactory();
+}
+
+async function processKnowledgeImageRetry({ database, row, failedImages }) {
+  const kb = getKnowledgeBaseRow(database, row.kbId);
+  const artifactsDir = path.join(filesDir, row.id, "mineru");
+  const imagePaths = failedImages ? new Set(failedImages.map((image) => image.artifactPath)) : undefined;
+  let completedCaptioned = 0;
+  let completedFailed = 0;
+  try {
+    const parsed = await retryMinerUImageCaptions({
+      artifactsDir,
+      fileName: row.fileName,
+      textPath: row.textPath,
+      imagePaths,
+      onImageProgress: ({ completed, total, record }) => {
+        completedCaptioned += record.status === "captioned" ? 1 : 0;
+        completedFailed += record.status === "failed" ? 1 : 0;
+        updateDocumentProgress(database, {
+          documentId: row.id,
+          processingStage: `图片重试 ${completed}/${total}`,
+          imageCount: row.imageCount || total,
+          imageCaptionCount: row.imageCaptionCount + completedCaptioned,
+          imageFailedCount: Math.max(0, total - completed + completedFailed),
+        });
+      },
+    });
+    const paragraphs = buildKnowledgeParagraphs(parsed.pages);
+    bindImageAssets(parsed.blocks, parsed.images, row.id);
+    const chunks = buildStructuredKnowledgeChunks({
+      documentId: row.id,
+      kbId: row.kbId,
+      documentName: row.fileName,
+      scope: kb.scope,
+      projectId: kb.projectId || defaultProjectId,
+      blocks: parsed.blocks,
+      fileExt: row.fileExt,
+      createdAt: Date.now(),
+    });
+    writeParsedDocument(database, {
+      documentId: row.id,
+      kbId: row.kbId,
+      fileExt: row.fileExt,
+      pages: parsed.pages,
+      paragraphs,
+      chunks,
+      images: parsed.images,
+      now: Date.now(),
+    });
+    updateDocumentProgress(database, {
+      documentId: row.id,
+      processingStage: "索引中",
+      imageCount: parsed.images.length,
+      imageCaptionCount: parsed.images.filter((image) => image.status === "captioned").length,
+      imageFailedCount: parsed.images.filter((image) => image.status === "failed").length,
+    });
+    let status = parsed.images.some((image) => image.status === "failed") ? "部分可用" : "已索引";
+    let indexMode = "dense-sparse-fts";
+    let error = parsed.warning || "";
+    try {
+      await rebuildKnowledgeIndexV4(database);
+    } catch (indexError) {
+      status = "关键词可用";
+      indexMode = "keyword";
+      error = `向量索引不可用：${indexError?.message || "未知错误"}`;
+    }
+    updateDocumentIndexState(database, {
+      documentId: row.id,
+      status,
+      indexMode,
+      pageSource: parsed.parser || row.pageSource,
+      pageCount: parsed.pages.length,
+      paragraphCount: paragraphs.length,
+      chunkCount: chunks.length,
+      imageCount: parsed.images.length,
+      imageCaptionCount: parsed.images.filter((image) => image.status === "captioned").length,
+      imageFailedCount: parsed.images.filter((image) => image.status === "failed").length,
+      error,
+    });
+    touchKnowledgeBase(database, row.kbId);
+    return { ...hydrateKnowledgeDocument(database, getKnowledgeDocumentRow(database, row.id)), retryStarted: true };
+  } catch (error) {
+    database.prepare(`
+      UPDATE knowledge_documents
+      SET processing_stage = '', error = ?, updated_at = ?
+      WHERE id = ? AND deleted_at IS NULL
+    `).run(`图片重试失败：${error?.message || "未知错误"}`, Date.now(), row.id);
+    throw error;
+  }
+}
+
 function isPdfSourceAvailable(row = {}) {
   if (["pdfjs", "onlyoffice-pdf"].includes(row.pageSource)) return true;
   return row.fileExt === "pdf" && String(row.pageSource || "").startsWith("mineru-");
@@ -303,9 +497,9 @@ function insertDocumentShell(database, document) {
   database.prepare(`
     INSERT INTO knowledge_documents (
       id, kb_id, name, file_name, file_ext, mime_type, file_size, file_hash,
-      file_path, pdf_path, text_path, status, index_mode, created_at, updated_at
+      file_path, pdf_path, text_path, processing_stage, status, index_mode, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     document.id,
     document.kbId,
@@ -318,6 +512,7 @@ function insertDocumentShell(database, document) {
     document.filePath,
     document.pdfPath,
     document.textPath,
+    "解析中",
     "解析中",
     "keyword",
     document.now,
@@ -399,13 +594,14 @@ function getKnowledgeDocumentByContent(database, kbId, fileHash, fileName) {
   `).get(kbId, fileHash, fileName);
 }
 
-function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, chunks, now }) {
+function writeParsedDocument(database, { documentId, kbId, fileExt, pages, paragraphs, chunks, images = [], now }) {
   runTransaction(database, () => {
     const document = getKnowledgeDocumentRow(database, documentId);
     if (!document || document.kbId !== kbId) throwHttpError("资料在解析过程中已被删除", 409);
     database.prepare("DELETE FROM knowledge_chunks WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_paragraphs WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_pages WHERE document_id = ?").run(documentId);
+    database.prepare("DELETE FROM knowledge_document_images WHERE document_id = ?").run(documentId);
     const insertPage = database.prepare(`
       INSERT INTO knowledge_document_pages (id, document_id, page_number, text, created_at)
       VALUES (?, ?, ?, ?, ?)
@@ -418,9 +614,16 @@ function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, ch
       INSERT INTO knowledge_chunks (
         id, kb_id, document_id, chunk_index, page_number, paragraph_start, paragraph_end, text,
         source_text, block_type, heading_path, parent_chunk_id, bbox_json, anchor, locator_grade,
-        is_table, has_star, created_at
+        is_table, has_star, source_asset_id, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertImage = database.prepare(`
+      INSERT INTO knowledge_document_images (
+        id, document_id, image_index, artifact_path, image_hash, page_number, bbox_json, anchor,
+        status, caption, metadata_json, model, prompt_version, error, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     pages.forEach((page) => {
       insertPage.run(`${documentId}-P${page.page}`, documentId, page.page, page.text, now);
@@ -441,7 +644,29 @@ function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, ch
         chunk.id, kbId, documentId, chunk.chunkIndex, chunk.page, chunk.paragraphStart, chunk.paragraphEnd, chunk.text,
         chunk.sourceText || chunk.text, chunk.blockType || "", chunk.headingPath || "", chunk.parentChunkId || "",
         chunk.bboxJson || "", chunk.anchor || "", chunk.locatorGrade || "contextual",
-        Number(chunk.isTable || 0), Number(chunk.hasStar || 0), now,
+        Number(chunk.isTable || 0), Number(chunk.hasStar || 0), chunk.sourceAssetId || "", now,
+      );
+    });
+    images.forEach((image) => {
+      const imageIndex = Number(image.imageIndex);
+      if (!Number.isSafeInteger(imageIndex) || imageIndex < 0) return;
+      insertImage.run(
+        `${documentId}-I${String(imageIndex + 1).padStart(6, "0")}`,
+        documentId,
+        imageIndex,
+        image.imagePath || "",
+        image.imageHash || "",
+        fileExt === "pdf" ? Math.max(1, Number(image.pageIndex) + 1 || 1) : null,
+        fileExt === "pdf" && Array.isArray(image.bbox) ? JSON.stringify(image.bbox) : "",
+        image.anchor || "",
+        image.status === "captioned" ? "captioned" : "failed",
+        image.caption || "",
+        image.metadata ? JSON.stringify(image.metadata) : "",
+        image.model || "",
+        image.promptVersion || "",
+        image.error || "",
+        now,
+        Date.now(),
       );
     });
   });
@@ -450,7 +675,8 @@ function writeParsedDocument(database, { documentId, kbId, pages, paragraphs, ch
 function updateDocumentIndexState(database, state) {
   database.prepare(`
     UPDATE knowledge_documents
-    SET status = ?, index_mode = ?, page_source = ?, page_count = ?, paragraph_count = ?, chunk_count = ?, error = ?, updated_at = ?
+    SET status = ?, processing_stage = '', index_mode = ?, page_source = ?, page_count = ?, paragraph_count = ?, chunk_count = ?,
+      image_count = ?, image_caption_count = ?, image_failed_count = ?, error = ?, updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
   `).run(
     state.status,
@@ -459,10 +685,49 @@ function updateDocumentIndexState(database, state) {
     state.pageCount,
     state.paragraphCount,
     state.chunkCount,
+    state.imageCount || 0,
+    state.imageCaptionCount || 0,
+    state.imageFailedCount || 0,
     state.error,
     Date.now(),
     state.documentId,
   );
+}
+
+function updateDocumentProgress(database, state) {
+  database.prepare(`
+    UPDATE knowledge_documents
+    SET processing_stage = ?, image_count = ?, image_caption_count = ?, image_failed_count = ?, updated_at = ?
+    WHERE id = ? AND deleted_at IS NULL
+  `).run(
+    state.processingStage || "",
+    state.imageCount || 0,
+    state.imageCaptionCount || 0,
+    state.imageFailedCount || 0,
+    Date.now(),
+    state.documentId,
+  );
+}
+
+function bindImageAssets(blocks = [], images = [], documentId) {
+  const recordsByPath = new Map();
+  for (const image of images) {
+    const imagePath = normalizeArtifactPath(image.imagePath);
+    if (!imagePath) continue;
+    if (!recordsByPath.has(imagePath)) recordsByPath.set(imagePath, []);
+    recordsByPath.get(imagePath).push(image);
+  }
+  for (const block of blocks || []) {
+    if (block.type !== "image") continue;
+    const records = recordsByPath.get(normalizeArtifactPath(block.imagePath));
+    const record = records?.shift();
+    if (!record || !Number.isSafeInteger(Number(record.imageIndex))) continue;
+    block.sourceAssetId = `${documentId}-I${String(Number(record.imageIndex) + 1).padStart(6, "0")}`;
+  }
+}
+
+function normalizeArtifactPath(value) {
+  return String(value || "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
 }
 
 function readKnowledgeMetadata(database) {
@@ -504,6 +769,7 @@ function readChunks(database) {
       c.locator_grade AS locatorGrade,
       c.is_table AS isTable,
       c.has_star AS hasStar,
+      c.source_asset_id AS sourceAssetId,
       c.created_at AS createdAt
     FROM knowledge_chunks c
     JOIN knowledge_documents d ON d.id = c.document_id
@@ -529,6 +795,8 @@ function formatSearchResult(database, item) {
     sourceText: resolved.sourceText,
     sourceLocation: resolved.sourceLocation,
     sourcePdfAvailable: resolved.sourcePdfAvailable,
+    sourceAssetId: resolved.sourceAssetId || "",
+    evidenceType: resolved.sourceAssetId ? "image" : resolved.blockType?.startsWith("table") ? "table" : "text",
     blockType: resolved.blockType || "",
     headingPath: resolved.headingPath || "",
     locator: resolved.locator || null,
@@ -544,8 +812,10 @@ function formatSearchResult(database, item) {
 function hydrateKnowledgeBase(database, base) {
   const documents = database.prepare(`
     SELECT id, kb_id AS kbId, name, file_name AS fileName, file_size AS size, status,
-      index_mode AS indexMode, page_source AS pageSource, page_count AS pageCount, paragraph_count AS paragraphCount,
-      chunk_count AS chunkCount, error, legacy, created_at AS createdAt, updated_at AS updatedAt
+      index_mode AS indexMode, page_source AS pageSource, processing_stage AS processingStage,
+      page_count AS pageCount, paragraph_count AS paragraphCount, chunk_count AS chunkCount,
+      image_count AS imageCount, image_caption_count AS imageCaptionCount, image_failed_count AS imageFailedCount,
+      error, legacy, created_at AS createdAt, updated_at AS updatedAt
     FROM knowledge_documents
     WHERE kb_id = ? AND deleted_at IS NULL
     ORDER BY created_at DESC
@@ -571,9 +841,13 @@ function hydrateKnowledgeDocument(database, row) {
     status: row.status,
     indexMode: row.indexMode,
     pageSource: row.pageSource || "",
+    processingStage: row.processingStage || "",
     pageCount: row.pageCount || 0,
     paragraphCount: row.paragraphCount || 0,
     chunkCount: row.chunkCount || 0,
+    imageCount: row.imageCount || 0,
+    imageCaptionCount: row.imageCaptionCount || 0,
+    imageFailedCount: row.imageFailedCount || 0,
     error: row.error || "",
     legacy: Boolean(row.legacy),
     createdAt: new Date(Number(row.createdAt || Date.now())).toISOString(),
@@ -661,7 +935,7 @@ function sanitizeFileName(value) {
 
 function summarizeIndexStatus(documents) {
   if (documents.length === 0) return "空";
-  if (documents.some((document) => document.status === "解析中" || document.status === "索引中")) return "索引中";
+  if (documents.some((document) => document.processingStage || document.status === "解析中" || document.status === "索引中")) return "索引中";
   if (documents.every((document) => document.status === "已索引")) return "已索引";
   return "部分可用";
 }
@@ -684,8 +958,11 @@ export {
   deleteKnowledgeDocument,
   listKnowledgeBases,
   readKnowledgeDocumentFile,
+  readKnowledgeDocumentImage,
   readKnowledgeDocumentPdf,
+  retryKnowledgeDocumentImages,
   reindexKnowledgeBase,
   searchKnowledgeBase,
   searchKnowledgeBaseDetailed,
+  writeParsedDocument,
 };
