@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { inspectRasterImage, validateKnowledgeDocument } from "../document-security.js";
+import { createOfficeDocumentFromBuffer } from "../office.js";
 import {
   buildKnowledgeChunks,
   buildKnowledgeParagraphs,
@@ -330,6 +331,36 @@ async function readKnowledgeDocumentFile(documentId) {
     if (error.code === "ENOENT") return null;
     throw error;
   }
+}
+
+async function createKnowledgeDocumentOfficePreview(documentId, { principal } = {}) {
+  const database = await getKnowledgeDatabase();
+  const row = getKnowledgeDocumentRow(database, documentId);
+  if (!row) throwHttpError("知识库资料不存在", 404);
+  if (String(row.fileExt || "").toLowerCase() !== "docx") {
+    throwHttpError("当前资料格式暂不支持原格式预览", 415);
+  }
+  if (!row.filePath || !existsSync(row.filePath)) {
+    const error = new Error("原文件已删除，请重新上传该资料");
+    error.statusCode = 410;
+    error.code = "KNOWLEDGE_SOURCE_FILE_MISSING";
+    throw error;
+  }
+  const buffer = await readFile(row.filePath).catch((error) => {
+    if (error?.code === "ENOENT") {
+      const missing = new Error("原文件已删除，请重新上传该资料");
+      missing.statusCode = 410;
+      missing.code = "KNOWLEDGE_SOURCE_FILE_MISSING";
+      throw missing;
+    }
+    throw error;
+  });
+  return createOfficeDocumentFromBuffer(buffer, {
+    title: row.fileName || row.name || "knowledge-source.docx",
+    previewId: `knowledge-source-${documentId}`,
+    principal,
+    readOnly: true,
+  });
 }
 
 async function readKnowledgeDocumentPdf(documentId) {
@@ -794,6 +825,8 @@ function formatSearchResult(database, item) {
     text: resolved.sourceText || item.text || "",
     sourceText: resolved.sourceText,
     sourceLocation: resolved.sourceLocation,
+    sourceFileAvailable: Boolean(resolved.sourceFileAvailable),
+    sourceFileType: resolved.sourceFileType || "",
     sourcePdfAvailable: resolved.sourcePdfAvailable,
     sourceAssetId: resolved.sourceAssetId || "",
     evidenceType: resolved.sourceAssetId ? "image" : resolved.blockType?.startsWith("table") ? "table" : "text",
@@ -958,6 +991,7 @@ export {
   deleteKnowledgeDocument,
   listKnowledgeBases,
   readKnowledgeDocumentFile,
+  createKnowledgeDocumentOfficePreview,
   readKnowledgeDocumentImage,
   readKnowledgeDocumentPdf,
   retryKnowledgeDocumentImages,

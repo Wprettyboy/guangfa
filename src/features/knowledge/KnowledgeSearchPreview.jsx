@@ -4,6 +4,7 @@ import { ChevronDown, Image, Info, Loader2, MapPin, Maximize2, Search, X } from 
 import useApiAssetUrl from "../../hooks/useApiAssetUrl.js";
 import { readKnowledgeTableEvidence } from "../../services/knowledgeBase.js";
 import KnowledgeSourceLink from "./KnowledgeSourceLink.jsx";
+import KnowledgeSourceViewer from "./KnowledgeSourceViewer.jsx";
 import KnowledgeSearchFilters from "./KnowledgeSearchFilters.jsx";
 
 const degradedReasonLabels = {
@@ -153,6 +154,7 @@ function KnowledgeResultDetailContent({ result, query, onOpenImageEvidence, expa
         </div>
         <div className="knowledge-result-actions">
           <KnowledgeSourceLink documentId={result.documentId} page={result.page} available={result.sourcePdfAvailable} />
+          <KnowledgeSourceViewer result={result} />
           {result.sourceAssetId ? (
             <button className="tool-button" type="button" onClick={() => onOpenImageEvidence(result.sourceAssetId)}>
               <Image size={15} />

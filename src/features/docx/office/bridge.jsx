@@ -193,6 +193,69 @@ function requestOnlyOfficeDocumentSave(trigger = "manual") {
   });
 }
 
+function requestOnlyOfficeGoToPage(page, timeoutMs = 6000) {
+  const targetPage = Math.max(1, Number(page) || 1);
+  const requestId = `source-page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise((resolve) => {
+    let done = false;
+    let cancelPost = () => {};
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      cancelPost();
+      resolve(result || { ok: false, requestId, page: targetPage });
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-page-jumped") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, requestId, page: targetPage, timeout: true }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    cancelPost = postActiveOnlyOfficeFrames({
+      source: "guangfa-parent",
+      action: "go-to-page",
+      requestId,
+      page: targetPage,
+    }, 8);
+  });
+}
+
+function requestOnlyOfficeGoToBookmark(bookmarkName, timeoutMs = 6000) {
+  const targetBookmark = String(bookmarkName || "").trim();
+  if (!targetBookmark) return Promise.resolve({ ok: false, error: "书签名称为空" });
+  const requestId = `source-bookmark-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return new Promise((resolve) => {
+    let done = false;
+    let cancelPost = () => {};
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      cancelPost();
+      resolve(result || { ok: false, requestId, bookmarkName: targetBookmark });
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-bookmark-jumped") return;
+      if (data.result?.requestId !== requestId) return;
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish({ ok: false, requestId, bookmarkName: targetBookmark, timeout: true }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    cancelPost = postActiveOnlyOfficeFrames({
+      source: "guangfa-parent",
+      action: "go-to-bookmark",
+      requestId,
+      bookmarkName: targetBookmark,
+    }, 8);
+  });
+}
+
 function requestOnlyOfficeApplyLayoutFormat(plan, options = {}) {
   const requestId = options.requestId || `layout-${Date.now()}-${++onlyOfficeLayoutRequestSeq}`;
   const timeoutMs = Number(options.timeoutMs || 15000);
@@ -897,6 +960,8 @@ export {
   requestOnlyOfficeDeleteComplexFillAnchor,
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
+  requestOnlyOfficeGoToPage,
+  requestOnlyOfficeGoToBookmark,
   requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeFillField,
   requestOnlyOfficeFillComplexFillField,

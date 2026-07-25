@@ -32,7 +32,6 @@ async function getOfficeHealth() {
 }
 
 async function createOfficeDocument(request, query, principal) {
-  const onlyOfficeServerUrl = getOnlyOfficeServerUrl();
   await mkdir(officeDocsDir, { recursive: true });
   await cleanupOfficeDocuments();
   scheduleOfficeCleanup();
@@ -42,33 +41,63 @@ async function createOfficeDocument(request, query, principal) {
   const filePath = getOfficeDocPath(id);
   try {
     await writeRequestBody(request, filePath);
-    const [fileStat, fileBuffer] = await Promise.all([stat(filePath), readFile(filePath)]);
-    await loadSafeDocx(fileBuffer, { maxArchiveBytes: maxOfficeDocumentBytes });
-    const sha = createHash("sha256").update(fileBuffer).digest("hex").slice(0, 12);
-    const key = createOfficeDocumentKey({ id, fileStat, previewId, sha });
-    const now = Date.now();
-    await writeOfficeDocumentMetadata({
-      id,
-      key,
-      title,
-      createdAt: now,
-      expiresAt: now + officeDocumentTtlMs,
-      lastCallbackAt: 0,
-      lastCallbackIssuedAt: 0,
-      lastStatus: 0,
-      ownerId: normalizeOfficeOwnerId(principal),
-    });
-    console.log(`[office-doc] post id=${id} previewId=${previewId || "-"} title=${title} bytes=${fileStat.size} sha=${sha}`);
-    return {
-      id,
-      config: buildOnlyOfficeConfig({ id, title, key }),
-      serverUrl: onlyOfficeServerUrl,
-      available: await isOnlyOfficeAvailable(),
-    };
+    return finalizeOfficeDocument({ id, filePath, title, previewId, principal, readOnly: false });
   } catch (error) {
     await removeOfficeDocument(id);
     throw error;
   }
+}
+
+async function createOfficeDocumentFromBuffer(buffer, { title = "document.docx", previewId = "", principal, readOnly = true } = {}) {
+  const fileBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || "");
+  if (!fileBuffer.length) throw createHttpError("Office 文档内容为空", 400);
+  if (fileBuffer.length > maxOfficeDocumentBytes) throw createHttpError("DOCX 文件过大", 413);
+  await mkdir(officeDocsDir, { recursive: true });
+  await cleanupOfficeDocuments();
+  scheduleOfficeCleanup();
+  const id = randomUUID();
+  const filePath = getOfficeDocPath(id);
+  try {
+    await writeFile(filePath, fileBuffer, { mode: 0o600 });
+    return finalizeOfficeDocument({
+      id,
+      filePath,
+      title: sanitizeFileName(title),
+      previewId,
+      principal,
+      readOnly,
+    });
+  } catch (error) {
+    await removeOfficeDocument(id);
+    throw error;
+  }
+}
+
+async function finalizeOfficeDocument({ id, filePath, title, previewId, principal, readOnly }) {
+  const onlyOfficeServerUrl = getOnlyOfficeServerUrl();
+  const [fileStat, fileBuffer] = await Promise.all([stat(filePath), readFile(filePath)]);
+  await loadSafeDocx(fileBuffer, { maxArchiveBytes: maxOfficeDocumentBytes });
+  const sha = createHash("sha256").update(fileBuffer).digest("hex").slice(0, 12);
+  const key = createOfficeDocumentKey({ id, fileStat, previewId, sha });
+  const now = Date.now();
+  await writeOfficeDocumentMetadata({
+    id,
+    key,
+    title,
+    createdAt: now,
+    expiresAt: now + officeDocumentTtlMs,
+    lastCallbackAt: 0,
+    lastCallbackIssuedAt: 0,
+    lastStatus: 0,
+    ownerId: normalizeOfficeOwnerId(principal),
+  });
+  console.log(`[office-doc] post id=${id} previewId=${previewId || "-"} title=${title} bytes=${fileStat.size} sha=${sha} readOnly=${Boolean(readOnly)}`);
+  return {
+    id,
+    config: buildOnlyOfficeConfig({ id, title, key, readOnly }),
+    serverUrl: onlyOfficeServerUrl,
+    available: await isOnlyOfficeAvailable(),
+  };
 }
 
 async function downloadOfficeUrl(body) {
@@ -175,7 +204,7 @@ async function applyOfficeCallback(id, body, metadata, issuedAt = 0) {
   return { error: 0 };
 }
 
-function buildOnlyOfficeConfig({ id, title, key }) {
+function buildOnlyOfficeConfig({ id, title, key, readOnly = false }) {
   const accessToken = signOnlyOfficeJwt({ scope: "office-file", documentId: id, key }, officeAccessTokenTtlSeconds);
   const fileUrl = `${publicBaseUrl}/api/v1/office/documents/${id}/file?accessToken=${encodeURIComponent(accessToken)}`;
   const config = {
@@ -187,14 +216,14 @@ function buildOnlyOfficeConfig({ id, title, key }) {
       title,
       url: fileUrl,
       permissions: {
-        edit: true,
-        review: true,
+        edit: !readOnly,
+        review: !readOnly,
         download: true,
         print: true,
       },
     },
     editorConfig: {
-      mode: "edit",
+      mode: readOnly ? "view" : "edit",
       lang: "zh-CN",
       callbackUrl: `${publicBaseUrl}/api/v1/office/callback/${id}`,
       aiPluginSettings: JSON.stringify(buildOnlyOfficeAiPluginSettings()),
@@ -662,6 +691,7 @@ function clampNumber(value, min, max) {
 export {
   assertOfficeDocumentId,
   createOfficeDocument,
+  createOfficeDocumentFromBuffer,
   downloadOfficeUrl,
   getOfficeHealth,
   handleOfficeCallback,

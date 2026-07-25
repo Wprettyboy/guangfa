@@ -3629,6 +3629,24 @@
     if (data.source === "guangfa-parent" && data.action === "request-outline") {
       postOutline("request", data.requestId);
     }
+    if (data.source === "guangfa-parent" && data.action === "go-to-page") {
+      const page = Math.max(1, Number(data.page) || 1);
+      const ok = restoreVisiblePage(page);
+      window.parent?.postMessage({
+        source: "guangfa-onlyoffice-custom",
+        action: "onlyoffice-page-jumped",
+        result: { ok, page, requestId: data.requestId || "" },
+      }, "*");
+    }
+    if (data.source === "guangfa-parent" && data.action === "go-to-bookmark") {
+      const bookmarkName = String(data.bookmarkName || "");
+      const result = selectBookmarkRange(getBookmarkManager(), bookmarkName);
+      window.parent?.postMessage({
+        source: "guangfa-onlyoffice-custom",
+        action: "onlyoffice-bookmark-jumped",
+        result: { ...result, requestId: data.requestId || "" },
+      }, "*");
+    }
     if (data.source === "guangfa-parent" && data.action === "add-field-bookmark") {
       const result = addBookmarkToCurrentSelection(data.field || {});
       window.parent?.postMessage({ source: "guangfa-onlyoffice-custom", action: "field-bookmark", result }, "*");

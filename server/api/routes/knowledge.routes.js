@@ -3,6 +3,7 @@ import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   deleteKnowledgeDocument,
+  createKnowledgeDocumentOfficePreview,
   listKnowledgeBases,
   readKnowledgeDocumentFile,
   readKnowledgeDocumentImage,
@@ -258,6 +259,17 @@ function registerKnowledgeRoutes() {
         },
       };
     },
+  });
+
+  defineRoute({
+    id: "knowledge.documents.officePreview",
+    method: "POST",
+    path: "/api/knowledge-documents/:documentId/office-preview",
+    tags: ["knowledge", "office"],
+    summary: "创建知识库原始 DOCX 只读预览",
+    roles: ["viewer"],
+    responses: { 200: "object", 404: "object", 410: "object", 415: "object" },
+    handler: ({ params, principal }) => createKnowledgeDocumentOfficePreview(params.documentId, { principal }),
   });
 
   defineRoute({

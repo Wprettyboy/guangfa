@@ -107,6 +107,14 @@ async function openKnowledgeSourcePdf(documentId, page = 1) {
   }
 }
 
+async function createKnowledgeDocumentOfficePreview(documentId) {
+  return apiRequest(`/api/knowledge-documents/${encodeURIComponent(documentId)}/office-preview`, {
+    method: "POST",
+    timeoutMs: 120_000,
+    fallbackMessage: "原始 DOCX 预览初始化失败",
+  });
+}
+
 async function openKnowledgeImageEvidence(imageId) {
   const preview = window.open("about:blank", "_blank");
   if (!preview) throw new Error("浏览器阻止了图片证据窗口，请允许弹出窗口后重试。");
@@ -135,6 +143,7 @@ export {
   postKnowledgeBase,
   postKnowledgeDocument,
   openKnowledgeSourcePdf,
+  createKnowledgeDocumentOfficePreview,
   openKnowledgeImageEvidence,
   removeKnowledgeDocument,
   removeKnowledgeBase,

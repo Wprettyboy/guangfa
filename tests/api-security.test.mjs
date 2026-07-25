@@ -12,6 +12,7 @@ import { inspectRasterImage, loadSafeDocx, validateKnowledgeDocument } from "../
 import { convertDocxToPdf } from "../server/knowledge/docx-convert.js";
 import {
   createOfficeDocument,
+  createOfficeDocumentFromBuffer,
   handleOfficeCallback,
   readOfficeDocumentFile,
   signOnlyOfficeJwt,
@@ -298,6 +299,19 @@ test("OnlyOffice conversion commands carry a signed inbox JWT", async () => {
     else process.env.ONLYOFFICE_JWT_SECRET = previousSecret;
     await rm(outputPath, { force: true });
   }
+});
+
+test("knowledge source Office previews are read-only", async () => {
+  const buffer = await buildMinimalDocx("原文预览");
+  const preview = await createOfficeDocumentFromBuffer(buffer, {
+    title: "source-preview.docx",
+    previewId: "knowledge-source-test",
+    principal: { id: "viewer-1", roles: ["viewer"], authentication: "bearer" },
+    readOnly: true,
+  });
+  assert.equal(preview.config.document.permissions.edit, false);
+  assert.equal(preview.config.document.permissions.review, false);
+  assert.equal(preview.config.editorConfig.mode, "view");
 });
 
 async function buildMinimalDocx(text = "") {

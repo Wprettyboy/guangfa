@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 function resolveChunkSource(database, chunk) {
   if (!chunk?.documentId) return formatResolvedSource(chunk);
   const storedChunk = database.prepare(`
@@ -9,7 +11,7 @@ function resolveChunkSource(database, chunk) {
   `).get(chunk.id, chunk.documentId) || {};
   chunk = { ...storedChunk, ...chunk };
   const document = database.prepare(`
-    SELECT page_source AS pageSource, file_ext AS fileExt
+    SELECT page_source AS pageSource, file_ext AS fileExt, file_path AS filePath
     FROM knowledge_documents
     WHERE id = ? AND deleted_at IS NULL
   `).get(chunk.documentId);
@@ -39,6 +41,8 @@ function resolveChunkSource(database, chunk) {
   return formatResolvedSource({
     ...chunk,
     sourceText: chunk.sourceText || sourceText || chunk.text || "",
+    sourceFileAvailable: Boolean(document?.filePath && existsSync(document.filePath)),
+    sourceFileType: document?.fileExt || "",
     sourcePdfAvailable: ["pdfjs", "onlyoffice-pdf"].includes(document?.pageSource)
       || (document?.fileExt === "pdf" && String(document?.pageSource || "").startsWith("mineru-")),
   });
@@ -125,6 +129,8 @@ function formatResolvedSource(chunk) {
     sourceText: chunk?.sourceText || chunk?.text || "",
     sourceLocation: page ? `${documentName} 第${page}页` : `${documentName}（旧资料缺少原文页码）`,
     sourcePdfAvailable: Boolean(chunk?.sourcePdfAvailable),
+    sourceFileAvailable: Boolean(chunk?.sourceFileAvailable),
+    sourceFileType: String(chunk?.sourceFileType || chunk?.fileExt || "").toLowerCase(),
     locator: buildLocator(chunk, page),
     locatorGrade: chunk?.locatorGrade || "contextual",
   };

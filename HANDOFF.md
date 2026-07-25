@@ -148,7 +148,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/solution-writing/plantuml-image.js`：方案 AI 生图业务模块，只使用当前文档大纲/全文文本，调用本地 PlantUML 服务渲染 PNG，并生成可被 OnlyOffice 插入的 DOCX 图片片段；默认字体使用 `SimHei`，由 `scripts/start-plantuml.ps1` 把 Windows 黑体/微软雅黑等字体复制到 PlantUML 容器。
 - `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
 - `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
-- 检索结果保留 `documentId + page + sourcePdfAvailable`；前端通过认证 API 获取溯源 PDF 并使用 `#page=N` 打开，不把短期资源票据写入草稿。
+- 检索结果保留 `documentId + page + sourcePdfAvailable + sourceFileAvailable + sourceFileType`；PDF 通过认证 API 使用 `#page=N` 打开，DOCX 通过 `knowledge.documents.officePreview` 创建只读原格式预览，不生成 `source.pdf`，不把短期资源票据写入草稿。
 - `server/knowledge/tables.js`：从知识库原 DOCX 文件抽取表格结构，按知识库范围检索可插入表格。
 
 ### 样式高频区
@@ -212,6 +212,7 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - MinerU 3.4.4 已在本机 AMD Docker 环境完成部署验证并切为默认知识解析器。PDF 使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件使用 MinerU 自带解析器；MinerU 失败时不静默回退。需要临时诊断旧链路时才显式设置 `KNOWLEDGE_PARSER=legacy`。
 - MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
 - PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
+- DOCX 检索详情提供“打开原文”只读预览，使用原始 DOCX 和 MinerU 解析页序作为查看起点；原文件不存在时返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，前端提示重新上传，不把缺失伪装成定位失败。
 - 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、Docker Desktop 4.74.0；AMD Compose 通过 `/dev/dxg`、ROCDXG 和三个只读 named volumes 运行 ROCm 7.2.1、ROCm PyTorch 2.9.1 与 MinerU 3.4.4。容器 GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`，结果为 `120`。
 - Docker VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均为 healthy；真实 11 页 PDF 任务约 2 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
 - 切换默认解析器后已通过真实知识库 API 完成上传、解析、Embedding、ZVec、检索和原文读取验收：11 页、54 段、65 个结构块，状态为“已索引”，检索命中携带 PDF 页码/bbox，原文 PDF 返回完整 386,793 字节；验收临时库已删除。
@@ -267,7 +268,7 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - OnlyOffice 9.4 的 `CDocumentOutline.Elements[index]` 是 `{ Paragraph, Lvl }` 包装项；Probe 必须使用其 `.Paragraph` 与 `LogicDocument.GetAllParagraphs()` 做对象身份匹配。直接拿包装项匹配会让全部 `styleRef` 和子树元数据为空。
 - 当前社区版外层 `api.js` 不提供 `DocsAPI.DocEditor.createConnector()`，编辑器主窗口也不是插件上下文，不能调用 `Asc.Editor.callCommand()`；注入层通过本地 SDK 已加载的 `AscBuilder.Api.GetDocument/CreateParagraph` 执行同一套精确替换命令，并用 `LogicDocument.StartAction/FinalizeAction` 包住历史动作。只有索引、标题、子树数量和结束边界全部校验通过才写入，逻辑文档当前光标 fallback 仍保持关闭。
 - `ApiDocument.GetAllParagraphs()` 无参调用会按“页眉页脚、主文档、脚注尾注”返回全量段落，不能直接使用大纲读取保存的主文档索引。Probe 与 Connector 写入命令现在从 `ApiDocument.Document.GetAllParagraphs({ OnlyMainDocument: true, All: true })` 取得主文档 Paragraph，再按 `ApiParagraph.private_GetImpl()` 对象身份映射回同序 API wrapper；任一对象缺失即失败关闭，不使用固定偏移或标题扫描。
-- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=123`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
+- 已验证默认配置与 `ONLYOFFICE_SERVER_URL=http://127.0.0.1:8080` 下各 11 项回归测试、生产构建、相关 JS/Python 语法和 `git diff --check`；真实 Docker 补丁后 healthcheck 为 200，`ds:docservice` / `ds:converter` 为 `RUNNING`，`index.html` 加载 outline `gf=125`，Probe 本地、容器 `.js` 与 `.js.gz` 解压内容 SHA-256 一致。
 
 ### 安全与失败语义加固
 
@@ -476,7 +477,7 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - 改 `scripts/onlyoffice-outline-probe.js`、`scripts/onlyoffice-placeholder-fields.js` 或 `scripts/onlyoffice-layout-format.js` 后，要同步 bump `scripts/patch-onlyoffice.py` 里的脚本 `?gf=` 版本。
 - 改 Toolbar 注入或 RequireJS 资源加载后，要同步 bump `scripts/patch-onlyoffice.py` 里的 `urlArgs`。
 - 改 `api.js` 相关缓存参数后，要同步 bump `_dc=9.4.0-129-gf*`。
-- 当前有效缓存号：outline `gf=123`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
+- 当前有效缓存号：outline `gf=125`、placeholder `gf=31`、layout `gf=5`、RequireJS `urlArgs gf=25`、API `_dc=9.4.0-129-gf30`。
 - 重新运行 `npm run office` 会复制注入脚本、执行补丁并重写 `.js.gz`；手动 patch 时也要确认 `.js` 和 `.js.gz` 内容一致。
 
 #### OnlyOffice 字体同步
