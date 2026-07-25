@@ -1,11 +1,16 @@
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getEmbeddingConfig } from "../embedding.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const zvecDir = path.join(knowledgeDir, "zvec");
 const knowledgeZvecCollectionPath = path.join(zvecDir, "chunks_v3");
+const generationsDir = path.join(zvecDir, "generations");
+const activeManifestPath = path.join(zvecDir, "active-v4.json");
+const v4IndexVersion = 4;
+const denseVectorFieldName = "denseEmbedding";
+const sparseVectorFieldName = "sparseEmbedding";
 const vectorFieldName = "embedding";
 const textFieldName = "text";
 const outputFields = ["kbId", "scope", "projectId", "documentId", "documentName", "chunkIndex", "page", "paragraphStart", "paragraphEnd", "text", "createdAt"];
@@ -200,14 +205,183 @@ async function openKnowledgeZvecCollection({ create, readOnly }) {
   return zvec.ZVecCreateAndOpen(knowledgeZvecCollectionPath, createKnowledgeZvecSchema(zvec), { readOnly });
 }
 
+function createKnowledgeZvecV4Schema(zvec, dimension = 1024) {
+  return new zvec.ZVecCollectionSchema({
+    name: "knowledge_chunks_v4",
+    vectors: [
+      {
+        name: denseVectorFieldName,
+        dataType: zvec.ZVecDataType.VECTOR_FP32,
+        dimension,
+        indexParams: { indexType: zvec.ZVecIndexType.FLAT, metricType: zvec.ZVecMetricType.COSINE },
+      },
+      {
+        name: sparseVectorFieldName,
+        dataType: zvec.ZVecDataType.SPARSE_VECTOR_FP32,
+        indexParams: { indexType: zvec.ZVecIndexType.FLAT, metricType: zvec.ZVecMetricType.IP },
+      },
+    ],
+    fields: [
+      { name: "kbId", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "scope", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "projectId", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "documentId", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "documentName", dataType: zvec.ZVecDataType.STRING },
+      { name: "chunkIndex", dataType: zvec.ZVecDataType.INT32 },
+      { name: "page", dataType: zvec.ZVecDataType.INT32, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "isTable", dataType: zvec.ZVecDataType.BOOL, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "hasStar", dataType: zvec.ZVecDataType.BOOL, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "blockType", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "headingPath", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.INVERT } },
+      { name: "text", dataType: zvec.ZVecDataType.STRING, indexParams: { indexType: zvec.ZVecIndexType.FTS } },
+      { name: "createdAt", dataType: zvec.ZVecDataType.STRING },
+    ],
+  });
+}
+
+function createKnowledgeZvecV4Document(chunk, embedding) {
+  return {
+    id: chunk.id,
+    vectors: {
+      [denseVectorFieldName]: embedding.denseEmbedding,
+      [sparseVectorFieldName]: embedding.sparseEmbedding,
+    },
+    fields: {
+      kbId: String(chunk.kbId || ""),
+      scope: chunk.scope === "global" ? "global" : "project",
+      projectId: String(chunk.projectId || ""),
+      documentId: String(chunk.documentId || ""),
+      documentName: String(chunk.documentName || ""),
+      chunkIndex: Number(chunk.chunkIndex || 0),
+      page: Number(chunk.page || 0),
+      isTable: Boolean(chunk.isTable),
+      hasStar: Boolean(chunk.hasStar),
+      blockType: String(chunk.blockType || ""),
+      headingPath: String(chunk.headingPath || ""),
+      text: String(chunk.text || ""),
+      createdAt: String(chunk.createdAt || ""),
+    },
+  };
+}
+
+async function createKnowledgeZvecGeneration(generationName) {
+  const generationPath = resolveGenerationPath(generationName);
+  if (existsSync(generationPath)) throw new Error(`ZVec generation already exists: ${generationName}`);
+  await mkdir(generationsDir, { recursive: true });
+  const zvec = await import("@zvec/zvec");
+  return {
+    collection: zvec.ZVecCreateAndOpen(generationPath, createKnowledgeZvecV4Schema(zvec)),
+    generationPath,
+  };
+}
+
+async function openKnowledgeZvecGeneration(generationName, { readOnly = true } = {}) {
+  const generationPath = resolveGenerationPath(generationName);
+  if (!existsSync(generationPath)) return null;
+  const zvec = await import("@zvec/zvec");
+  return zvec.ZVecOpen(generationPath, { readOnly });
+}
+
+async function openActiveKnowledgeZvec({ readOnly = true } = {}) {
+  const manifest = await readActiveKnowledgeZvecManifest();
+  if (!manifest) return { collection: null, manifest: null };
+  const collection = await openKnowledgeZvecGeneration(manifest.generation, { readOnly });
+  if (!collection) {
+    const error = new Error("Active ZVec generation is missing");
+    error.code = "index_version_mismatch";
+    throw error;
+  }
+  return { collection, manifest };
+}
+
+async function readActiveKnowledgeZvecManifest() {
+  const raw = await readFile(activeManifestPath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  });
+  if (!raw) return null;
+  const manifest = JSON.parse(raw);
+  if (manifest?.indexVersion !== v4IndexVersion || !isGenerationName(manifest?.generation)) {
+    const error = new Error("Active ZVec manifest is invalid");
+    error.code = "index_version_mismatch";
+    throw error;
+  }
+  return manifest;
+}
+
+async function publishActiveKnowledgeZvecManifest(manifest) {
+  if (manifest?.indexVersion !== v4IndexVersion || !isGenerationName(manifest?.generation)) {
+    throw new TypeError("Cannot publish an invalid ZVec manifest");
+  }
+  await mkdir(zvecDir, { recursive: true });
+  const temporaryPath = `${activeManifestPath}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  try {
+    await renameWithRetry(temporaryPath, activeManifestPath);
+  } catch (error) {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+async function removeKnowledgeZvecGeneration(generationName) {
+  await rm(resolveGenerationPath(generationName), { recursive: true, force: true });
+}
+
+async function pruneKnowledgeZvecGenerations(activeGeneration, keepPrevious = 1) {
+  const names = await readdir(generationsDir).catch((error) => error.code === "ENOENT" ? [] : Promise.reject(error));
+  const candidates = names.filter(isGenerationName).sort().reverse();
+  const keep = new Set([activeGeneration, ...candidates.filter((name) => name !== activeGeneration).slice(0, keepPrevious)]);
+  await Promise.all(candidates.filter((name) => !keep.has(name)).map(removeKnowledgeZvecGeneration));
+}
+
+async function renameWithRetry(source, destination) {
+  const delays = [100, 250, 500, 1_000, 2_000];
+  let lastError;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= delays.length || !["EBUSY", "EPERM", "EACCES"].includes(error.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
+  throw lastError;
+}
+
+function resolveGenerationPath(generationName) {
+  if (!isGenerationName(generationName)) throw new TypeError("Invalid ZVec generation name");
+  return path.join(generationsDir, generationName);
+}
+
+function isGenerationName(value) {
+  return /^chunks-v4-[0-9]{8}T[0-9]{6}-[a-z0-9]{6,12}$/.test(String(value || ""));
+}
+
 export {
+  activeManifestPath,
   buildKnowledgeKbFilter,
   createKnowledgeZvecFields,
   createKnowledgeZvecSchema,
+  createKnowledgeZvecGeneration,
+  createKnowledgeZvecV4Document,
+  createKnowledgeZvecV4Schema,
   deleteKnowledgeZvecChunks,
+  denseVectorFieldName,
+  generationsDir,
   insertKnowledgeZvecChunks,
   knowledgeZvecCollectionPath,
+  openActiveKnowledgeZvec,
+  openKnowledgeZvecGeneration,
+  pruneKnowledgeZvecGenerations,
+  publishActiveKnowledgeZvecManifest,
   queryKnowledgeZvecCollection,
+  readActiveKnowledgeZvecManifest,
+  removeKnowledgeZvecGeneration,
   searchKnowledgeZvec,
+  sparseVectorFieldName,
+  v4IndexVersion,
   vectorFieldName,
 };

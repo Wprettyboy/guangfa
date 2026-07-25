@@ -14,6 +14,7 @@ import {
 import {
   buildStructuredKnowledgeChunks,
   filterRetrievalKnowledgeChunks,
+  hasExplicitStarMarker,
 } from "../server/knowledge/chunker.js";
 import { buildContextWindow, resolveChunkContext } from "../server/knowledge/source-resolver.js";
 
@@ -175,6 +176,14 @@ test("structured chunks bound long paragraphs and table row groups without index
   assert.equal(tableSegments.every((chunk) => chunk.locatorGrade === "container"), true);
   assert.equal(tableSegments.every((chunk) => chunk.sourceText.startsWith("序号 | 资格要求\n")), true);
   assert.equal(chunks.find((chunk) => chunk.blockType === "table-parent").sourceText, longTable);
+});
+
+test("star metadata ignores Markdown bold and accepts only explicit clause markers", () => {
+  assert.equal(hasExplicitStarMarker("**重要内容**"), false);
+  assert.equal(hasExplicitStarMarker("普通 * 强调内容"), false);
+  assert.equal(hasExplicitStarMarker("★ 必须响应的条款"), true);
+  assert.equal(hasExplicitStarMarker("* 必须响应的条款"), true);
+  assert.equal(hasExplicitStarMarker("** 必须响应的条款"), false);
 });
 
 test("parent context expands around the matched child within a fixed budget", () => {

@@ -183,7 +183,7 @@ function appendStructuredChunk({
     anchor: String(block.anchor || ""),
     locatorGrade: hasLocator ? locatorIsContainer ? "container" : "exact" : headingPath ? "container" : "contextual",
     isTable: block.type === "table" ? 1 : 0,
-    hasStar: /(?:★|\*\*?)/.test(sourceText) ? 1 : 0,
+    hasStar: hasExplicitStarMarker(sourceText) ? 1 : 0,
     createdAt,
   };
   chunks.push(chunk);
@@ -277,12 +277,17 @@ function normalizeStructuredText(value) {
     .join("\n");
 }
 
+function hasExplicitStarMarker(value) {
+  return /★/.test(String(value || "")) || /^\s*\*(?!\*)\s*\S/m.test(String(value || ""));
+}
+
 export {
   buildKnowledgeChunks,
   buildKnowledgeParagraphs,
   buildStructuredKnowledgeChunks,
   filterRetrievalKnowledgeChunks,
   isRetrievalKnowledgeChunk,
+  hasExplicitStarMarker,
   splitBoundedStructuredText,
   splitParagraphs,
 };

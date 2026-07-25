@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getTemplateDatabase } from "../template-db.js";
+import { hasExplicitStarMarker } from "./chunker.js";
 
 const legacyKnowledgeFile = path.resolve(process.cwd(), "data", "knowledge", "library.json");
 const defaultProjectId = "default-project";
@@ -168,6 +169,13 @@ function ensureKnowledgeSchemaMigrations(database) {
   chunkMigrations.forEach(([name, definition]) => {
     if (!chunkColumns.has(name)) database.exec(`ALTER TABLE knowledge_chunks ADD COLUMN ${name} ${definition}`);
   });
+  if (!database.prepare("SELECT value FROM schema_meta WHERE key = 'knowledge_has_star_v4'").get()) {
+    const updateStar = database.prepare("UPDATE knowledge_chunks SET has_star = ? WHERE id = ?");
+    database.prepare("SELECT id, source_text AS sourceText FROM knowledge_chunks").all().forEach((chunk) => {
+      updateStar.run(hasExplicitStarMarker(chunk.sourceText) ? 1 : 0, chunk.id);
+    });
+    setSchemaMeta(database, "knowledge_has_star_v4", "1");
+  }
   const updatePageSource = database.prepare("UPDATE knowledge_documents SET page_source = ? WHERE id = ?");
   database.prepare(`
     SELECT id, file_ext AS fileExt, pdf_path AS pdfPath, error
