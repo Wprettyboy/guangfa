@@ -4,13 +4,18 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createEmbedding, createEmbeddings, isEmbeddingConfigured } from "../embedding.js";
 import { validateKnowledgeDocument } from "../document-security.js";
-import { buildKnowledgeChunks, buildKnowledgeParagraphs, buildStructuredKnowledgeChunks } from "./chunker.js";
+import {
+  buildKnowledgeChunks,
+  buildKnowledgeParagraphs,
+  buildStructuredKnowledgeChunks,
+  filterRetrievalKnowledgeChunks,
+} from "./chunker.js";
 import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js";
 import { parseKnowledgeDocument } from "./parser.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
 import { rankKeywordChunks } from "./text-ranking.js";
 import { deleteKnowledgeZvecChunks, insertKnowledgeZvecChunks, searchKnowledgeZvec } from "./zvec-store.js";
-import { resolveChunkSource } from "./source-resolver.js";
+import { resolveChunkContext, resolveChunkSource } from "./source-resolver.js";
 
 const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
 const filesDir = path.join(knowledgeDir, "files");
@@ -159,8 +164,9 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
 
     if (parsed && isEmbeddingConfigured() && chunks.length > 0) {
       try {
-        const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-        await insertKnowledgeZvecChunks(chunks, embeddings);
+        const retrievalChunks = filterRetrievalKnowledgeChunks(chunks);
+        const embeddings = await createEmbeddings(retrievalChunks.map((chunk) => chunk.text));
+        await insertKnowledgeZvecChunks(retrievalChunks, embeddings);
         status = "已索引";
         indexMode = "hybrid";
         error = parsed.warning || "";
@@ -235,8 +241,9 @@ async function reindexKnowledgeBase(kbId) {
   if (chunks.length === 0) return { ok: true, updated: 0, chunkCount: 0 };
   await deleteKnowledgeZvecChunks({ chunkIds: chunks.map((chunk) => chunk.id), kbId }).catch(() => {});
   if (isEmbeddingConfigured()) {
-    const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-    await insertKnowledgeZvecChunks(chunks, embeddings);
+    const retrievalChunks = filterRetrievalKnowledgeChunks(chunks);
+    const embeddings = await createEmbeddings(retrievalChunks.map((chunk) => chunk.text));
+    await insertKnowledgeZvecChunks(retrievalChunks, embeddings);
   }
   const liveChunkIds = new Set(readChunks(database).filter((chunk) => chunk.kbId === kbId).map((chunk) => chunk.id));
   const staleChunks = chunks.filter((chunk) => !liveChunkIds.has(chunk.id));
@@ -254,8 +261,9 @@ async function searchKnowledgeBase(payload = {}) {
   const metadata = readKnowledgeMetadata(database);
   const topK = clampNumber(Number(payload.topK || 8), 1, 20);
   const { allowedKbIds, eligibleChunks, liveChunkIds } = resolveKnowledgeSearchScope(payload, metadata, defaultProjectId);
-  if (eligibleChunks.length === 0) return [];
-  const keywordResults = rankKeywordChunks(eligibleChunks, query).slice(0, topK);
+  const retrievalChunks = filterRetrievalKnowledgeChunks(eligibleChunks);
+  if (retrievalChunks.length === 0) return [];
+  const keywordResults = rankKeywordChunks(retrievalChunks, query).slice(0, topK);
   const zvecResults = await searchHybridChunks(query, topK, allowedKbIds, liveChunkIds).catch((error) => {
     console.warn("[knowledge] zvec search unavailable:", error.message || error);
     return [];
@@ -536,7 +544,7 @@ function formatSearchResult(database, item) {
     page: item.page || "",
     paragraphStart: item.paragraphStart || "",
     paragraphEnd: item.paragraphEnd || "",
-    text: item.text,
+    text: resolveChunkContext(database, resolved),
     sourceText: resolved.sourceText,
     sourceLocation: resolved.sourceLocation,
     sourcePdfAvailable: resolved.sourcePdfAvailable,

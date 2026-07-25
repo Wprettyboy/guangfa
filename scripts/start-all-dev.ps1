@@ -74,7 +74,7 @@ if (Test-PortListening $MineruPort) {
 } else {
   Start-HiddenPowerShell `
     -Name "MinerU Hybrid" `
-    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-mineru.ps1`"" `
+    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-mineru-wsl.ps1`"" `
     -Stdout "$LogDir\guangfa-mineru.log" `
     -Stderr "$LogDir\guangfa-mineru.err.log"
 }
@@ -107,7 +107,8 @@ for ($i = 0; $i -lt 60; $i++) {
   $plantumlReady = Test-PortListening $PlantumlPort
   $qwenReady = Test-PortListening $QwenPort
   $embeddingReady = Test-PortListening $EmbeddingPort
-  if ($webReady -and $officeReady -and $plantumlReady -and $qwenReady -and $embeddingReady) { break }
+  $mineruReady = Test-PortListening $MineruPort
+  if ($webReady -and $officeReady -and $plantumlReady -and $qwenReady -and $embeddingReady -and $mineruReady) { break }
   Start-Sleep -Seconds 2
 }
 

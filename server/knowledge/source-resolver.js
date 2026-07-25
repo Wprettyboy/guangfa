@@ -2,7 +2,7 @@ function resolveChunkSource(database, chunk) {
   if (!chunk?.documentId) return formatResolvedSource(chunk);
   const storedChunk = database.prepare(`
     SELECT source_text AS sourceText, block_type AS blockType, heading_path AS headingPath,
-      bbox_json AS bboxJson, anchor, locator_grade AS locatorGrade
+      parent_chunk_id AS parentChunkId, bbox_json AS bboxJson, anchor, locator_grade AS locatorGrade
     FROM knowledge_chunks
     WHERE id = ? AND document_id = ?
   `).get(chunk.id, chunk.documentId) || {};
@@ -43,6 +43,78 @@ function resolveChunkSource(database, chunk) {
   });
 }
 
+function resolveChunkContext(database, chunk, maxLength = 6000) {
+  const sourceText = String(chunk?.sourceText || chunk?.text || "").trim();
+  if (!chunk?.parentChunkId) return String(chunk?.text || sourceText).trim();
+  const parent = database.prepare(`
+    SELECT source_text AS sourceText, block_type AS blockType
+    FROM knowledge_chunks
+    WHERE id = ? AND document_id = ?
+  `).get(chunk.parentChunkId, chunk.documentId);
+  if (!parent) return String(chunk?.text || sourceText).trim();
+  const prefix = chunk.headingPath ? `路径: ${chunk.headingPath}\n` : "";
+  const availableLength = Math.max(320, maxLength - prefix.length);
+  if (parent.blockType === "table-parent" && String(parent.sourceText || "").length <= availableLength) {
+    return `${prefix}${parent.sourceText}`.trim();
+  }
+  const siblings = database.prepare(`
+    SELECT id, chunk_index AS chunkIndex, source_text AS sourceText
+    FROM knowledge_chunks
+    WHERE document_id = ? AND parent_chunk_id = ? AND block_type NOT LIKE '%-parent'
+    ORDER BY chunk_index
+  `).all(chunk.documentId, chunk.parentChunkId);
+  const context = parent.blockType === "table-parent"
+    ? buildTableContext(parent.sourceText, siblings, chunk.id, availableLength)
+    : buildContextWindow(siblings, chunk.id, availableLength);
+  return `${prefix}${context || sourceText}`.trim();
+}
+
+function buildContextWindow(rows, targetId, maxLength) {
+  const targetIndex = rows.findIndex((row) => row.id === targetId);
+  if (targetIndex < 0) return "";
+  const selected = [rows[targetIndex]];
+  let length = String(rows[targetIndex].sourceText || "").length;
+  let left = targetIndex - 1;
+  let right = targetIndex + 1;
+  while (left >= 0 || right < rows.length) {
+    let added = false;
+    for (const index of [left, right]) {
+      if (index < 0 || index >= rows.length) continue;
+      const rowLength = String(rows[index].sourceText || "").length + 1;
+      if (length + rowLength > maxLength) continue;
+      selected.push(rows[index]);
+      length += rowLength;
+      added = true;
+    }
+    left -= 1;
+    right += 1;
+    if (!added) break;
+  }
+  return selected
+    .sort((leftRow, rightRow) => leftRow.chunkIndex - rightRow.chunkIndex)
+    .map((row) => row.sourceText)
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, maxLength)
+    .trim();
+}
+
+function buildTableContext(parentText, rows, targetId, maxLength) {
+  const header = String(parentText || "").split("\n").find(Boolean) || "";
+  const normalizedRows = rows.map((row) => ({
+    ...row,
+    sourceText: removeRepeatedTableHeader(row.sourceText, header),
+  }));
+  const body = buildContextWindow(normalizedRows, targetId, Math.max(160, maxLength - header.length - 1));
+  return [header, body].filter(Boolean).join("\n").slice(0, maxLength).trim();
+}
+
+function removeRepeatedTableHeader(value, header) {
+  const lines = String(value || "").split("\n");
+  if (lines[0] === header) lines.shift();
+  return lines.join("\n").trim();
+}
+
 function formatResolvedSource(chunk) {
   const page = Number(chunk?.page || chunk?.pageNumber || 0);
   const documentName = chunk?.documentName || "未命名资料";
@@ -68,4 +140,4 @@ function buildLocator(chunk, page) {
   return null;
 }
 
-export { resolveChunkSource };
+export { buildContextWindow, resolveChunkContext, resolveChunkSource };

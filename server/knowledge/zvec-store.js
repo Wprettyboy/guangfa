@@ -47,8 +47,8 @@ function createKnowledgeZvecFields(chunk) {
     documentName: chunk.documentName,
     chunkIndex: chunk.chunkIndex,
     page: chunk.page ? String(chunk.page) : "",
-    paragraphStart: Number(chunk.paragraphStart || 0) || null,
-    paragraphEnd: Number(chunk.paragraphEnd || 0) || null,
+    paragraphStart: Number(chunk.paragraphStart || 0) || 0,
+    paragraphEnd: Number(chunk.paragraphEnd || 0) || 0,
     text: chunk.text,
     createdAt: String(chunk.createdAt || ""),
   };

@@ -113,13 +113,16 @@
 
 | 文件 | 功能说明 |
 | --- | --- |
+| `scripts/bootstrap-mineru-wsl.sh` | AMD WSL MinerU 初始化。安装同包族 ROCm 数学库、ROCm PyTorch/Transformers/MinerU，执行 Radeon GPU 张量实算，并从 ModelScope 下载 Pipeline 与 VLM 模型。 |
 | `scripts/check-knowledge-hybrid.mjs` | ZVec 混合检索独立检查。在临时索引验证知识库过滤、向量与全文融合、纯全文降级和库隔离。 |
 | `scripts/check-knowledge-selection.mjs` | 真实知识库选择边界检查。验证未选择不扩库、选中库不泄漏、短词召回和全局库隔离。 |
 | `scripts/check-paragraph-source-fallback.mjs` | 长文本候选提取检查。验证从相关片段提取连续原文并拒绝无关片段。 |
+| `scripts/complete-mineru-deployment.ps1` | AMD WSL MinerU 一键部署验收。下载 ROCm 依赖、执行初始化和启动，并提交真实 PDF、检查结构化 ZIP 产物。 |
 | `scripts/import-legal-regulations.py` | 法规批量导入。抓取政府/司法网站法规正文，清洗分块并写入法规资料目录、知识库元数据和报告。 |
 | `scripts/import-samr-contract-samples.py` | 市监总局合同样例下载与模板导入。选择代表模板、识别格式、保存文件，并将支持的模板以 Base64 和分类元数据入库。 |
 | `scripts/local_embedding_server.py` | 本地 BGE-M3 向量服务。用 FastAPI 提供 `/health` 和 OpenAI 兼容 `/v1/embeddings`，处理批量输入、设备选择、归一化和维度调整。 |
 | `scripts/make_format_audit_fixture.py` | 格式审核样例生成器。使用 `python-docx` 创建各种故意错误并输出根目录测试 DOCX。 |
+| `scripts/mineru_transformers_server.py` | AMD ROCm VLM 服务。加载官方 MinerU2.5-Pro 模型，在 30000 提供 MinerU Hybrid 使用的 OpenAI-compatible 接口。 |
 | `scripts/onlyoffice-font-aliases.conf` | OnlyOffice 容器 Fontconfig 别名配置。将没有独立字体文件的 `黑体_GB2312` 精确映射到标准黑体 `SimHei`。 |
 | `scripts/onlyoffice-layout-format.js` | OnlyOffice 排版体检/修复注入脚本。读取段落与 section，分析格式并执行页面、正文、标题、落款修复，通过排版消息与前端交互。 |
 | `scripts/onlyoffice-outline-probe.js` | OnlyOffice 核心注入桥。读取大纲/样式/选区/页码，管理字段书签，执行方案正文/子树替换、保存、修订及表格/图片插入；内置知识聊天改走 `/api/v1` 并只在内存转发 Bearer Token，持久化上下文会剔除凭证。 |
@@ -128,11 +131,13 @@
 | `scripts/rebuild-knowledge-vectors.mjs` | 知识向量索引重建。删除派生索引，批量重算向量、写入元数据、执行检索冒烟并更新文档索引状态。 |
 | `scripts/samr-contracts-manifest.ps1` | 合同示范文本清单抓取。分页读取全国/地方模板，输出 JSON、CSV、Markdown 清单和统计。 |
 | `scripts/samr_contract_catalog.py` | 合同范本二级分类。按标题关键词划分买卖、租赁、工程、服务等类别并输出分类目录。 |
-| `scripts/start-all-dev.ps1` | 本地全栈编排。检查并后台启动 OnlyOffice 8080、PlantUML 8090、Embedding 8000、MinerU 8010、Qwen 8129、Vite 5173，等待就绪并汇总状态。 |
+| `scripts/start-all-dev.ps1` | 本地全栈编排。检查并后台启动 OnlyOffice 8080、PlantUML 8090、Embedding 8000、AMD WSL MinerU 8010、Qwen 8129、Vite 5173，等待全部就绪并汇总状态。 |
 | `scripts/start-local-embedding.ps1` | Embedding 启动脚本。创建 Python 虚拟环境，可选安装 CPU 依赖，选择本地/镜像 BGE-M3 后运行服务。 |
 | `scripts/start-local-qwen36-cpu.ps1` | Qwen CPU/Vulkan 启动脚本。校验 llama.cpp 与 GGUF，以较小上下文在 8129 提供 OpenAI 兼容接口。 |
 | `scripts/start-local-qwen36-rocm.ps1` | Qwen AMD ROCm 启动脚本。配置 ROCm DLL、上下文和 GPU 层数，在 8129 启动本地模型；一键启动默认走此路径。 |
 | `scripts/start-mineru.ps1` | MinerU Hybrid Docker 启动脚本。先验证 Docker 可访问 NVIDIA GPU，再构建并启动 API/VLM 服务并等待 8010 健康检查。 |
+| `scripts/start-mineru-wsl.ps1` | AMD WSL MinerU 的 Windows 启动入口。通过稳定 ASCII junction 调用 WSL 脚本，并检查 VLM 30000 与 API 8010。 |
+| `scripts/start-mineru-wsl.sh` | AMD WSL MinerU 启动脚本。依次等待本地 VLM 30000 和 MinerU API 8010 健康，日志保存在 `/opt/guangfa-mineru/logs/`。 |
 | `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、同步指定中文/方正字体和别名、安装桥接并健康检查；还会生成或读取独立 JWT Secret，校验并重建不合规容器，配置 inbox/outbox JWT、签名资源 URL 例外及无外部权限的 AI 客户端占位 Key。 |
 | `scripts/start-plantuml.ps1` | PlantUML 部署启动。启动容器并映射 8090，复制中文字体、刷新缓存并验证服务。 |
 | `scripts/test-qwen-vulkan-variants.ps1` | Qwen Vulkan 参数诊断。轮换 Flash Attention、卸载和 GPU 层数配置，检查健康、聊天结果、耗时和错误。 |
@@ -187,7 +192,7 @@
 
 | 文件 | 功能说明 |
 | --- | --- |
-| `server/knowledge/chunker.js` | 文档切片。旧文本按页和段落聚合；MinerU 结果按结构块与标题树切片，保留完整表格并注入章节路径。 |
+| `server/knowledge/chunker.js` | 文档切片。旧文本按页和段落聚合；MinerU 标题/完整表格作为父块，正文和表格行组作为有界检索子块，并注入章节路径。 |
 | `server/knowledge/db.js` | 知识库 SQLite 初始化。创建库、资料、页面、段落、切片和上传幂等表/索引，迁移旧 JSON，并初始化默认项目库/全局库。 |
 | `server/knowledge/documents.js` | 知识文档主服务。先做类型/内容安全校验，再按“知识库+身份+幂等键”预留、内容去重、解析、切片、Embedding 和 ZVec 入库；并处理并发上传、删除、重建和检索回溯。 |
 | `server/knowledge/docx-convert.js` | DOCX 转 PDF 的 OnlyOffice 适配。用带 inbox JWT 和短期文档地址的转换命令调用 `ConvertService.ashx`，有界下载 PDF 以保留页码。 |
@@ -196,7 +201,7 @@
 | `server/knowledge/parser.js` | 有界资料解析调度。默认保留旧 PDF/DOCX 解析；只有部署验证完成并设置 `KNOWLEDGE_PARSER=mineru` 后，非 TXT 文件才交给 MinerU。 |
 | `server/knowledge/pdf-text.js` | PDF 分页文本抽取。使用 `pdfjs-dist` 在页数、文本量和截止时间限制内逐页读取并规范空白。 |
 | `server/knowledge/scope.js` | 检索范围控制。根据显式项目库/全局库选择计算可访问库和切片；未选择时不隐式全库搜索。 |
-| `server/knowledge/source-resolver.js` | 原文定位。按文档、页码、段落范围回查 SQLite，必要时退到整页，并生成可展示来源位置。 |
+| `server/knowledge/source-resolver.js` | 原文定位与上下文扩展。按命中子块生成权威页码/bbox 引用，并从 SQLite 父子关系扩展相邻正文或表格行窗口。 |
 | `server/knowledge/tables.js` | DOCX 表格提取。安全解析表格、合并单元格、标题和页码，支持检索并生成带短期能力票据的单表格 DOCX 供 OnlyOffice 插入。 |
 | `server/knowledge/text-ranking.js` | 关键词排序。清理查询、扩展招投标词，对短语和关键词评分，用于基础检索与混合召回。 |
 | `server/knowledge/zvec-store.js` | ZVec 适配。定义向量/全文/元数据 schema，负责索引增删，并用向量与 FTS 的 RRF 融合返回限定范围切片。 |

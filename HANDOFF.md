@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-23
+更新时间：2026-07-25
 
 ## 新会话先读
 
@@ -40,6 +40,7 @@ npm run office
 npm run plantuml
 npm run embedding:skip-install
 npm run mineru
+# NVIDIA Docker 主机才使用：npm run mineru:nvidia
 ```
 
 服务端口：
@@ -115,7 +116,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/office.js`：DOCX 上传保存、callback 保存、download-url、OnlyOffice 初始化配置等业务函数。
 - `server/knowledge/mineru-client.js`：MinerU 3.4.4 异步任务适配，提交 Hybrid 解析、轮询、下载并安全展开产物，将 content list 归一为页和结构块。
 - `server/knowledge/docx-convert.js`：旧解析器的 OnlyOffice DOCX 转 PDF 适配；只有显式设置 `KNOWLEDGE_PARSER=legacy` 时才进入这条链路。
-- 知识解析默认使用 MinerU：PDF/图片走 Hybrid，DOCX/PPTX/XLSX 走 MinerU Office parser，TXT 本地解析。原格式文件用于溯源，不再把 Office 文件转换成 PDF。部署和环境变量见 `docs/mineru-hybrid.md`。
+- 知识解析已接入 MinerU：显式设置 `KNOWLEDGE_PARSER=mineru` 后，PDF/图片走 Hybrid，DOCX/PPTX/XLSX 走 MinerU Office parser，TXT 仍本地解析。原格式文件用于溯源，不再把 Office 文件转换成 PDF；当前默认开关仍为 `legacy`。部署和环境变量见 `docs/mineru-hybrid.md`。
 
 ### 本地 API 管理
 
@@ -184,12 +185,13 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### MinerU Hybrid 知识解析
 
-- MinerU 3.4.4 适配已接入，但在真实服务验证前默认仍使用旧解析器。只有显式设置 `KNOWLEDGE_PARSER=mineru` 后，PDF 才使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件才使用 MinerU 自带解析器；MinerU 失败时不静默回退。
+- MinerU 3.4.4 已在本机 AMD WSL 环境完成部署验证；业务开关默认仍为 `legacy`。只有显式设置 `KNOWLEDGE_PARSER=mineru` 后，PDF 才使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件才使用 MinerU 自带解析器；MinerU 失败时不静默回退。
 - MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
 - PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
-- 仓库当前的 `guangfa-mineru-api` / `guangfa-mineru-vlm` Compose 是 NVIDIA 草案，不适用于本机 AMD Radeon 8060S，不能视为已部署。API 端口 `127.0.0.1:8010` 当前没有服务和模型。
-- 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04；应使用 AMD ROCm 7.2.1 的 WSL ROCDXG 路线。完成兼容驱动、ROCDXG/ROCm/PyTorch、MinerU 服务和真实文档回归前，不得把默认解析器切到 MinerU。
-- 已验证 MinerU 任务协议/产物、V1/V2 块映射、结构化切片和精确 PDF locator；全量测试 69/69、生产构建、Node/PowerShell 语法、Compose 展开和 `git diff --check` 均通过。
+- 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04；已安装 ROCm 7.2.1、ROCm PyTorch 2.9.1、TorchVision 0.24.0、Triton 3.5.1 和 MinerU 3.4.4。GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`。
+- WSL VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均已通过健康检查；真实 11 页 PDF 任务约 3 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
+- 结构切片采用标题/完整表格父块与有界检索子块；父块只用于 SQLite 上下文扩展，Embedding、ZVec 和关键词召回只处理子块。引用文本、页码和 bbox 始终绑定实际命中的子块。
+- `npm run mineru` 和 `scripts/start-all-dev.ps1` 在本机走 WSL/ROCm；NVIDIA Docker 路线保留为 `npm run mineru:nvidia`。WSL 日志位于 `/opt/guangfa-mineru/logs/`，模型默认从 ModelScope 下载。
 
 ### 方案编写工作台迁移
 
