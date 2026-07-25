@@ -184,6 +184,26 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ## 最近已完成
 
+### 知识库检索 V4
+
+- 检索主链为 MinerU 结构子块 -> BGE-M3 Dense/Sparse -> ZVec Dense/Sparse/FTS 三路 Top-60 -> RRF Top-20 -> `bge-reranker-v2-m3` -> 有界父块/相邻块扩展。SQLite 关键词只在整个 V4 ZVec 不可用时降级，不混入正常 RRF。
+- AMD Retrieval Docker 监听 `127.0.0.1:8000`，同时提供 Dense/Sparse 编码和最多 20 个候选的精排。查询编码、精排和入库编码默认硬超时分别为 2 秒、5 秒和 60 秒；Encode/Reranker 使用独立熔断器。
+- ZVec V4 使用不可变 `data/knowledge/zvec/generations/*` 目录，只通过小型 `active-v4.json` 原子切换活动版本；写入串行，失败构建不改变活动 manifest，旧 generation 只保留一个回退版本。
+- 结构化筛选只接受显式 `documentIds/pageFrom/pageTo/isTable/hasStar/blockTypes/headingPaths`，不从字段语义猜硬过滤、不做文件名模糊匹配、无结果时不自动放宽。
+- 知识上下文先保留每条实际命中子块，再扩展父块、表头和相邻块；单条最多 1600 estimated tokens，总计最多 6000，另有 12,000 字符硬上限。引用的 `documentId/page/bbox/sourceText` 不被截断。
+- 默认最终数量为填充 5、聊天 5、方案编写 8、管理页 8；用户显式选择 1-10 时保持原值，候选池始终为 20。
+- `scripts/check-zvec-sparse.mjs` 是 Sparse CRUD/过滤/关闭重开门禁；`scripts/evaluate-knowledge-retrieval.mjs` 支持人工标注集，也可用当前库生成精确证据探针，并可通过 `--stress-rounds 50` 交替压测 MinerU VLM 与 Retrieval GPU 推理。
+- 2026-07-25 验收：100k/192 Sparse 门禁通过（写入约 28.7 秒，查询 P95 约 71ms，RSS 约 367MiB）；当前库 20 条精确证据探针 Recall@20=95%、Top-5=95%。连续长文本精排会按 5 秒边界出现 `reranker_timeout` 并开启熔断，但单次真实管理页/API 检索精排正常且无降级。
+- MinerU VLM 与 Retrieval Encode/Rerank 交替 GPU 推理 50 轮通过，平均每轮约 246ms、OOM 增量为 0，三个服务始终 healthy。临时 DOCX 经真实 API 上传后生成 13 个子块并进入 `dense-sparse-fts`，过滤检索、原文件读回和清理重建均通过；活动索引恢复为 711 个子块和两个 generations。
+- 浏览器管理页已验证文档、页码、正文/表格、星号与清除条件，组合“指定文档 + 第3页 + 表格”只返回第3页的一个表格证据，诊断显示索引 V4 和三路召回，控制台无错误。
+
+```powershell
+node scripts/check-zvec-sparse.mjs --rows 100000 --terms 192
+npm run evaluate:knowledge
+node scripts/evaluate-knowledge-retrieval.mjs --cases path/to/cases.json
+node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
+```
+
 ### MinerU Hybrid 知识解析
 
 - MinerU 3.4.4 已在本机 AMD Docker 环境完成部署验证并切为默认知识解析器。PDF 使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件使用 MinerU 自带解析器；MinerU 失败时不静默回退。需要临时诊断旧链路时才显式设置 `KNOWLEDGE_PARSER=legacy`。

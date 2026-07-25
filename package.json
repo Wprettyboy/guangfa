@@ -12,6 +12,7 @@
     "mineru:wsl": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-wsl.ps1",
     "mineru:nvidia": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru.ps1",
     "check:zvec-sparse": "node scripts/check-zvec-sparse.mjs",
+    "evaluate:knowledge": "node scripts/evaluate-knowledge-retrieval.mjs",
     "rebuild:knowledge-v4": "node scripts/rebuild-knowledge-index-v4.mjs",
     "test": "node --test tests/*.test.mjs",
     "build": "vite build",
