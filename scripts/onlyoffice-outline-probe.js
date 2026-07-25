@@ -61,6 +61,49 @@
     return items;
   }
 
+  function normalizeSourceHeading(value) {
+    return String(value || "")
+      .replace(/\*\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function findSourceHeadingIndex(manager, headingPath) {
+    const pathItems = String(headingPath || "")
+      .split(">")
+      .map(normalizeSourceHeading)
+      .filter(Boolean);
+    if (!manager || pathItems.length === 0) return -1;
+    const outline = readManagerOutline(manager);
+    for (let target = outline.length - 1; target >= 0; target -= 1) {
+      if (normalizeSourceHeading(outline[target].title) !== pathItems[pathItems.length - 1]) continue;
+      let pathIndex = pathItems.length - 2;
+      let previousLevel = Number(outline[target].level);
+      for (let index = target - 1; index >= 0 && pathIndex >= 0; index -= 1) {
+        const level = Number(outline[index].level);
+        if (!Number.isFinite(level) || (Number.isFinite(previousLevel) && level >= previousLevel)) continue;
+        if (normalizeSourceHeading(outline[index].title) !== pathItems[pathIndex]) continue;
+        pathIndex -= 1;
+        previousLevel = level;
+      }
+      if (pathIndex < 0) return outline[target].index;
+    }
+    return -1;
+  }
+
+  function goToSourceHeading(headingPath) {
+    const manager = getOutlineManager();
+    const index = findSourceHeadingIndex(manager, headingPath);
+    if (index < 0) return { ok: false, headingPath, error: "未找到对应原文标题" };
+    try {
+      const moved = typeof manager.goto === "function" ? manager.goto(index) !== -1 : false;
+      const pageInfo = extractOnlyOfficePage(safeCall(getLogicDocument(), "GetSelectionState", null));
+      return { ok: moved, headingPath, index, page: pageInfo.page, pageSource: pageInfo.source };
+    } catch (error) {
+      return { ok: false, headingPath, index, error: error?.message || "原文标题定位失败" };
+    }
+  }
+
   function readDocumentStyles() {
     try {
       const doc = window.Api && typeof window.Api.GetDocument === "function" ? window.Api.GetDocument() : null;
@@ -3636,6 +3679,14 @@
         source: "guangfa-onlyoffice-custom",
         action: "onlyoffice-page-jumped",
         result: { ok, page, requestId: data.requestId || "" },
+      }, "*");
+    }
+    if (data.source === "guangfa-parent" && data.action === "go-to-heading") {
+      const result = goToSourceHeading(data.headingPath);
+      window.parent?.postMessage({
+        source: "guangfa-onlyoffice-custom",
+        action: "onlyoffice-heading-jumped",
+        result: { ...result, requestId: data.requestId || "" },
       }, "*");
     }
     if (data.source === "guangfa-parent" && data.action === "go-to-bookmark") {

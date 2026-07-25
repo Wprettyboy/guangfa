@@ -88,7 +88,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 
 - PDF 块同时具备页码与 bbox 时，`locatorGrade=exact`，可通过原始 PDF 精确定位。
 - Office 文件保留原格式；标题路径或 Office anchor 可用于容器级/书签级定位，但不伪装成 PDF bbox。
-- DOCX 检索详情可通过 `POST /api/knowledge-documents/:documentId/office-preview` 打开原始 DOCX 的只读 OnlyOffice 预览，并以 MinerU 解析页序作为查看起点；该流程不生成 `source.pdf`。如果原始 DOCX 已被删除，接口返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，用户需要重新上传资料。
+- DOCX 检索详情可通过 `POST /api/knowledge-documents/:documentId/office-preview` 打开原始 DOCX 的只读 OnlyOffice 预览。定位优先消费 MinerU `headingPath`，通过 OnlyOffice 大纲管理器按完整标题链跳转到原文；没有可匹配标题链时才使用 MinerU 解析页序作为回退。该流程不生成 `source.pdf`。如果原始 DOCX 已被删除，接口返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，用户需要重新上传资料。
 - 标题和完整表格保存为父块；普通正文按 MinerU 块边界生成有界子块，超长正文只在段落/标点边界切分。
 - 表格父块始终保留完整内容，检索使用带表头的有界行组子块，表格行不会跨两个子块。命中后，小表扩展为完整表格，大表扩展为表头和命中行附近的有界窗口。
 - 关键词与向量索引只写入检索子块；父块仅用于上下文扩展。没有子块的孤立标题仍可检索。

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Loader2, X } from "lucide-react";
 import { createKnowledgeDocumentOfficePreview } from "../../services/knowledgeBase.js";
-import { OnlyOfficePreview, requestOnlyOfficeGoToBookmark, requestOnlyOfficeGoToPage } from "../docx/office/bridge.jsx";
+import { OnlyOfficePreview, requestOnlyOfficeGoToBookmark, requestOnlyOfficeGoToHeading, requestOnlyOfficeGoToPage } from "../docx/office/bridge.jsx";
 
 function KnowledgeSourceViewer({ result }) {
   const [open, setOpen] = useState(false);
@@ -66,12 +66,19 @@ function KnowledgeSourceViewer({ result }) {
                   config={preview.config}
                   serverUrl={preview.serverUrl}
                   mode="source"
-                  onReady={() => {
+                  onDocumentReady={() => {
                     window.setTimeout(() => {
+                      const jumpByPage = () => result.page ? requestOnlyOfficeGoToPage(result.page) : null;
                       if (result.locator?.type === "bookmark" && result.locator.anchor) {
-                        requestOnlyOfficeGoToBookmark(result.locator.anchor);
-                      } else if (result.page) {
-                        requestOnlyOfficeGoToPage(result.page);
+                        requestOnlyOfficeGoToBookmark(result.locator.anchor).then((jumpResult) => {
+                          if (!jumpResult?.ok) jumpByPage();
+                        });
+                      } else if (result.headingPath) {
+                        requestOnlyOfficeGoToHeading(result.headingPath).then((jumpResult) => {
+                          if (!jumpResult?.ok) jumpByPage();
+                        });
+                      } else {
+                        jumpByPage();
                       }
                     }, 700);
                   }}

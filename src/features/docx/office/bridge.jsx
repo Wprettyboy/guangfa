@@ -28,11 +28,12 @@ let onlyOfficeLayoutAnalyzeRequestSeq = 0;
 let onlyOfficeKnowledgeTableRequestSeq = 0;
 let onlyOfficeKnowledgeImageRequestSeq = 0;
 let onlyOfficeSolutionWritingRequestSeq = 0;
+let onlyOfficeSourceRequestSeq = 0;
 let activeOnlyOfficeContainer = null;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
-function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = false, mode, serverUrl, onReady, onError }) {
+function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = false, mode, serverUrl, onReady, onDocumentReady, onError }) {
   const containerRef = useRef(null);
   const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
   const annotationFieldPayloadRef = useRef([]);
@@ -129,6 +130,7 @@ function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiK
             onDocumentReady: () => {
               config.events?.onDocumentReady?.();
               registerOnlyOfficeEditor(editor);
+              onDocumentReady?.();
               if (mode === "fill") {
                 window.setTimeout(() => {
                   postOnlyOfficeCommand(container, {
@@ -198,6 +200,7 @@ function requestOnlyOfficeGoToPage(page, timeoutMs = 6000) {
   const requestId = `source-page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return new Promise((resolve) => {
     let done = false;
+    let firstFailure = null;
     let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
@@ -211,9 +214,13 @@ function requestOnlyOfficeGoToPage(page, timeoutMs = 6000) {
       const data = event.data || {};
       if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-page-jumped") return;
       if (data.result?.requestId !== requestId) return;
+      if (!data.result?.ok) {
+        firstFailure ||= data.result;
+        return;
+      }
       finish(data.result);
     };
-    const timer = window.setTimeout(() => finish({ ok: false, requestId, page: targetPage, timeout: true }), timeoutMs);
+    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, requestId, page: targetPage, timeout: true }), timeoutMs);
     window.addEventListener("message", handleMessage);
     cancelPost = postActiveOnlyOfficeFrames({
       source: "guangfa-parent",
@@ -230,6 +237,7 @@ function requestOnlyOfficeGoToBookmark(bookmarkName, timeoutMs = 6000) {
   const requestId = `source-bookmark-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return new Promise((resolve) => {
     let done = false;
+    let firstFailure = null;
     let cancelPost = () => {};
     const finish = (result) => {
       if (done) return;
@@ -243,15 +251,56 @@ function requestOnlyOfficeGoToBookmark(bookmarkName, timeoutMs = 6000) {
       const data = event.data || {};
       if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-bookmark-jumped") return;
       if (data.result?.requestId !== requestId) return;
+      if (!data.result?.ok) {
+        firstFailure ||= data.result;
+        return;
+      }
       finish(data.result);
     };
-    const timer = window.setTimeout(() => finish({ ok: false, requestId, bookmarkName: targetBookmark, timeout: true }), timeoutMs);
+    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, requestId, bookmarkName: targetBookmark, timeout: true }), timeoutMs);
     window.addEventListener("message", handleMessage);
     cancelPost = postActiveOnlyOfficeFrames({
       source: "guangfa-parent",
       action: "go-to-bookmark",
       requestId,
       bookmarkName: targetBookmark,
+    }, 8);
+  });
+}
+
+function requestOnlyOfficeGoToHeading(headingPath, timeoutMs = 6000) {
+  const targetPath = String(headingPath || "").trim();
+  if (!targetPath) return Promise.resolve({ ok: false, error: "标题路径为空" });
+  const requestId = `source-heading-${Date.now()}-${++onlyOfficeSourceRequestSeq}`;
+  return new Promise((resolve) => {
+    let done = false;
+    let firstFailure = null;
+    let cancelPost = () => {};
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("message", handleMessage);
+      cancelPost();
+      resolve(result || { ok: false, requestId, headingPath: targetPath });
+    };
+    const handleMessage = (event) => {
+      const data = event.data || {};
+      if (data.source !== "guangfa-onlyoffice-custom" || data.action !== "onlyoffice-heading-jumped") return;
+      if (data.result?.requestId !== requestId) return;
+      if (!data.result?.ok) {
+        firstFailure ||= data.result;
+        return;
+      }
+      finish(data.result);
+    };
+    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, requestId, headingPath: targetPath, timeout: true }), timeoutMs);
+    window.addEventListener("message", handleMessage);
+    cancelPost = postActiveOnlyOfficeFrames({
+      source: "guangfa-parent",
+      action: "go-to-heading",
+      requestId,
+      headingPath: targetPath,
     }, 8);
   });
 }
@@ -961,6 +1010,7 @@ export {
   requestOnlyOfficeDocumentDownloadAs,
   requestOnlyOfficeDocumentSave,
   requestOnlyOfficeGoToPage,
+  requestOnlyOfficeGoToHeading,
   requestOnlyOfficeGoToBookmark,
   requestOnlyOfficeDeletePlaceholderAnchor,
   requestOnlyOfficeFillField,
