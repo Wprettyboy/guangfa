@@ -16,6 +16,7 @@ import {
   readKnowledgeTableDocx,
   searchKnowledgeTables,
 } from "../../knowledge/tables.js";
+import { readKnowledgeTableEvidence } from "../../knowledge/mineru-tables.js";
 import {
   listKnowledgeDocumentImages,
   readKnowledgeImageDocx,
@@ -268,6 +269,25 @@ function registerKnowledgeRoutes() {
     roles: ["viewer"],
     responses: { 200: "array" },
     handler: ({ params }) => listKnowledgeDocumentTables(params.documentId),
+  });
+
+  defineRoute({
+    id: "knowledge.chunks.tableEvidence",
+    method: "GET",
+    path: "/api/knowledge-chunks/:chunkId/table",
+    tags: ["knowledge"],
+    summary: "读取检索命中的 MinerU 原始表格结构",
+    roles: ["viewer"],
+    responses: { 200: "object", 404: "object" },
+    handler: async ({ params }) => {
+      const table = await readKnowledgeTableEvidence(params.chunkId);
+      if (!table) {
+        const error = new Error("该检索结果未保留可用的原始表格结构");
+        error.statusCode = 404;
+        throw error;
+      }
+      return table;
+    },
   });
 
   defineRoute({

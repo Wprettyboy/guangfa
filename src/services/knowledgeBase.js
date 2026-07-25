@@ -82,6 +82,12 @@ async function searchKnowledgeBase(payload) {
   };
 }
 
+async function readKnowledgeTableEvidence(chunkId) {
+  return apiRequest(`/api/knowledge-chunks/${encodeURIComponent(chunkId)}/table`, {
+    fallbackMessage: "表格原始结构读取失败",
+  });
+}
+
 async function openKnowledgeSourcePdf(documentId, page = 1) {
   const preview = window.open("about:blank", "_blank");
   if (!preview) throw new Error("浏览器阻止了原文 PDF 窗口，请允许弹出窗口后重试。");
@@ -133,6 +139,7 @@ export {
   removeKnowledgeDocument,
   removeKnowledgeBase,
   retryKnowledgeDocumentImages,
+  readKnowledgeTableEvidence,
   searchKnowledgeBase,
   searchKnowledgeTables,
   searchKnowledgeImages,

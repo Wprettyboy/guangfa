@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Image, Info, Loader2, Search } from "lucide-react";
 import useApiAssetUrl from "../../hooks/useApiAssetUrl.js";
+import { readKnowledgeTableEvidence } from "../../services/knowledgeBase.js";
 import KnowledgeSourceLink from "./KnowledgeSourceLink.jsx";
 import KnowledgeSearchFilters from "./KnowledgeSearchFilters.jsx";
 
@@ -72,7 +73,7 @@ function KnowledgeSearchPreview({
                   <div>
                     <strong>{getResultTitle(result)}</strong>
                     <span>{getResultMetadata(result)}</span>
-                    <p>{renderKnowledgeText(getKnowledgePreview(result.sourceText || result.text, appliedTerm), appliedTerm)}</p>
+                    <p>{isTableResult(result) ? "表格证据 · 点击查看结构化内容" : renderKnowledgeText(getKnowledgePreview(result.sourceText || result.text, appliedTerm), appliedTerm)}</p>
                   </div>
                 </button>
               ))
@@ -119,8 +120,47 @@ function KnowledgeResultDetail({ result, query, onOpenImageEvidence }) {
         </div>
       </header>
       {result.sourceAssetId ? <ImageEvidence asset={asset} documentName={result.documentName} /> : null}
-      <p>{renderKnowledgeText(result.sourceText || result.text, query)}</p>
+      {isTableResult(result) ? <KnowledgeTableEvidence result={result} query={query} /> : <p>{renderKnowledgeText(result.sourceText || result.text, query)}</p>}
     </article>
+  );
+}
+
+function KnowledgeTableEvidence({ result, query }) {
+  const [state, setState] = useState({ status: "loading", table: null, error: "" });
+
+  useEffect(() => {
+    let active = true;
+    setState({ status: "loading", table: null, error: "" });
+    readKnowledgeTableEvidence(result.id)
+      .then((table) => {
+        if (active) setState({ status: "ready", table, error: "" });
+      })
+      .catch((error) => {
+        if (active) setState({ status: "error", table: null, error: error.message || "表格原始结构读取失败" });
+      });
+    return () => { active = false; };
+  }, [result.id]);
+
+  if (state.status === "loading") {
+    return <div className="knowledge-table-evidence-status"><Loader2 size={16} className="spin" />正在读取原始表格结构</div>;
+  }
+  if (state.status === "error" || !state.table) {
+    return <><div className="knowledge-table-evidence-status error">{state.error}</div><p>{renderKnowledgeText(result.sourceText || result.text, query)}</p></>;
+  }
+  const { table } = state;
+  return (
+    <div className="knowledge-result-table-scroll" aria-label={`表格证据，共${table.rows.length}行${table.columnCount}列`}>
+      <table>
+        {table.header?.length ? <thead><tr>{table.header.map((cell, index) => <th key={`header-${index}`} colSpan={cell.colSpan} rowSpan={cell.rowSpan}>{renderKnowledgeText(cell.text, query)}</th>)}</tr></thead> : null}
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {row.map((cell, cellIndex) => <td key={`row-${rowIndex}-cell-${cellIndex}`} colSpan={cell.colSpan} rowSpan={cell.rowSpan}>{renderKnowledgeText(cell.text, query)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -175,6 +215,10 @@ function getResultTypeLabel(result) {
   if (result.evidenceType === "image") return "图片证据";
   if (result.evidenceType === "table" || String(result.blockType || "").startsWith("table")) return "表格";
   return "正文";
+}
+
+function isTableResult(result) {
+  return getResultTypeLabel(result) === "表格";
 }
 
 function getSourceLabel(result) {

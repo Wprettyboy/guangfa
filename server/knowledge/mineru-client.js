@@ -2,6 +2,7 @@ import path from "node:path";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { enrichMinerUImageCaptions } from "./image-caption.js";
+import { stripMinerUTableHtml } from "./mineru-tables.js";
 
 const defaultApiUrl = "http://127.0.0.1:8010";
 const terminalStatuses = new Set(["completed", "failed"]);
@@ -277,7 +278,7 @@ function normalizeStoredArtifactPath(value) {
 }
 
 function extractV1Text(item = {}) {
-  if (item.type === "table") return stripHtml(item.table_body || item.html || "");
+  if (item.type === "table") return stripMinerUTableHtml(item.table_body || item.html || "");
   if (item.type === "image") return [...(item.image_caption || []), ...(item.image_footnote || [])].join("\n").trim();
   return stripInlineFormatting(item.text || item.content || collectText(item));
 }
@@ -288,27 +289,12 @@ function collectText(value) {
   if (Array.isArray(value)) return value.map(collectText).filter(Boolean).join("\n");
   if (typeof value !== "object") return "";
   if (typeof value.content === "string") return value.content.trim();
-  if (typeof value.html === "string") return stripHtml(value.html);
+  if (typeof value.html === "string") return stripMinerUTableHtml(value.html);
   return Object.entries(value)
     .filter(([key]) => !new Set(["type", "level", "path", "url", "image_source", "bbox"]).has(key))
     .map(([, item]) => collectText(item))
     .filter(Boolean)
     .join("\n");
-}
-
-function stripHtml(value) {
-  return String(value || "")
-    .replace(/<\/(?:td|th)>\s*<(?:td|th)[^>]*>/gi, " | ")
-    .replace(/<\/(?:tr|p|div|li)>/gi, "\n")
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&amp;/gi, "&")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n\s+/g, "\n")
-    .trim();
 }
 
 function stripInlineFormatting(value) {
