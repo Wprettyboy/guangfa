@@ -153,7 +153,7 @@ function KnowledgeResultDetailContent({ result, query, onOpenImageEvidence, expa
           <span>{result.documentName} · {getSourceLabel(result)} · {getLocatorLabel(result)}</span>
         </div>
         <div className="knowledge-result-actions">
-          <KnowledgeSourceLink documentId={result.documentId} page={result.page} available={result.sourcePdfAvailable} />
+          <KnowledgeSourceLink documentId={result.documentId} page={result.physicalPage || result.page} available={result.sourcePdfAvailable} />
           <KnowledgeSourceViewer result={result} />
           {result.sourceAssetId ? (
             <button className="tool-button" type="button" onClick={() => onOpenImageEvidence(result.sourceAssetId)}>
@@ -175,10 +175,12 @@ function KnowledgeResultDetailContent({ result, query, onOpenImageEvidence, expa
 
 function KnowledgeSourceTrace({ result }) {
   const bbox = Array.isArray(result.locator?.bbox) && result.locator.bbox.length === 4 ? result.locator.bbox : null;
-  const pageLabel = result.page
-    ? result.sourcePdfAvailable ? `第${result.page}页` : `解析页序第${result.page}页`
-    : "未记录页码";
-  const statusLabel = result.sourcePdfAvailable ? "可查看分页原文" : "保留解析定位";
+  const pageLabel = result.sourcePdfAvailable
+    ? result.page ? `第${result.page}页` : "未记录页码"
+    : result.physicalPage
+      ? `第${result.physicalPage}页`
+      : result.page ? `标题映射中（解析页序 ${result.page}）` : "标题映射中";
+  const statusLabel = result.sourcePdfAvailable ? "可查看分页原文" : result.physicalPage ? "标题物理页" : "等待页码映射";
   return (
     <section className="knowledge-source-trace" aria-label="原文溯源信息">
       <div className="knowledge-source-trace-title">
@@ -187,8 +189,8 @@ function KnowledgeSourceTrace({ result }) {
       </div>
       <dl>
         <div>
-          <dt>页码</dt>
-          <dd>{pageLabel}</dd>
+            <dt>{result.physicalPage ? "章节起始页" : "页码"}</dt>
+            <dd>{pageLabel}</dd>
         </div>
         <div>
           <dt>定位精度</dt>
@@ -210,7 +212,9 @@ function KnowledgeSourceTrace({ result }) {
       <p>
         {result.sourcePdfAvailable
           ? "当前结果包含可分页原文，可使用右上角入口打开对应页。"
-          : "当前资料按原始格式直接解析，页码来自 MinerU 解析页序；已保留块级定位，但没有可按页打开的源文件。"}
+          : result.physicalPage
+          ? "页码来自 OnlyOffice 对原始 DOCX 的标题映射，表示章节起始页；打开原文时仍会按标题定位。"
+          : "当前结果已保留标题定位；物理页码映射完成后会显示，打开原文时仍可按标题定位。"}
       </p>
     </section>
   );
@@ -364,6 +368,7 @@ function isTableResult(result) {
 
 function getSourceLabel(result) {
   if (result.sourcePdfAvailable) return result.sourceLocation || `第${result.page}页`;
+  if (result.physicalPage) return `第${result.physicalPage}页（章节起始）`;
   if (result.page) return `解析页序 ${result.page}`;
   return "结构定位";
 }

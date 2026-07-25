@@ -212,7 +212,8 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - MinerU 3.4.4 已在本机 AMD Docker 环境完成部署验证并切为默认知识解析器。PDF 使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件使用 MinerU 自带解析器；MinerU 失败时不静默回退。需要临时诊断旧链路时才显式设置 `KNOWLEDGE_PARSER=legacy`。
 - MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
 - PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
-- DOCX 检索详情提供“打开原文”只读预览，优先使用 MinerU `headingPath` 通过 OnlyOffice 大纲管理器精确跳转到原文标题；只有没有可用标题链时才退回解析页序。原文件不存在时返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，前端提示重新上传，不把缺失伪装成定位失败。
+- DOCX 入库后由 `server/knowledge/docx-heading-pages.js` 使用 OnlyOffice 同一转换渲染链按 MinerU 标题路径建立章节起始物理页码，映射结果保存到 `knowledge_document_heading_pages`；临时 PDF 用完即删，不作为用户原文。检索详情显示 `physicalPage` 时必须标注为“章节起始页”，不能当作子块精确页。
+- DOCX 检索详情提供“打开原文”只读预览，优先使用 MinerU `headingPath` 通过 OnlyOffice 大纲管理器精确跳转到原文标题；物理页码只作为标题定位失败时的回退。原文件不存在时返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，前端提示重新上传，不把缺失伪装成定位失败。
 - 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、Docker Desktop 4.74.0；AMD Compose 通过 `/dev/dxg`、ROCDXG 和三个只读 named volumes 运行 ROCm 7.2.1、ROCm PyTorch 2.9.1 与 MinerU 3.4.4。容器 GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`，结果为 `120`。
 - Docker VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均为 healthy；真实 11 页 PDF 任务约 2 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
 - 切换默认解析器后已通过真实知识库 API 完成上传、解析、Embedding、ZVec、检索和原文读取验收：11 页、54 段、65 个结构块，状态为“已索引”，检索命中携带 PDF 页码/bbox，原文 PDF 返回完整 386,793 字节；验收临时库已删除。

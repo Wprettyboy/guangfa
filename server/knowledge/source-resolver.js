@@ -15,6 +15,13 @@ function resolveChunkSource(database, chunk) {
     FROM knowledge_documents
     WHERE id = ? AND deleted_at IS NULL
   `).get(chunk.documentId);
+  const headingPage = chunk.headingPath
+    ? database.prepare(`
+        SELECT physical_page AS physicalPage
+        FROM knowledge_document_heading_pages
+        WHERE document_id = ? AND heading_path = ?
+      `).get(chunk.documentId, chunk.headingPath)
+    : null;
   const page = Number(chunk.page || chunk.pageNumber || 0) || null;
   const paragraphStart = Number(chunk.paragraphStart || 0) || null;
   const paragraphEnd = Number(chunk.paragraphEnd || paragraphStart || 0) || null;
@@ -40,6 +47,7 @@ function resolveChunkSource(database, chunk) {
   }
   return formatResolvedSource({
     ...chunk,
+    physicalPage: Number(headingPage?.physicalPage || 0) || null,
     sourceText: chunk.sourceText || sourceText || chunk.text || "",
     sourceFileAvailable: Boolean(document?.filePath && existsSync(document.filePath)),
     sourceFileType: document?.fileExt || "",
@@ -122,12 +130,18 @@ function removeRepeatedTableHeader(value, header) {
 
 function formatResolvedSource(chunk) {
   const page = Number(chunk?.page || chunk?.pageNumber || 0);
+  const physicalPage = Number(chunk?.physicalPage || 0) || null;
   const documentName = chunk?.documentName || "未命名资料";
   return {
     ...chunk,
     page: page || "",
     sourceText: chunk?.sourceText || chunk?.text || "",
-    sourceLocation: page ? `${documentName} 第${page}页` : `${documentName}（旧资料缺少原文页码）`,
+    sourceLocation: physicalPage
+      ? `${documentName} 第${physicalPage}页（章节起始页）`
+      : page
+        ? chunk?.sourcePdfAvailable ? `${documentName} 第${page}页` : `${documentName}（解析页序 ${page}）`
+        : `${documentName}（未映射物理页码）`,
+    physicalPage: physicalPage || "",
     sourcePdfAvailable: Boolean(chunk?.sourcePdfAvailable),
     sourceFileAvailable: Boolean(chunk?.sourceFileAvailable),
     sourceFileType: String(chunk?.sourceFileType || chunk?.fileExt || "").toLowerCase(),

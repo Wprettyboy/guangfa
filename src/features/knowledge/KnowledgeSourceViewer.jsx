@@ -52,7 +52,7 @@ function KnowledgeSourceViewer({ result }) {
             <header className="knowledge-source-viewer-header">
               <div>
                 <strong>{result.documentName || "原始 DOCX"}</strong>
-                <span>{result.page ? `MinerU 解析页序第${result.page}页` : "原格式查看"} · {result.headingPath || "当前检索结果"}</span>
+                <span>{result.physicalPage ? `OnlyOffice 第${result.physicalPage}页（章节起始）` : "按标题定位"} · {result.headingPath || "当前检索结果"}</span>
               </div>
               <button className="icon-button quiet" type="button" onClick={() => setOpen(false)} aria-label="关闭原文预览" title="关闭">
                 <X size={18} />
@@ -68,7 +68,7 @@ function KnowledgeSourceViewer({ result }) {
                   mode="source"
                   onDocumentReady={() => {
                     window.setTimeout(() => {
-                      const jumpByPage = () => result.page ? requestOnlyOfficeGoToPage(result.page) : null;
+                      const jumpByPage = () => result.physicalPage ? requestOnlyOfficeGoToPage(result.physicalPage) : null;
                       if (result.locator?.type === "bookmark" && result.locator.anchor) {
                         requestOnlyOfficeGoToBookmark(result.locator.anchor).then((jumpResult) => {
                           if (!jumpResult?.ok) jumpByPage();

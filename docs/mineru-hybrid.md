@@ -5,10 +5,11 @@
 项目固定使用 MinerU `3.4.4` 的 Hybrid 路线：
 
 - PDF 与图片使用 `hybrid-http-client`。默认 `effort=medium`，Pipeline 负责版面与 bbox，MinerU VLM 负责版面块内容提取；需要整页高精度解析时可切换 `effort=high`。
-- DOCX、PPTX、XLSX 由 MinerU 自带 Office parser 解析，不经过 OnlyOffice 转 PDF。
+- DOCX、PPTX、XLSX 由 MinerU 自带 Office parser 解析；DOCX 解析主链不依赖 OnlyOffice，入库后的标题物理页映射才会异步调用 OnlyOffice。
 - TXT 继续使用项目内原生文本解析。
 - 原始上传文件始终保留在 `data/knowledge/files/<documentId>/source.<ext>`；Markdown、middle JSON、content list 和图片保存在同目录的 `mineru/`。
 - Markdown 用于人工查看。入库定位以 content list / middle JSON 的页码、bbox、块类型和标题级别为准。
+- DOCX 入库完成后会用 OnlyOffice 同一渲染链生成临时 PDF，仅按 MinerU 标题路径映射章节起始物理页码；临时 PDF 会立即删除，不替代原始 DOCX，也不把章节页伪装成子块精确页。
 
 Docker 容器拓扑：
 
@@ -88,7 +89,8 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 
 - PDF 块同时具备页码与 bbox 时，`locatorGrade=exact`，可通过原始 PDF 精确定位。
 - Office 文件保留原格式；标题路径或 Office anchor 可用于容器级/书签级定位，但不伪装成 PDF bbox。
-- DOCX 检索详情可通过 `POST /api/knowledge-documents/:documentId/office-preview` 打开原始 DOCX 的只读 OnlyOffice 预览。定位优先消费 MinerU `headingPath`，通过 OnlyOffice 大纲管理器按完整标题链跳转到原文；没有可匹配标题链时才使用 MinerU 解析页序作为回退。该流程不生成 `source.pdf`。如果原始 DOCX 已被删除，接口返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，用户需要重新上传资料。
+- DOCX 入库时由 `server/knowledge/docx-heading-pages.js` 调用 OnlyOffice 转换链，按标题路径建立章节起始物理页码映射，保存到 `knowledge_document_heading_pages`。检索详情优先显示 `physicalPage`；没有映射时显示等待映射并继续按标题定位。
+- DOCX 检索详情可通过 `POST /api/knowledge-documents/:documentId/office-preview` 打开原始 DOCX 的只读 OnlyOffice 预览。定位优先消费 MinerU `headingPath`，通过 OnlyOffice 大纲管理器按完整标题链跳转到原文；物理页码仅作为章节起始页回退，不替代标题定位。临时映射 PDF 不作为用户原文保存。如果原始 DOCX 已被删除，接口返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，用户需要重新上传资料。
 - 标题和完整表格保存为父块；普通正文按 MinerU 块边界生成有界子块，超长正文只在段落/标点边界切分。
 - 表格父块始终保留完整内容，检索使用带表头的有界行组子块，表格行不会跨两个子块。命中后，小表扩展为完整表格，大表扩展为表头和命中行附近的有界窗口。
 - 关键词与向量索引只写入检索子块；父块仅用于上下文扩展。没有子块的孤立标题仍可检索。

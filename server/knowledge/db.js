@@ -288,6 +288,16 @@ CREATE TABLE IF NOT EXISTS knowledge_document_paragraphs (
   FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS knowledge_document_heading_pages (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  heading_path TEXT NOT NULL,
+  physical_page INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(document_id, heading_path),
+  FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_document_images (
   id TEXT PRIMARY KEY,
   document_id TEXT NOT NULL,
@@ -337,6 +347,7 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_bases_scope ON knowledge_bases(scope, p
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_kb ON knowledge_documents(kb_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_pages_document ON knowledge_document_pages(document_id, page_number);
 CREATE INDEX IF NOT EXISTS idx_knowledge_paragraphs_document ON knowledge_document_paragraphs(document_id, page_number, paragraph_index);
+CREATE INDEX IF NOT EXISTS idx_knowledge_heading_pages_document ON knowledge_document_heading_pages(document_id, heading_path);
 CREATE INDEX IF NOT EXISTS idx_knowledge_images_document ON knowledge_document_images(document_id, status);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_kb ON knowledge_chunks(kb_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id);

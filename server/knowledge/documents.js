@@ -14,6 +14,7 @@ import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js"
 import { applyKnowledgeContextBudget } from "./context-budget.js";
 import { rebuildKnowledgeIndexV4 } from "./indexer.js";
 import { parseKnowledgeDocument } from "./parser.js";
+import { mapDocxHeadingPages } from "./docx-heading-pages.js";
 import { retryMinerUImageCaptions } from "./mineru-client.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
 import { searchKnowledgeV4 } from "./search.js";
@@ -97,6 +98,7 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
   const pdfPath = path.join(documentDir, "source.pdf");
   const textPath = path.join(documentDir, "source.txt");
   const artifactsDir = path.join(documentDir, "mineru");
+  const headingPagesPath = path.join(documentDir, ".heading-pages.pdf");
   try {
     await mkdir(documentDir, { recursive: true });
     await writeFile(sourcePath, fileBuffer);
@@ -134,7 +136,7 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
     await rm(path.join(filesDir, reservation.replaced.id), { recursive: true, force: true }).catch(() => {});
   }
   const processingContext = {
-    database, kb, documentId, kbId, fileName, fileExt, sourcePath, pdfPath, textPath, artifactsDir, documentDir, now,
+    database, kb, documentId, kbId, fileName, fileExt, sourcePath, pdfPath, textPath, artifactsDir, documentDir, headingPagesPath, now,
   };
   if (options.background) {
     startKnowledgeDocumentTask(documentId, () => processKnowledgeDocument(processingContext));
@@ -144,13 +146,14 @@ async function addKnowledgeDocument(kbId, payload = {}, options = {}) {
 }
 
 async function processKnowledgeDocument(context) {
-  const { database, kb, documentId, kbId, fileName, fileExt, sourcePath, pdfPath, textPath, artifactsDir, documentDir, now } = context;
+  const { database, kb, documentId, kbId, fileName, fileExt, sourcePath, pdfPath, textPath, artifactsDir, documentDir, headingPagesPath, now } = context;
   activeKnowledgeDocumentIds.add(documentId);
   try {
     let chunks = [];
     let status = "解析失败";
     let indexMode = "keyword";
     let error = "";
+    let headingMappingWarning = "";
     let parsed = null;
     let imageProgress = { captioned: 0, failed: 0 };
     try {
@@ -183,7 +186,35 @@ async function processKnowledgeDocument(context) {
       chunks = parsed.blocks?.length
         ? buildStructuredKnowledgeChunks({ ...chunkContext, blocks: parsed.blocks, fileExt })
         : buildKnowledgeChunks({ ...chunkContext, paragraphs });
-      writeParsedDocument(database, { documentId, kbId, fileExt, pages: parsed.pages, paragraphs, chunks, images: parsed.images || [], now });
+      let headingPages = [];
+      if (fileExt === "docx") {
+        updateDocumentProgress(database, {
+          documentId,
+          processingStage: "标题页码映射",
+          imageCount: parsed.images?.length || 0,
+          imageCaptionCount: parsed.images?.filter((image) => image.status === "captioned").length || 0,
+          imageFailedCount: parsed.images?.filter((image) => image.status === "failed").length || 0,
+        });
+        try {
+          const headingPaths = [...new Set(chunks
+            .filter((chunk) => chunk.blockType === "section-parent")
+            .map((chunk) => String(chunk.headingPath || "").trim())
+            .filter(Boolean))];
+          headingPages = await mapDocxHeadingPages({
+            documentId,
+            sourcePath,
+            outputPath: headingPagesPath,
+            title: fileName,
+            headingPaths,
+          });
+          if (headingPages.length < headingPaths.length) {
+            headingMappingWarning = `标题物理页仅映射 ${headingPages.length}/${headingPaths.length} 个章节`;
+          }
+        } catch (mappingError) {
+          headingMappingWarning = `标题物理页映射失败：${mappingError?.message || "OnlyOffice 不可用"}`;
+        }
+      }
+      writeParsedDocument(database, { documentId, kbId, fileExt, pages: parsed.pages, paragraphs, chunks, headingPages, images: parsed.images || [], now });
       updateDocumentProgress(database, {
         documentId,
         processingStage: "索引中",
@@ -192,7 +223,7 @@ async function processKnowledgeDocument(context) {
         imageFailedCount: parsed.images?.filter((image) => image.status === "failed").length || 0,
       });
       status = "关键词可用";
-      error = parsed.warning || "未配置 embedding，当前资料仅支持关键词/全文检索。";
+      error = [parsed.warning || "未配置 embedding，当前资料仅支持关键词/全文检索。", headingMappingWarning].filter(Boolean).join("；");
     } catch (parseError) {
       parsed = null;
       error = parseError?.message || "资料解析失败";
@@ -203,10 +234,10 @@ async function processKnowledgeDocument(context) {
         await rebuildKnowledgeIndexV4(database);
         status = parsed.images?.some((image) => image.status === "failed") ? "部分可用" : "已索引";
         indexMode = "dense-sparse-fts";
-        error = parsed.warning || "";
+        error = [parsed.warning, headingMappingWarning].filter(Boolean).join("；");
       } catch (embeddingError) {
         status = "关键词可用";
-        error = `向量索引不可用：${embeddingError?.message || "未知错误"}`;
+        error = [`向量索引不可用：${embeddingError?.message || "未知错误"}`, headingMappingWarning].filter(Boolean).join("；");
       }
     }
 
@@ -257,6 +288,7 @@ async function deleteKnowledgeDocument(kbId, documentId) {
     database.prepare("DELETE FROM knowledge_chunks WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_paragraphs WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_pages WHERE document_id = ?").run(documentId);
+    database.prepare("DELETE FROM knowledge_document_heading_pages WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_documents WHERE id = ?").run(documentId);
     touchKnowledgeBase(database, kbId);
     return rows;
@@ -625,13 +657,16 @@ function getKnowledgeDocumentByContent(database, kbId, fileHash, fileName) {
   `).get(kbId, fileHash, fileName);
 }
 
-function writeParsedDocument(database, { documentId, kbId, fileExt, pages, paragraphs, chunks, images = [], now }) {
+function writeParsedDocument(database, { documentId, kbId, fileExt, pages, paragraphs, chunks, headingPages = null, images = [], now }) {
   runTransaction(database, () => {
     const document = getKnowledgeDocumentRow(database, documentId);
     if (!document || document.kbId !== kbId) throwHttpError("资料在解析过程中已被删除", 409);
     database.prepare("DELETE FROM knowledge_chunks WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_paragraphs WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM knowledge_document_pages WHERE document_id = ?").run(documentId);
+    if (Array.isArray(headingPages)) {
+      database.prepare("DELETE FROM knowledge_document_heading_pages WHERE document_id = ?").run(documentId);
+    }
     database.prepare("DELETE FROM knowledge_document_images WHERE document_id = ?").run(documentId);
     const insertPage = database.prepare(`
       INSERT INTO knowledge_document_pages (id, document_id, page_number, text, created_at)
@@ -641,6 +676,10 @@ function writeParsedDocument(database, { documentId, kbId, fileExt, pages, parag
       INSERT INTO knowledge_document_paragraphs (id, document_id, page_number, paragraph_index, text, normalized_text, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
+    const insertHeadingPage = Array.isArray(headingPages) ? database.prepare(`
+        INSERT INTO knowledge_document_heading_pages (id, document_id, heading_path, physical_page, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `) : null;
     const insertChunk = database.prepare(`
       INSERT INTO knowledge_chunks (
         id, kb_id, document_id, chunk_index, page_number, paragraph_start, paragraph_end, text,
@@ -669,6 +708,12 @@ function writeParsedDocument(database, { documentId, kbId, fileExt, pages, parag
         paragraph.normalizedText,
         now,
       );
+    });
+    (headingPages || []).forEach((heading, index) => {
+      const physicalPage = Number(heading?.physicalPage);
+      const headingPath = String(heading?.headingPath || "").trim();
+      if (!insertHeadingPage || !headingPath || !Number.isSafeInteger(physicalPage) || physicalPage < 1) return;
+      insertHeadingPage.run(`${documentId}-H${String(index + 1).padStart(5, "0")}`, documentId, headingPath, physicalPage, now);
     });
     chunks.forEach((chunk) => {
       insertChunk.run(
@@ -820,6 +865,7 @@ function formatSearchResult(database, item) {
     documentName: item.documentName,
     chunkIndex: item.chunkIndex,
     page: item.page || "",
+    physicalPage: resolved.physicalPage || "",
     paragraphStart: item.paragraphStart || "",
     paragraphEnd: item.paragraphEnd || "",
     text: resolved.sourceText || item.text || "",

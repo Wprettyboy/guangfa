@@ -203,6 +203,7 @@
 | `server/knowledge/db.js` | 知识库 SQLite 初始化。创建库、资料、页面、段落、切片和上传幂等表/索引，迁移旧 JSON，并初始化默认项目库/全局库。 |
 | `server/knowledge/documents.js` | 知识文档主服务。先做类型/内容安全校验，再按“知识库+身份+幂等键”预留、内容去重、解析、切片、Embedding 和 ZVec 入库；并处理并发上传、删除、重建和检索回溯。 |
 | `server/knowledge/docx-convert.js` | DOCX 转 PDF 的 OnlyOffice 适配。用带 inbox JWT 和短期文档地址的转换命令调用 `ConvertService.ashx`，有界下载 PDF 以保留页码。 |
+| `server/knowledge/docx-heading-pages.js` | DOCX 标题物理页映射。使用 OnlyOffice 同一转换渲染链提取临时 PDF 页文本，按 MinerU 标题路径记录章节起始页，完成后删除临时 PDF。 |
 | `server/knowledge/images.js` | DOCX 图片提取。安全读取 OOXML 媒体并验证栅格魔数，识别标题/尺寸/页码，支持检索及带能力票据的预览和单图片 DOCX。 |
 | `server/knowledge/indexer.js` | V4 索引编排。串行编码/写入不可变 generation，处理索引 OOM 批量减半、关闭重开验证、manifest 发布和旧版本清理。 |
 | `server/knowledge/mineru-client.js` | MinerU 3.4.4 适配。提交/轮询 Hybrid 任务、安全展开 ZIP 产物，并把 content list V1/V2 归一为页、块、标题级别和 bbox。 |
@@ -211,7 +212,7 @@
 | `server/knowledge/scope.js` | 检索范围控制。根据显式项目库/全局库选择计算可访问库和切片；未选择时不隐式全库搜索。 |
 | `server/knowledge/search-filters.js` | 结构筛选合同。严格校验文档、页码、表格、星号、块类型和标题路径，并生成等价 ZVec/SQLite 过滤。 |
 | `server/knowledge/search.js` | V4 检索主流程。Dense/Sparse/FTS 各取 Top-60，经 RRF 得到 Top-20 后精排；ZVec 整体不可用时才走 SQLite 关键词。 |
-| `server/knowledge/source-resolver.js` | 原文定位与上下文扩展。按命中子块生成权威页码/bbox 引用，并从 SQLite 父子关系扩展相邻正文或表格行窗口。 |
+| `server/knowledge/source-resolver.js` | 原文定位与上下文扩展。按命中子块生成 MinerU 解析页、DOCX 章节起始物理页和 bbox 引用，并从 SQLite 父子关系扩展相邻正文或表格行窗口。 |
 | `server/knowledge/tables.js` | DOCX 表格提取。安全解析表格、合并单元格、标题和页码，支持检索并生成带短期能力票据的单表格 DOCX 供 OnlyOffice 插入。 |
 | `server/knowledge/text-ranking.js` | 关键词排序。清理查询、扩展招投标词，对短语和关键词评分，用于基础检索与混合召回。 |
 | `server/knowledge/zvec-store.js` | ZVec V4 适配。定义 1024 维 Dense、Sparse、FTS 和结构化过滤 schema，管理不可变 generations、活动 manifest、读句柄与三路查询。 |
