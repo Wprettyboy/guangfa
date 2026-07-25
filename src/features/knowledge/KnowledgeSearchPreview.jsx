@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Image, Info, Loader2, Maximize2, Search, X } from "lucide-react";
+import { ChevronDown, Image, Info, Loader2, MapPin, Maximize2, Search, X } from "lucide-react";
 import useApiAssetUrl from "../../hooks/useApiAssetUrl.js";
 import { readKnowledgeTableEvidence } from "../../services/knowledgeBase.js";
 import KnowledgeSourceLink from "./KnowledgeSourceLink.jsx";
@@ -120,9 +120,53 @@ function KnowledgeResultDetail({ result, query, onOpenImageEvidence }) {
           ) : null}
         </div>
       </header>
+      <KnowledgeSourceTrace result={result} />
       {result.sourceAssetId ? <ImageEvidence asset={asset} documentName={result.documentName} /> : null}
       {isTableResult(result) ? <KnowledgeTableEvidence result={result} query={query} /> : <p>{renderKnowledgeText(result.sourceText || result.text, query)}</p>}
     </article>
+  );
+}
+
+function KnowledgeSourceTrace({ result }) {
+  const bbox = Array.isArray(result.locator?.bbox) && result.locator.bbox.length === 4 ? result.locator.bbox : null;
+  const pageLabel = result.page
+    ? result.sourcePdfAvailable ? `第${result.page}页` : `解析页序第${result.page}页`
+    : "未记录页码";
+  const statusLabel = result.sourcePdfAvailable ? "可查看分页原文" : "保留解析定位";
+  return (
+    <section className="knowledge-source-trace" aria-label="原文溯源信息">
+      <div className="knowledge-source-trace-title">
+        <span><MapPin size={15} /> 原文溯源</span>
+        <em>{statusLabel}</em>
+      </div>
+      <dl>
+        <div>
+          <dt>页码</dt>
+          <dd>{pageLabel}</dd>
+        </div>
+        <div>
+          <dt>定位精度</dt>
+          <dd>{getLocatorLabel(result)}</dd>
+        </div>
+        {bbox ? (
+          <div>
+            <dt>解析区域</dt>
+            <dd>{bbox.map((value) => formatLocatorNumber(value)).join("，")}</dd>
+          </div>
+        ) : null}
+        {result.headingPath ? (
+          <div>
+            <dt>标题路径</dt>
+            <dd>{result.headingPath}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <p>
+        {result.sourcePdfAvailable
+          ? "当前结果包含可分页原文，可使用右上角入口打开对应页。"
+          : "当前资料按原始格式直接解析，页码来自 MinerU 解析页序；已保留块级定位，但没有可按页打开的源文件。"}
+      </p>
+    </section>
   );
 }
 
@@ -280,6 +324,11 @@ function getSourceLabel(result) {
 
 function getLocatorLabel(result) {
   return result.locatorGrade === "exact" ? "精确定位" : "上下文定位";
+}
+
+function formatLocatorNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? String(Math.round(number * 100) / 100) : "-";
 }
 
 function getKnowledgePreview(text, query, maxLength = 220) {
