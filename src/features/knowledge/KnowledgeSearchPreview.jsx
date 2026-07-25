@@ -52,7 +52,7 @@ function KnowledgeSearchPreview({
         value={searchFilters}
         onChange={onSearchFiltersChange}
       />
-      {searchDirty ? <div className="knowledge-search-pending">条件已修改，当前结果仍基于上一次检索。</div> : null}
+      {searchDirty ? <div className="knowledge-search-pending">筛选条件已修改，当前结果仍基于上一次检索。请点击“重新检索”应用条件。</div> : null}
       {searchDiagnostics ? <KnowledgeSearchDiagnostics diagnostics={searchDiagnostics} resultCount={searchResults.length} /> : null}
       {searchError ? <div className="knowledge-search-error">{searchError}</div> : null}
       <div className="knowledge-search-content">
