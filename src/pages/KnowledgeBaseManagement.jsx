@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BookOpenText,
   ChevronDown,
@@ -6,16 +6,13 @@ import {
   Database,
   FileText,
   FolderOpen,
-  Info,
-  Image,
   Loader2,
   RotateCcw,
-  Search,
   Trash2,
   Upload,
 } from "lucide-react";
-import KnowledgeSourceLink from "../features/knowledge/KnowledgeSourceLink.jsx";
-import KnowledgeSearchFilters, { emptyKnowledgeSearchFilters } from "../features/knowledge/KnowledgeSearchFilters.jsx";
+import KnowledgeSearchPreview from "../features/knowledge/KnowledgeSearchPreview.jsx";
+import { emptyKnowledgeSearchFilters } from "../features/knowledge/KnowledgeSearchFilters.jsx";
 import { openKnowledgeImageEvidence, retryKnowledgeDocumentImages, searchKnowledgeBase } from "../services/knowledgeBase.js";
 
 function KnowledgeBaseManagement({
@@ -42,12 +39,16 @@ function KnowledgeBaseManagement({
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const [selectedResultId, setSelectedResultId] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState(null);
+  const [activeKnowledgeView, setActiveKnowledgeView] = useState("documents");
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [retryingDocumentId, setRetryingDocumentId] = useState("");
   const [expandedKnowledgeGroups, setExpandedKnowledgeGroups] = useState({ project: true, global: true });
   const selectedBase = knowledgeBases.find((base) => base.id === selectedKnowledgeBaseId) || knowledgeBases[0];
   const selectedResult = searchResults.find((item) => item.id === selectedResultId) || searchResults[0];
+  const currentSearchSignature = createSearchSignature(searchTerm, toSearchFilters(searchFilters));
+  const searchDirty = Boolean(appliedSearch && appliedSearch.signature !== currentSearchSignature);
   const totalDocuments = knowledgeBases.reduce((sum, base) => sum + (base.documentCount || 0), 0);
   const totalChunks = knowledgeBases.reduce((sum, base) => sum + (base.chunkCount || 0), 0);
   const knowledgeTreeGroups = [
@@ -99,6 +100,8 @@ function KnowledgeBaseManagement({
     setSearchResults([]);
     setSearchDiagnostics(null);
     setSelectedResultId("");
+    setAppliedSearch(null);
+    setSearchError("");
   }, [selectedBase?.id]);
 
   async function handleCreateBase(event) {
@@ -171,31 +174,34 @@ function KnowledgeBaseManagement({
 
   async function handleSearch(event) {
     event.preventDefault();
-    if (!searchTerm.trim()) {
+    const query = searchTerm.trim();
+    if (!query) {
       setSearchResults([]);
       setSearchDiagnostics(null);
       setSelectedResultId("");
+      setAppliedSearch(null);
+      setSearchError("");
       return;
     }
+    const filters = toSearchFilters(searchFilters);
+    const searchSnapshot = { term: query, signature: createSearchSignature(query, filters) };
     setSearching(true);
     setSearchError("");
     try {
       const result = await searchKnowledgeBase({
-        query: searchTerm,
+        query,
         projectId: selectedBase?.scope === "global" ? projectId : selectedBase?.projectId || projectId,
         kbIds: selectedBase?.id ? [selectedBase.id] : [],
         includeGlobal: false,
         topK: 8,
-        filters: toSearchFilters(searchFilters),
+        filters,
       });
       setSearchResults(result.items);
       setSearchDiagnostics(result.diagnostics);
       setSelectedResultId(result.items[0]?.id || "");
+      setAppliedSearch(searchSnapshot);
     } catch (error) {
       setSearchError(error.message || "知识库检索失败");
-      setSearchResults([]);
-      setSearchDiagnostics(null);
-      setSelectedResultId("");
     } finally {
       setSearching(false);
     }
@@ -299,206 +305,115 @@ function KnowledgeBaseManagement({
           </div>
         </aside>
 
-        <section className="knowledge-documents panel-section">
+        <section className="knowledge-workspace panel-section">
           <div className="panel-title align-top">
             <div>
               <h2>{selectedBase?.name || "未选择知识库"}</h2>
               <p>{selectedBase?.scope === "global" ? "全局资料会参与所有项目召回。" : "项目资料仅参与当前项目召回。"}</p>
             </div>
-            {canEdit ? (
-              <>
-                <input
-                  className="visually-hidden"
-                  type="file"
-                  accept=".pdf,.docx,.pptx,.xlsx,.txt"
-                  multiple
-                  ref={fileInputRef}
-                  onChange={handleUploadChange}
-                />
-                <button className="tool-button primary" onClick={() => fileInputRef.current?.click()} disabled={!selectedBase || uploading}>
-                  {uploading ? <Loader2 size={17} className="spin" /> : <Upload size={17} />}
-                  {uploading ? "入库中" : "上传资料"}
-                </button>
-              </>
-            ) : null}
-          </div>
-          {canEdit ? <div
-            className={uploading ? "knowledge-upload-zone busy" : "knowledge-upload-zone"}
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={handleDropUpload}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                fileInputRef.current?.click();
-              }
-            }}
-          >
-            {uploading ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
-            <div>
-              <strong>{uploading ? "正在入库资料" : "点击或拖拽资料入库"}</strong>
-              <span>支持 PDF、DOCX、PPTX、XLSX、TXT；资料会经 MinerU 解析后进入当前知识库。</span>
+            <div className="knowledge-workspace-tabs" role="tablist" aria-label="知识库工作区">
+              <button className={activeKnowledgeView === "documents" ? "active" : ""} type="button" role="tab" aria-selected={activeKnowledgeView === "documents"} onClick={() => setActiveKnowledgeView("documents")}>资料管理</button>
+              <button className={activeKnowledgeView === "search" ? "active" : ""} type="button" role="tab" aria-selected={activeKnowledgeView === "search"} onClick={() => setActiveKnowledgeView("search")}>检索预览</button>
             </div>
-          </div> : null}
-          {uploadMessage ? <div className="knowledge-upload-message ok">{uploadMessage}</div> : null}
-          {uploadError ? <div className="knowledge-upload-message error">{uploadError}</div> : null}
-          <div className="knowledge-document-table">
-            {selectedBase?.documents?.length ? (
-              selectedBase.documents.map((document) => (
-                <div className="knowledge-document-row" key={document.id}>
-                  <FileText size={17} />
-                  <div>
-                    <strong>{document.name}</strong>
-                    <span>{formatDocumentStatus(document)}</span>
-                    {document.error ? <em>{document.error}</em> : null}
-                  </div>
-                  {canEdit ? (
-                    <div className="knowledge-document-actions">
-                      {document.imageFailedCount > 0 && !document.processingStage ? (
-                        <button className="icon-button quiet" onClick={() => handleRetryImages(document)} disabled={Boolean(retryingDocumentId)} aria-label={`重试${document.name}的图片解析`} title="重试失败图片">
-                          {retryingDocumentId === document.id ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}
-                        </button>
-                      ) : null}
-                      <button className="icon-button quiet" onClick={() => onDeleteDocument(selectedBase.id, document.id)} aria-label={`删除${document.name}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ) : null}
+          </div>
+          {activeKnowledgeView === "documents" ? (
+            <section className="knowledge-documents">
+              <div className="knowledge-document-toolbar">
+                <span>{selectedBase?.documentCount || 0} 份资料</span>
+                {canEdit ? (
+                  <>
+                    <input
+                      className="visually-hidden"
+                      type="file"
+                      accept=".pdf,.docx,.pptx,.xlsx,.txt"
+                      multiple
+                      ref={fileInputRef}
+                      onChange={handleUploadChange}
+                    />
+                    <button className="tool-button primary" onClick={() => fileInputRef.current?.click()} disabled={!selectedBase || uploading}>
+                      {uploading ? <Loader2 size={17} className="spin" /> : <Upload size={17} />}
+                      {uploading ? "入库中" : "上传资料"}
+                    </button>
+                  </>
+                ) : null}
+              </div>
+              {canEdit ? <div
+                className={uploading ? "knowledge-upload-zone busy" : "knowledge-upload-zone"}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={handleDropUpload}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+              >
+                {uploading ? <Loader2 size={18} className="spin" /> : <Upload size={18} />}
+                <div>
+                  <strong>{uploading ? "正在入库资料" : "点击或拖拽资料入库"}</strong>
+                  <span>支持 PDF、DOCX、PPTX、XLSX、TXT；资料会经 MinerU 解析后进入当前知识库。</span>
                 </div>
-              ))
-            ) : (
-              <div className="empty-state">
-                <Database size={18} />
-                <span>当前知识库暂无资料</span>
+              </div> : null}
+              {uploadMessage ? <div className="knowledge-upload-message ok">{uploadMessage}</div> : null}
+              {uploadError ? <div className="knowledge-upload-message error">{uploadError}</div> : null}
+              <div className="knowledge-document-table">
+                {selectedBase?.documents?.length ? (
+                  selectedBase.documents.map((document) => (
+                    <div className="knowledge-document-row" key={document.id}>
+                      <FileText size={17} />
+                      <div>
+                        <strong>{document.name}</strong>
+                        <span>{formatDocumentStatus(document)}</span>
+                        {document.error ? <em>{document.error}</em> : null}
+                      </div>
+                      {canEdit ? (
+                        <div className="knowledge-document-actions">
+                          {document.imageFailedCount > 0 && !document.processingStage ? (
+                            <button className="icon-button quiet" onClick={() => handleRetryImages(document)} disabled={Boolean(retryingDocumentId)} aria-label={`重试${document.name}的图片解析`} title="重试失败图片">
+                              {retryingDocumentId === document.id ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}
+                            </button>
+                          ) : null}
+                          <button className="icon-button quiet" onClick={() => onDeleteDocument(selectedBase.id, document.id)} aria-label={`删除${document.name}`}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    <Database size={18} />
+                    <span>当前知识库暂无资料</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </section>
+          ) : (
+            <KnowledgeSearchPreview
+              selectedBase={selectedBase}
+              searchTerm={searchTerm}
+              appliedSearch={appliedSearch}
+              searchFilters={searchFilters}
+              searchResults={searchResults}
+              searchDiagnostics={searchDiagnostics}
+              searchError={searchError}
+              searching={searching}
+              searchDirty={searchDirty}
+              selectedResult={selectedResult}
+              onSearchTermChange={setSearchTerm}
+              onSearchFiltersChange={setSearchFilters}
+              onSearch={handleSearch}
+              onSelectResult={setSelectedResultId}
+              onOpenImageEvidence={handleOpenImageEvidence}
+            />
+          )}
         </section>
-
-        <aside className="knowledge-search panel-section">
-          <div className="panel-title align-top">
-            <div>
-              <h2>检索预览</h2>
-              <p>{selectedBase ? `仅检索当前选中的知识库：${selectedBase.name}` : "请选择知识库后检索。"}</p>
-            </div>
-          </div>
-          <form className="knowledge-search-form" onSubmit={handleSearch}>
-            <div className="search-box editable">
-              <Search size={16} />
-              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="搜索项目名称、评审办法、业绩要求" />
-            </div>
-            <button className="tool-button solid" type="submit" disabled={searching}>
-              {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
-              检索
-            </button>
-          </form>
-          <KnowledgeSearchFilters
-            documents={selectedBase?.documents || []}
-            value={searchFilters}
-            onChange={setSearchFilters}
-          />
-          {searchDiagnostics ? <KnowledgeSearchDiagnostics diagnostics={searchDiagnostics} /> : null}
-          {searchError ? <div className="knowledge-search-error">{searchError}</div> : null}
-          {searchTerm.trim() ? (
-            <div className="knowledge-result-summary">
-              {searching ? "正在检索..." : `共 ${searchResults.length} 条结果`}
-            </div>
-          ) : null}
-          <div className="knowledge-result-list">
-            {searchResults.length === 0 ? (
-              <div className="empty-state compact">
-                <Info size={17} />
-                <span>暂无检索结果</span>
-              </div>
-            ) : (
-              searchResults.map((result) => (
-                <button
-                  className={result.id === selectedResult?.id ? "knowledge-result-row selected" : "knowledge-result-row"}
-                  key={result.id}
-                  onClick={() => setSelectedResultId(result.id)}
-                >
-                  <strong>{result.evidenceType === "image" ? <><Image size={14} /> 图片证据 · </> : null}{result.documentName}</strong>
-                  <span>{result.scope === "global" ? "全局库" : "项目库"} · {result.sourceLocation || `片段${result.chunkIndex}`} · {result.mode} · 相关度 {result.score}</span>
-                  <p>{renderKnowledgeText(getKnowledgePreview(result.sourceText || result.text, searchTerm), searchTerm)}</p>
-                </button>
-              ))
-            )}
-          </div>
-          {selectedResult ? (
-            <div className="knowledge-result-detail">
-              <strong>{selectedResult.documentName}</strong>
-              <span>{selectedResult.sourceLocation || "旧资料缺少原文页码"} · 相关度 {selectedResult.score} · {selectedResult.scope === "global" ? "全局库" : "项目库"}</span>
-              <KnowledgeSourceLink
-                documentId={selectedResult.documentId}
-                page={selectedResult.page}
-                available={selectedResult.sourcePdfAvailable}
-              />
-              {selectedResult.sourceAssetId ? (
-                <button className="tool-button" type="button" onClick={() => handleOpenImageEvidence(selectedResult.sourceAssetId)}>
-                  <Image size={15} />
-                  查看图片证据
-                </button>
-              ) : null}
-              <p>{renderKnowledgeText(selectedResult.sourceText || selectedResult.text, searchTerm)}</p>
-            </div>
-          ) : null}
-        </aside>
       </div>
     </section>
   );
-}
-function getKnowledgePreview(text, query, maxLength = 220) {
-  const value = String(text || "").trim();
-  if (value.length <= maxLength) return value;
-  const terms = createKnowledgeDisplayTerms(query);
-  const hitIndex = terms.reduce((best, term) => {
-    const index = value.toLowerCase().indexOf(term.toLowerCase());
-    if (index < 0) return best;
-    return best < 0 ? index : Math.min(best, index);
-  }, -1);
-  const start = hitIndex >= 0 ? Math.max(0, hitIndex - 70) : 0;
-  const end = Math.min(value.length, start + maxLength);
-  return `${start > 0 ? "..." : ""}${value.slice(start, end).trim()}${end < value.length ? "..." : ""}`;
-}
-function renderKnowledgeText(text, query) {
-  const value = String(text || "");
-  const terms = createKnowledgeDisplayTerms(query);
-  if (!value || terms.length === 0) return value;
-  const escapedTerms = terms.map(escapeKnowledgeRegExp).filter(Boolean);
-  if (escapedTerms.length === 0) return value;
-  const pattern = new RegExp(`(${escapedTerms.join("|")})`, "gi");
-  return value.split(pattern).map((part, index) => {
-    if (!part) return null;
-    return terms.some((term) => part.toLowerCase() === term.toLowerCase()) ? (
-      <mark className="knowledge-hit" key={`${part}-${index}`}>{part}</mark>
-    ) : (
-      <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
-    );
-  });
-}
-function createKnowledgeDisplayTerms(query) {
-  const raw = String(query || "").trim();
-  const normalized = raw.replace(/\s+/g, "");
-  const stripped = normalized
-    .replace(/^(请|帮我|根据|自动|获取|提取|生成|填写|填充|查询|搜索|查找)+/g, "")
-    .replace(/(是什么|是啥|怎么写|如何写|怎么填|如何填|填写什么|填什么|多少天|多少|有哪些|是什么内容|的内容|内容|要求)$/g, "");
-  const terms = [raw, normalized, stripped, ...raw.split(/[\s,，。；;、:：()（）]+/)];
-
-  if (/项目名称|工程名称|项目名|工程名/.test(stripped)) terms.push("项目名称", "工程名称", "名称统一使用");
-  if (/评审办法|评标办法|综合评分|综合评估|采购方式|招采方式/.test(stripped)) terms.push("综合评估法", "询比采购", "招采方式");
-  if (/业绩|类似项目|合同金额|发票/.test(stripped)) terms.push("业绩要求", "类似项目业绩", "合同金额", "合同发票");
-  if (/人员|技术负责人|安全员|专职安全/.test(stripped)) terms.push("人员要求", "技术负责人", "专职安全生产管理人员", "C2", "C3");
-  if (/付款|支付|进度款|结算款|质保金/.test(stripped)) terms.push("付款方式", "进度款", "结算款", "质保金");
-  if (/工期|日历天|进场通知/.test(stripped)) terms.push("工期", "日历天", "进场通知");
-  if (/控制价|最高限价|预算金额/.test(stripped)) terms.push("采购控制价", "控制价", "最高限价");
-
-  return [...new Set(terms.map((term) => String(term || "").trim()).filter((term) => term.length >= 2))]
-    .sort((a, b) => b.length - a.length);
-}
-function escapeKnowledgeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function toSearchFilters(filters) {
   return {
@@ -511,28 +426,14 @@ function toSearchFilters(filters) {
   };
 }
 
+function createSearchSignature(query, filters) {
+  return JSON.stringify({ query: String(query || "").trim(), filters });
+}
+
 function formatDocumentStatus(document) {
   const parts = [document.size || "--", `${document.chunkCount || 0} 片段`, document.processingStage || document.status];
   if (document.imageCount > 0) parts.push(`图片 ${document.imageCaptionCount || 0}/${document.imageCount}`);
   return parts.join(" · ");
-}
-
-function KnowledgeSearchDiagnostics({ diagnostics }) {
-  const mode = diagnostics.channels?.keyword
-    ? "关键词降级"
-    : diagnostics.channels?.sparse
-      ? "Dense + Sparse + FTS"
-      : "Dense + FTS";
-  const degraded = diagnostics.degradedReasons || [];
-  return (
-    <div className={degraded.length ? "knowledge-search-diagnostics degraded" : "knowledge-search-diagnostics"}>
-      <span>索引 {diagnostics.indexVersion || "不可用"}</span>
-      <span>{mode}</span>
-      <span>候选 {diagnostics.candidateCount || 0} / 返回 {diagnostics.finalCount || 0}</span>
-      <span>{diagnostics.elapsedMs || 0}ms</span>
-      {degraded.length ? <strong>降级：{degraded.join("、")}</strong> : null}
-    </div>
-  );
 }
 
 export default KnowledgeBaseManagement;
