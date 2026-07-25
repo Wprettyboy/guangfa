@@ -20,6 +20,8 @@ x-mineru-amd-common: &mineru-amd-common
     - mineru-runtime:/opt/guangfa-mineru:ro
     - mineru-modelscope:/root/.cache/modelscope:ro
   ipc: host
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   ulimits:
     memlock: -1
     stack: 67108864
@@ -27,6 +29,7 @@ x-mineru-amd-common: &mineru-amd-common
 services:
   mineru-vlm:
     <<: *mineru-amd-common
+    profiles: ["local-vlm"]
     container_name: guangfa-mineru-vlm
     entrypoint: /opt/guangfa-mineru/venv/bin/python
     command:
@@ -51,9 +54,6 @@ services:
   mineru-api:
     <<: *mineru-amd-common
     container_name: guangfa-mineru-api
-    depends_on:
-      mineru-vlm:
-        condition: service_healthy
     entrypoint: /opt/guangfa-mineru/venv/bin/mineru-api
     command:
       - --host

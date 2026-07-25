@@ -76,7 +76,14 @@ function readMinerUConfig() {
   const apiUrl = String(process.env.MINERU_API_URL || defaultApiUrl).replace(/\/$/, "");
   const backend = String(process.env.MINERU_BACKEND || "hybrid-http-client");
   const effort = String(process.env.MINERU_EFFORT || "medium");
-  const serverUrl = String(process.env.MINERU_VLM_URL || "http://mineru-vlm:30000");
+  const provider = String(process.env.MINERU_VLM_PROVIDER || "gemini-first").toLowerCase();
+  if (!new Set(["local", "gemini-first", "cloud"]).has(provider)) {
+    throw createMinerUError("MINERU_VLM_PROVIDER 只能是 local、gemini-first 或 cloud");
+  }
+  const defaultServerUrl = provider === "local"
+    ? "http://mineru-vlm:30000"
+    : String(process.env.MINERU_VLM_GATEWAY_URL || "http://host.docker.internal:5173");
+  const serverUrl = String(process.env.MINERU_VLM_URL || defaultServerUrl).replace(/\/$/, "");
   if (!new Set(["medium", "high"]).has(effort)) throw createMinerUError("MINERU_EFFORT 只能是 medium 或 high");
   if (!new Set(["hybrid-http-client", "hybrid-engine"]).has(backend)) {
     throw createMinerUError("MINERU_BACKEND 必须使用 Hybrid 后端");
@@ -85,6 +92,7 @@ function readMinerUConfig() {
     apiUrl,
     backend,
     effort,
+    provider,
     serverUrl,
     timeoutMs: clampNumber(Number(process.env.MINERU_PARSE_TIMEOUT_MS || 60 * 60 * 1000), 60_000, 4 * 60 * 60 * 1000),
     pollMs: clampNumber(Number(process.env.MINERU_POLL_INTERVAL_MS || 1500), 250, 10_000),

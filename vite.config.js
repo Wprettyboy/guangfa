@@ -5,11 +5,13 @@ export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   Object.assign(process.env, env);
   const { createApiGateway } = await import("./server/api/gateway.js");
+  const { createMineruVlmGateway } = await import("./server/knowledge/mineru-vlm-gateway.js");
   const onlyOfficeServerUrl = env.ONLYOFFICE_SERVER_URL || "http://127.0.0.1:8080";
   const createDevelopmentGateway = () => createApiGateway({
     allowedOrigins: [onlyOfficeServerUrl],
     deploymentMode: "development",
   });
+  const createDevelopmentVlmGateway = () => createMineruVlmGateway();
 
   return {
     plugins: [
@@ -17,9 +19,11 @@ export default defineConfig(async ({ mode }) => {
       {
         name: "guangfa-api-gateway",
         configureServer(server) {
+          server.middlewares.use(createDevelopmentVlmGateway());
           server.middlewares.use(createDevelopmentGateway());
         },
         configurePreviewServer(server) {
+          server.middlewares.use(createDevelopmentVlmGateway());
           server.middlewares.use(createDevelopmentGateway());
         },
       },
