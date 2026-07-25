@@ -49,7 +49,7 @@ npm run mineru
 - Web：`http://127.0.0.1:5173`
 - OnlyOffice：`http://127.0.0.1:8080`
 - PlantUML：`http://127.0.0.1:8090`
-- 本地 Qwen：`http://127.0.0.1:8129/v1`
+- 本地 Qwen：`http://127.0.0.1:8129/v1`（不随开发栈启动；首次本地模型请求时按需加载）
 - Embedding：`http://127.0.0.1:8000/v1`
 - MinerU：`http://127.0.0.1:8010`
 
@@ -62,6 +62,8 @@ node --check server\office.js
 Invoke-WebRequest http://127.0.0.1:8080/healthcheck -UseBasicParsing
 Invoke-RestMethod http://127.0.0.1:8129/v1/models
 ```
+
+本地 `qwen3.6-35b-a3b` 由 `server/ai/local-model-runtime.js` 管理按需加载。`scripts/start-all-dev.ps1` 不启动也不等待 8129；业务调用或系统设置“测试连接”首次访问精确配置的 `127.0.0.1:8129/v1` 时，复用 `scripts/start-local-qwen36-rocm.ps1` 启动 ROCm 服务。并发首请求共用一个启动任务，日志仍写入 `C:\llm\qwen36-rocm-server*.log`；设置 `LOCAL_LLM_AUTOSTART=false` 可禁用自动启动。
 
 ## 文件地图
 

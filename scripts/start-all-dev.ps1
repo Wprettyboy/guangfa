@@ -4,7 +4,6 @@ $Root = Split-Path -Parent $PSScriptRoot
 $LogDir = "C:\llm"
 $EmbeddingPort = 8000
 $MineruPort = 8010
-$QwenPort = 8129
 $OfficePort = 8080
 $PlantumlPort = 8090
 $WebPort = 5173
@@ -79,16 +78,6 @@ if (Test-PortListening $MineruPort) {
     -Stderr "$LogDir\guangfa-mineru.err.log"
 }
 
-if (Test-PortListening $QwenPort) {
-  Write-Host "Qwen local LLM already listening on http://127.0.0.1:$QwenPort"
-} else {
-  Start-HiddenPowerShell `
-    -Name "Qwen local LLM" `
-    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-local-qwen36-rocm.ps1`"" `
-    -Stdout "$LogDir\qwen36-rocm-server.log" `
-    -Stderr "$LogDir\qwen36-rocm-server.err.log"
-}
-
 if (Test-PortListening $WebPort) {
   Write-Host "Web app already listening on http://127.0.0.1:$WebPort"
 } else {
@@ -105,10 +94,9 @@ for ($i = 0; $i -lt 60; $i++) {
   $webReady = Test-PortListening $WebPort
   $officeReady = Test-PortListening $OfficePort
   $plantumlReady = Test-PortListening $PlantumlPort
-  $qwenReady = Test-PortListening $QwenPort
   $embeddingReady = Test-PortListening $EmbeddingPort
   $mineruReady = Test-PortListening $MineruPort
-  if ($webReady -and $officeReady -and $plantumlReady -and $qwenReady -and $embeddingReady -and $mineruReady) { break }
+  if ($webReady -and $officeReady -and $plantumlReady -and $embeddingReady -and $mineruReady) { break }
   Start-Sleep -Seconds 2
 }
 
@@ -117,7 +105,7 @@ Write-Host "Service status:"
 Write-Host "  OnlyOffice: $(if (Test-PortListening $OfficePort) { "OK http://127.0.0.1:$OfficePort" } else { "NOT READY, see $LogDir\guangfa-onlyoffice.err.log" })"
 Write-Host "  PlantUML:   $(if (Test-PortListening $PlantumlPort) { "OK http://127.0.0.1:$PlantumlPort" } else { "NOT READY, see $LogDir\guangfa-plantuml.err.log" })"
 Write-Host "  Web app:   $(if (Test-PortListening $WebPort) { "OK http://127.0.0.1:$WebPort" } else { "NOT READY, see $LogDir\guangfa-vite.err.log" })"
-Write-Host "  Qwen LLM:  $(if (Test-PortListening $QwenPort) { "OK http://127.0.0.1:$QwenPort" } else { "NOT READY, see $LogDir\qwen36-rocm-server.err.log" })"
+Write-Host "  Qwen LLM:  ON DEMAND (loads on first local-model request)"
 Write-Host "  Retrieval: $(if (Test-PortListening $EmbeddingPort) { "OK http://127.0.0.1:$EmbeddingPort" } else { "NOT READY, see $LogDir\guangfa-retrieval.err.log" })"
 Write-Host "  MinerU:    $(if (Test-PortListening $MineruPort) { "OK http://127.0.0.1:$MineruPort" } else { "NOT READY, see $LogDir\guangfa-mineru.err.log" })"
 

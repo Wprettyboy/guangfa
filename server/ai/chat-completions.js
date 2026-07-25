@@ -3,6 +3,7 @@ import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP } from "node:net";
 import tls from "node:tls";
+import { ensureLocalModelRuntime } from "./local-model-runtime.js";
 
 const retryableKeyStatuses = new Set([401, 403, 429, 500, 502, 503, 504]);
 const rotationState = new Map();
@@ -28,6 +29,8 @@ async function requestChatCompletion(runtime, payload, options = {}) {
     error.statusCode = 500;
     throw error;
   }
+
+  if (allowLocal) await ensureLocalModelRuntime({ ...runtime, baseUrl, model });
 
   const keys = apiKeys.length ? orderedKeys(baseUrl, model, apiKeys) : [""];
   const body = normalizePayloadForRuntime(baseUrl, { ...payload, model });
