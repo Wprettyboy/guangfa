@@ -1,0 +1,31 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      libdrm-amdgpu1 \
+      libdrm2 \
+      libelf1 \
+      libexpat1 \
+      libgl1 \
+      libglib2.0-0 \
+      libgomp1 \
+      libnuma1 \
+      libstdc++6 \
+      libxcb1 \
+      python3.12 \
+      zlib1g \
+    && ln -s /usr/bin/python3.12 /usr/bin/python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/mineru_transformers_server.py /app/mineru_transformers_server.py
+
+ENV HSA_ENABLE_DXG_DETECTION=1 \
+    HF_HUB_DISABLE_XET=1 \
+    LD_LIBRARY_PATH=/opt/rocm/lib:/usr/lib/wsl/lib \
+    MINERU_API_OUTPUT_ROOT=/data/output \
+    MINERU_MODEL_SOURCE=local \
+    MINERU_TOOLS_CONFIG_JSON=/opt/guangfa-mineru/mineru.json \
+    MINERU_VL_MODEL_PATH=/opt/guangfa-mineru/models/MinerU2.5-Pro-2605-1.2B \
+    PATH=/opt/guangfa-mineru/venv/bin:/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

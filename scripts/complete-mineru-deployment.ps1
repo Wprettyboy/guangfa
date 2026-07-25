@@ -65,8 +65,8 @@ try {
   & wsl.exe -d $Distro -- bash "/mnt/c/llm/guangfa-repo/scripts/bootstrap-mineru-wsl.sh"
   if ($LASTEXITCODE -ne 0) { throw "MinerU runtime bootstrap failed. Check /opt/guangfa-mineru/logs/bootstrap.log." }
 
-  & wsl.exe -d $Distro -- bash "/mnt/c/llm/guangfa-repo/scripts/start-mineru-wsl.sh"
-  if ($LASTEXITCODE -ne 0) { throw "MinerU services failed to start. Check /opt/guangfa-mineru/logs/*.log." }
+  & (Join-Path $Root "scripts\start-mineru-docker-amd.ps1")
+  if ($LASTEXITCODE -ne 0) { throw "MinerU Docker services failed to start." }
 
   $Health = Invoke-RestMethod "http://127.0.0.1:8010/health" -TimeoutSec 15
   if ($Health.status -ne "healthy") { throw "MinerU API health check returned an unexpected result." }
@@ -86,7 +86,7 @@ try {
   $Task = curl.exe -fsS -X POST "http://127.0.0.1:8010/tasks" `
     -F "files=@$SmokePdf" `
     -F "backend=hybrid-http-client" `
-    -F "server_url=http://127.0.0.1:30000" `
+    -F "server_url=http://mineru-vlm:30000" `
     -F "effort=medium" `
     -F "parse_method=auto" `
     -F "lang_list=ch" `

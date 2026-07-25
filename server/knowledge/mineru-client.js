@@ -32,7 +32,7 @@ function readMinerUConfig() {
   const apiUrl = String(process.env.MINERU_API_URL || defaultApiUrl).replace(/\/$/, "");
   const backend = String(process.env.MINERU_BACKEND || "hybrid-http-client");
   const effort = String(process.env.MINERU_EFFORT || "medium");
-  const serverUrl = String(process.env.MINERU_VLM_URL || "http://127.0.0.1:30000");
+  const serverUrl = String(process.env.MINERU_VLM_URL || "http://mineru-vlm:30000");
   if (!new Set(["medium", "high"]).has(effort)) throw createMinerUError("MINERU_EFFORT 只能是 medium 或 high");
   if (!new Set(["hybrid-http-client", "hybrid-engine"]).has(backend)) {
     throw createMinerUError("MINERU_BACKEND 必须使用 Hybrid 后端");

@@ -2,3 +2,6 @@
 !docker/
 !docker/mineru/
 !docker/mineru/Dockerfile
+!docker/mineru/Dockerfile.amd
+!scripts/
+!scripts/mineru_transformers_server.py

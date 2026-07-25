@@ -40,6 +40,7 @@ npm run office
 npm run plantuml
 npm run embedding:skip-install
 npm run mineru
+# WSL 诊断后备才使用：npm run mineru:wsl
 # NVIDIA Docker 主机才使用：npm run mineru:nvidia
 ```
 
@@ -185,14 +186,15 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ### MinerU Hybrid 知识解析
 
-- MinerU 3.4.4 已在本机 AMD WSL 环境完成部署验证并切为默认知识解析器。PDF 使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件使用 MinerU 自带解析器；MinerU 失败时不静默回退。需要临时诊断旧链路时才显式设置 `KNOWLEDGE_PARSER=legacy`。
+- MinerU 3.4.4 已在本机 AMD Docker 环境完成部署验证并切为默认知识解析器。PDF 使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件使用 MinerU 自带解析器；MinerU 失败时不静默回退。需要临时诊断旧链路时才显式设置 `KNOWLEDGE_PARSER=legacy`。
 - MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
 - PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
-- 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、WSL2 Ubuntu 24.04；已安装 ROCm 7.2.1、ROCm PyTorch 2.9.1、TorchVision 0.24.0、Triton 3.5.1 和 MinerU 3.4.4。GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`。
-- WSL VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均已通过健康检查；真实 11 页 PDF 任务约 3 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
+- 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、Docker Desktop 4.74.0；AMD Compose 通过 `/dev/dxg`、ROCDXG 和三个只读 named volumes 运行 ROCm 7.2.1、ROCm PyTorch 2.9.1 与 MinerU 3.4.4。容器 GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`，结果为 `120`。
+- Docker VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均为 healthy；真实 11 页 PDF 任务约 2 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
 - 切换默认解析器后已通过真实知识库 API 完成上传、解析、Embedding、ZVec、检索和原文读取验收：11 页、54 段、65 个结构块，状态为“已索引”，检索命中携带 PDF 页码/bbox，原文 PDF 返回完整 386,793 字节；验收临时库已删除。
 - 结构切片采用标题/完整表格父块与有界检索子块；父块只用于 SQLite 上下文扩展，Embedding、ZVec 和关键词召回只处理子块。引用文本、页码和 bbox 始终绑定实际命中的子块。
-- `npm run mineru` 和 `scripts/start-all-dev.ps1` 在本机走 WSL/ROCm；NVIDIA Docker 路线保留为 `npm run mineru:nvidia`。WSL 日志位于 `/opt/guangfa-mineru/logs/`，模型默认从 ModelScope 下载。
+- `npm run mineru` 和 `scripts/start-all-dev.ps1` 在本机走 AMD Docker；`npm run mineru:wsl` 仅保留为运行时准备/诊断后备，NVIDIA Docker 路线保留为 `npm run mineru:nvidia`。AMD 日志使用 `docker compose -f docker/mineru/compose.amd.yaml logs` 查看。
+- 本轮验证通过 `npm test` 72/72、生产构建、混合检索/知识库选择检查、PowerShell/Node/Compose 语法与 `git diff --check`。
 
 ### 方案编写工作台迁移
 

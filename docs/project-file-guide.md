@@ -114,10 +114,11 @@
 | 文件 | 功能说明 |
 | --- | --- |
 | `scripts/bootstrap-mineru-wsl.sh` | AMD WSL MinerU 初始化。安装同包族 ROCm 数学库、ROCm PyTorch/Transformers/MinerU，执行 Radeon GPU 张量实算，并从 ModelScope 下载 Pipeline 与 VLM 模型。 |
+| `scripts/prepare-mineru-docker-amd.ps1` | AMD Docker volume 准备。首次把已验证的 WSL ROCm、MinerU 虚拟环境、VLM/Pipeline 模型导入三个具名 volume，后续按完成标记复用。 |
 | `scripts/check-knowledge-hybrid.mjs` | ZVec 混合检索独立检查。在临时索引验证知识库过滤、向量与全文融合、纯全文降级和库隔离。 |
 | `scripts/check-knowledge-selection.mjs` | 真实知识库选择边界检查。验证未选择不扩库、选中库不泄漏、短词召回和全局库隔离。 |
 | `scripts/check-paragraph-source-fallback.mjs` | 长文本候选提取检查。验证从相关片段提取连续原文并拒绝无关片段。 |
-| `scripts/complete-mineru-deployment.ps1` | AMD WSL MinerU 一键部署验收。下载 ROCm 依赖、执行初始化和启动，并提交真实 PDF、检查结构化 ZIP 产物。 |
+| `scripts/complete-mineru-deployment.ps1` | AMD MinerU Docker 一键部署验收。准备 WSL ROCm/MinerU 源运行时，导入 Docker volumes，启动容器并提交真实 PDF、检查结构化 ZIP 产物。 |
 | `scripts/import-legal-regulations.py` | 法规批量导入。抓取政府/司法网站法规正文，清洗分块并写入法规资料目录、知识库元数据和报告。 |
 | `scripts/import-samr-contract-samples.py` | 市监总局合同样例下载与模板导入。选择代表模板、识别格式、保存文件，并将支持的模板以 Base64 和分类元数据入库。 |
 | `scripts/local_embedding_server.py` | 本地 BGE-M3 向量服务。用 FastAPI 提供 `/health` 和 OpenAI 兼容 `/v1/embeddings`，处理批量输入、设备选择、归一化和维度调整。 |
@@ -131,11 +132,12 @@
 | `scripts/rebuild-knowledge-vectors.mjs` | 知识向量索引重建。删除派生索引，批量重算向量、写入元数据、执行检索冒烟并更新文档索引状态。 |
 | `scripts/samr-contracts-manifest.ps1` | 合同示范文本清单抓取。分页读取全国/地方模板，输出 JSON、CSV、Markdown 清单和统计。 |
 | `scripts/samr_contract_catalog.py` | 合同范本二级分类。按标题关键词划分买卖、租赁、工程、服务等类别并输出分类目录。 |
-| `scripts/start-all-dev.ps1` | 本地全栈编排。检查并后台启动 OnlyOffice 8080、PlantUML 8090、Embedding 8000、AMD WSL MinerU 8010、Qwen 8129、Vite 5173，等待全部就绪并汇总状态。 |
+| `scripts/start-all-dev.ps1` | 本地全栈编排。检查并后台启动 OnlyOffice 8080、PlantUML 8090、Embedding 8000、AMD Docker MinerU 8010、Qwen 8129、Vite 5173，等待全部就绪并汇总状态。 |
 | `scripts/start-local-embedding.ps1` | Embedding 启动脚本。创建 Python 虚拟环境，可选安装 CPU 依赖，选择本地/镜像 BGE-M3 后运行服务。 |
 | `scripts/start-local-qwen36-cpu.ps1` | Qwen CPU/Vulkan 启动脚本。校验 llama.cpp 与 GGUF，以较小上下文在 8129 提供 OpenAI 兼容接口。 |
 | `scripts/start-local-qwen36-rocm.ps1` | Qwen AMD ROCm 启动脚本。配置 ROCm DLL、上下文和 GPU 层数，在 8129 启动本地模型；一键启动默认走此路径。 |
 | `scripts/start-mineru.ps1` | MinerU Hybrid Docker 启动脚本。先验证 Docker 可访问 NVIDIA GPU，再构建并启动 API/VLM 服务并等待 8010 健康检查。 |
+| `scripts/start-mineru-docker-amd.ps1` | AMD MinerU Docker 主入口。构建轻量镜像、执行容器 GPU 张量探针、关闭旧 WSL MinerU 进程，启动并等待 VLM/API 容器健康。 |
 | `scripts/start-mineru-wsl.ps1` | AMD WSL MinerU 的 Windows 启动入口。通过稳定 ASCII junction 调用 WSL 脚本，并检查 VLM 30000 与 API 8010。 |
 | `scripts/start-mineru-wsl.sh` | AMD WSL MinerU 启动脚本。依次等待本地 VLM 30000 和 MinerU API 8010 健康，日志保存在 `/opt/guangfa-mineru/logs/`。 |
 | `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、同步指定中文/方正字体和别名、安装桥接并健康检查；还会生成或读取独立 JWT Secret，校验并重建不合规容器，配置 inbox/outbox JWT、签名资源 URL 例外及无外部权限的 AI 客户端占位 Key。 |

@@ -95,7 +95,7 @@ test("MinerU client submits Hybrid tasks and persists structured ZIP artifacts",
       if (url === "http://mineru.test/tasks" && options.method === "POST") {
         assert.equal(options.body.get("backend"), "hybrid-http-client");
         assert.equal(options.body.get("effort"), "medium");
-        assert.equal(options.body.get("server_url"), "http://127.0.0.1:30000");
+        assert.equal(options.body.get("server_url"), "http://mineru-vlm:30000");
         return Response.json({ task_id: "TASK-1" });
       }
       if (url === "http://mineru.test/tasks/TASK-1") return Response.json({ status: "completed" });
