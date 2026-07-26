@@ -28,7 +28,7 @@ AMD Compose 不复用 NVIDIA 的 `--gpus` 配置。服务进程全部运行在 D
 
 - `docker/mineru/Dockerfile.amd`：仅安装 Ubuntu、Python、OpenCV 和 ROCm 动态链接所需的系统库；ROCm、Python 包和模型不烘焙进镜像。
 - `docker/mineru/compose.amd.yaml`：把 `/dev/dxg` 与 WSL GPU 用户态库映射给 VLM/API 容器，并挂载 `guangfa-mineru-rocm`、`guangfa-mineru-runtime`、`guangfa-mineru-modelscope` 三个只读 volume，另外挂载三个可写的 ROCm 缓存 volume 用于跨容器保留内核编译与卷积调优结果。
-- ROCm 缓存 volume：`guangfa-mineru-kernel-cache` -> `/root/.cache/comgr`（内核编译缓存）、`guangfa-mineru-miopen-cache` -> `/root/.cache/miopen`（MIOpen 内核缓存）、`guangfa-mineru-miopen-userdb` -> `/root/.config/miopen`（MIOpen find-db，保存每个卷积形状实测出的最优算法，是三者中决定性的一个）。缓存全空时首次解析实测约 210 秒，命中后约 10 秒；删除这三个 volume 或换 ROCm/MIOpen 版本会退回冷启动耗时。`x-mineru-amd-common` 锚点和 `mineru-api` 服务各自声明一次 `volumes`，服务级 `volumes` 会整体覆盖锚点，新增挂载必须两处同步。
+- ROCm 缓存 volume：`guangfa-mineru-kernel-cache` -> `/root/.cache/comgr`（内核编译缓存）、`guangfa-mineru-miopen-cache` -> `/root/.cache/miopen`（MIOpen 内核缓存）、`guangfa-mineru-miopen-userdb` -> `/root/.config/miopen`（MIOpen find-db，保存每个卷积形状实测出的最优算法，是三者中决定性的一个）。缓存全空时首次解析实测约 210 秒，命中后约 10 秒；删除这三个 volume 或换 ROCm/MIOpen 版本会退回冷启动耗时。2026-07-26 主机重启后实测：Docker 重启恢复容器的首次解析 33.9 秒，紧接着的稳定态解析 9.3 秒（8 页 `测试.pdf`，与 Retrieval 共存），产物仍为 8 页、29 个块、6 个表格、1 张图片且 29/29 带 bbox。此前记录的 139/158 秒是没有这三个缓存 volume 时的耗时。`x-mineru-amd-common` 锚点和 `mineru-api` 服务各自声明一次 `volumes`，服务级 `volumes` 会整体覆盖锚点，新增挂载必须两处同步。
 - `scripts/prepare-mineru-docker-amd.ps1`：只在 volume 未准备时，从 WSL 导入已验证的 ROCm、MinerU 虚拟环境、VLM 模型和 Pipeline 模型；完成标记存在时直接复用。
 - `scripts/start-mineru-docker-amd.ps1`：构建 AMD 镜像并执行 GPU 张量实算；`-WithVlm` 同时启动官方 VLM 并等待两个健康接口，省略时只启动 API。
 - `scripts/complete-mineru-deployment.ps1`：首次下载和准备 WSL ROCm/MinerU 运行时，随后导入 Docker volumes、启动容器并提交真实 PDF 冒烟任务。
@@ -94,7 +94,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 - V1 共 70 个结构块，全部带 `page_idx` 与 `bbox`；V2 保留 11 页及标题级别。样本没有表格，因此表格抽取仍由结构化单元测试覆盖。
 - 将真实页面 PNG 直接提交给 VLM 后，模型正确返回中文文档标题、章节与正文，确认视觉模型不是仅健康检查可用。
 - MinerU 的专用 `Table Recognition`/OTSL 输出必须由官方 MinerU2.5 模型生成；Gemini 只在结构解析完成后生成图片语义说明，不能作为 `hybrid-http-client` 的模型服务器。
-- 2026-07-26 使用 8 页 `测试.pdf` 验收 Pipeline：原配置与 Retrieval 共存时约 208 秒；隔离 Retrieval 后，Batch Ratio 16/8/4 分别约 171/168/139 秒；Batch Ratio 4 与 Retrieval 共存约 158 秒。AMD Compose 因此默认设置 `MINERU_VIRTUAL_VRAM_SIZE=8`。四轮均得到 8 页、29 个块、6 个表格和 1 张图片，跨页表格 HTML 保持完整，仅有无业务影响的空格级 OCR 波动。
+- 2026-07-26 使用 8 页 `测试.pdf` 验收 Pipeline：原配置与 Retrieval 共存时约 208 秒；隔离 Retrieval 后，Batch Ratio 16/8/4 分别约 171/168/139 秒；Batch Ratio 4 与 Retrieval 共存约 158 秒。这一组都在没有 ROCm 缓存 volume 的条件下测得；补上三个缓存 volume 后同一文件稳定态降到 9.3 秒，比较批处理倍率时不要直接拿这两组数字对照。AMD Compose 因此默认设置 `MINERU_VIRTUAL_VRAM_SIZE=8`。四轮均得到 8 页、29 个块、6 个表格和 1 张图片，跨页表格 HTML 保持完整，仅有无业务影响的空格级 OCR 波动。
 - Retrieval 常驻会使当前样本首次解析变慢约 14%，但解析结束后立即需要它完成向量索引，业务服务不自动启停 Retrieval；需要离线批量解析时可由运维显式暂停 Retrieval。
 - 默认解析器切换后，真实知识库 API 验收得到 11 页、54 段和 65 个父子结构块；Embedding/ZVec 状态为“已索引”，查询命中包含 PDF 页码、bbox 和可读取的原文 PDF。验收临时知识库及索引已删除。
 
