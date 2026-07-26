@@ -12,7 +12,7 @@ import {
 } from "./chunker.js";
 import { defaultProjectId, getKnowledgeDatabase, runTransaction } from "./db.js";
 import { applyKnowledgeContextBudget } from "./context-budget.js";
-import { rebuildKnowledgeIndexV4 } from "./indexer.js";
+import { healVectorDegradedDocuments, rebuildKnowledgeIndexV4 } from "./indexer.js";
 import { parseKnowledgeDocument } from "./parser.js";
 import { mapDocxHeadingPages } from "./docx-heading-pages.js";
 import { retryMinerUImageCaptions } from "./mineru-client.js";
@@ -318,7 +318,14 @@ async function reindexKnowledgeBase(kbId) {
   const chunks = readChunks(database).filter((chunk) => chunk.kbId === kbId);
   if (chunks.length === 0) return { ok: true, updated: 0, chunkCount: 0 };
   const manifest = await rebuildKnowledgeIndexV4(database);
-  return { ok: true, updated: new Set(chunks.map((chunk) => chunk.documentId)).size, chunkCount: chunks.length, generation: manifest.generation };
+  const healed = healVectorDegradedDocuments(database, kbId);
+  return {
+    ok: true,
+    updated: new Set(chunks.map((chunk) => chunk.documentId)).size,
+    chunkCount: chunks.length,
+    healedDocuments: healed,
+    generation: manifest.generation,
+  };
 }
 
 async function searchKnowledgeBase(payload = {}) {

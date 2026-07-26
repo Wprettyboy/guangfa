@@ -179,19 +179,41 @@ async function validateReopenedGeneration(generation, chunks) {
   }
 }
 
+// 只记录索引状态本身。文档状态由各自的处理链路负责：跨文档批量改写会把别的资料的
+// “部分可用”“标题物理页映射失败”等真实状态和告警静默清掉。
 function updateKnowledgeIndexState(database, manifest) {
   database.prepare(`
     INSERT INTO schema_meta (key, value) VALUES ('knowledge_index_v4', ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(JSON.stringify(manifest));
-  database.prepare(`
+}
+
+// 重建成功后，只把“因为向量索引不可用而降级”的资料恢复回可检索状态，并且只摘掉
+// 对应的那条告警，保留同一条 error 里的其它告警（例如标题物理页映射不全）。
+const vectorIndexWarningPattern = /^(?:向量索引不可用：|未配置 embedding)/;
+
+function healVectorDegradedDocuments(database, kbId) {
+  const rows = database.prepare(`
+    SELECT id, COALESCE(error, '') AS error, image_failed_count AS imageFailedCount
+    FROM knowledge_documents
+    WHERE kb_id = ? AND deleted_at IS NULL AND chunk_count > 0 AND status = '关键词可用'
+  `).all(kbId);
+  if (rows.length === 0) return 0;
+  const update = database.prepare(`
     UPDATE knowledge_documents
-    SET status = CASE WHEN chunk_count > 0 THEN '已索引' ELSE status END,
-        index_mode = CASE WHEN chunk_count > 0 THEN 'dense-sparse-fts' ELSE index_mode END,
-        error = CASE WHEN chunk_count > 0 THEN '' ELSE error END,
-        updated_at = ?
-    WHERE deleted_at IS NULL
-  `).run(Date.now());
+    SET status = ?, index_mode = 'dense-sparse-fts', error = ?, updated_at = ?
+    WHERE id = ? AND deleted_at IS NULL
+  `);
+  const now = Date.now();
+  rows.forEach((row) => {
+    const remaining = row.error
+      .split("；")
+      .map((segment) => segment.trim())
+      .filter((segment) => segment && !vectorIndexWarningPattern.test(segment))
+      .join("；");
+    update.run(row.imageFailedCount > 0 ? "部分可用" : "已索引", remaining, now, row.id);
+  });
+  return rows.length;
 }
 
 function createGenerationName(now) {
@@ -224,6 +246,7 @@ export {
   createGenerationName,
   encodeIndexBatch,
   enqueueKnowledgeIndexWrite,
+  healVectorDegradedDocuments,
   readKnowledgeIndexChunks,
   rebuildKnowledgeIndexV4,
   summarizeSparseCounts,
