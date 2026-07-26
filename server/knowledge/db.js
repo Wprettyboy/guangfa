@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { getTemplateDatabase } from "../template-db.js";
-import { hasExplicitStarMarker } from "./chunker.js";
+import { hasExplicitStarMarker, nonContentBlockTypes } from "./chunker.js";
 
 const legacyKnowledgeFile = path.resolve(process.cwd(), "data", "knowledge", "library.json");
 const defaultProjectId = "default-project";
@@ -184,6 +184,23 @@ function ensureKnowledgeSchemaMigrations(database) {
       updateStar.run(hasExplicitStarMarker(chunk.sourceText) ? 1 : 0, chunk.id);
     });
     setSchemaMeta(database, "knowledge_has_star_v4", "1");
+  }
+  // 旧库里已经入库的页眉/页脚/页码子块要一次性清掉，否则它们会一直留在检索候选里。
+  // 这些块从不作为父块，删除不会产生悬空的 parent_chunk_id；ZVec 侧的残留行由检索时的
+  // liveChunkIds 过滤挡住，并在下一次索引重建时消失。
+  if (!database.prepare("SELECT value FROM schema_meta WHERE key = 'knowledge_non_content_blocks_v1'").get()) {
+    const placeholders = [...nonContentBlockTypes].map(() => "?").join(", ");
+    const affected = database.prepare(`
+      SELECT DISTINCT document_id AS documentId FROM knowledge_chunks WHERE block_type IN (${placeholders})
+    `).all(...nonContentBlockTypes);
+    database.prepare(`DELETE FROM knowledge_chunks WHERE block_type IN (${placeholders})`).run(...nonContentBlockTypes);
+    const updateChunkCount = database.prepare(`
+      UPDATE knowledge_documents
+      SET chunk_count = (SELECT COUNT(*) FROM knowledge_chunks WHERE document_id = ?)
+      WHERE id = ?
+    `);
+    affected.forEach((row) => updateChunkCount.run(row.documentId, row.documentId));
+    setSchemaMeta(database, "knowledge_non_content_blocks_v1", "1");
   }
   const updatePageSource = database.prepare("UPDATE knowledge_documents SET page_source = ? WHERE id = ?");
   database.prepare(`

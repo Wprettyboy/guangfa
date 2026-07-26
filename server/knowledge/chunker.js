@@ -2,6 +2,15 @@ const chunkSize = 900;
 const chunkOverlapParagraphs = 1;
 const structuredChunkSize = 1200;
 
+// MinerU 会把页眉、页脚和页码当成独立块输出。它们不是正文，正文只有一个页码数字，
+// 一旦入库就会被 dense/sparse/FTS 平等索引并挤占候选池，因此在切片阶段直接排除。
+// 只排除明确的版面附属块，其它未知块类型一律保留，避免误伤正文。
+const nonContentBlockTypes = new Set(["page_number", "page_header", "page_footer", "header", "footer"]);
+
+function isNonContentStructuralBlock(block) {
+  return nonContentBlockTypes.has(String(block?.type || "").trim().toLowerCase());
+}
+
 function buildKnowledgeParagraphs(pages = []) {
   const paragraphs = [];
   pages.forEach((page) => {
@@ -57,6 +66,7 @@ function buildStructuredKnowledgeChunks({ documentId, kbId, documentName, scope,
   const headingStack = [];
   const headingChunkIds = [];
   for (const block of blocks || []) {
+    if (isNonContentStructuralBlock(block)) continue;
     const text = normalizeStructuredText(block.text);
     if (!text) continue;
     const level = Math.max(0, Number(block.level) || 0);
@@ -289,8 +299,10 @@ export {
   buildKnowledgeParagraphs,
   buildStructuredKnowledgeChunks,
   filterRetrievalKnowledgeChunks,
+  isNonContentStructuralBlock,
   isRetrievalKnowledgeChunk,
   hasExplicitStarMarker,
+  nonContentBlockTypes,
   splitBoundedStructuredText,
   splitParagraphs,
 };
