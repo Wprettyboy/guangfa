@@ -140,7 +140,7 @@
 | `scripts/start-local-qwen36-cpu.ps1` | Qwen CPU/Vulkan 启动脚本。校验 llama.cpp 与 GGUF，以较小上下文在 8129 提供 OpenAI 兼容接口。 |
 | `scripts/start-local-qwen36-rocm.ps1` | Qwen AMD ROCm 启动脚本。配置 ROCm DLL、上下文和 GPU 层数，在 8129 启动本地模型；一键启动默认走此路径。 |
 | `scripts/start-mineru.ps1` | MinerU Hybrid Docker 启动脚本。先验证 Docker 可访问 NVIDIA GPU，再构建并启动 API/VLM 服务并等待 8010 健康检查。 |
-| `scripts/start-mineru-docker-amd.ps1` | AMD MinerU Docker 主入口。构建轻量镜像、执行容器 GPU 张量探针、关闭旧 WSL MinerU 进程，启动并等待 VLM/API 容器健康。 |
+| `scripts/start-mineru-docker-amd.ps1` | AMD MinerU Docker 主入口。构建轻量镜像、执行容器 GPU 张量探针；`-WithVlm` 按需启动官方 MinerU2.5 并等待 VLM/API 健康。 |
 | `scripts/start-mineru-wsl.ps1` | AMD WSL MinerU 的 Windows 启动入口。通过稳定 ASCII junction 调用 WSL 脚本，并检查 VLM 30000 与 API 8010。 |
 | `scripts/start-mineru-wsl.sh` | AMD WSL MinerU 启动脚本。依次等待本地 VLM 30000 和 MinerU API 8010 健康，日志保存在 `/opt/guangfa-mineru/logs/`。 |
 | `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、同步指定中文/方正字体和别名、安装桥接并健康检查；还会生成或读取独立 JWT Secret，校验并重建不合规容器，配置 inbox/outbox JWT、签名资源 URL 例外及无外部权限的 AI 客户端占位 Key。 |

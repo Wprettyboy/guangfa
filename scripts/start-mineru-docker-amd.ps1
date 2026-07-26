@@ -1,8 +1,11 @@
+param([switch]$WithVlm)
+
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 $ComposeFile = Join-Path $Root "docker\mineru\compose.amd.yaml"
 $HealthUrl = "http://127.0.0.1:8010/health"
+$VlmHealthUrl = "http://127.0.0.1:30000/health"
 $DockerContext = "C:\llm\guangfa-repo"
 
 function Test-DockerReady {
@@ -33,15 +36,30 @@ if ($LASTEXITCODE -ne 0) { throw "Docker cannot execute a PyTorch tensor on the 
 & wsl.exe -d Ubuntu-24.04 -- bash -lc "pkill -f '[m]ineru_transformers_server:app' || true; pkill -x mineru-api || true"
 Start-Sleep -Seconds 2
 
-docker compose -f $ComposeFile up -d
+if ($WithVlm) {
+  docker compose -f $ComposeFile --profile local-vlm up -d mineru-vlm mineru-api
+} else {
+  docker compose -f $ComposeFile --profile local-vlm stop mineru-vlm
+  docker compose -f $ComposeFile up -d mineru-api
+}
 if ($LASTEXITCODE -ne 0) { throw "MinerU AMD Docker services failed to start." }
 
 Write-Host "Waiting for MinerU Docker services..."
 for ($i = 0; $i -lt 180; $i++) {
   try {
     $health = Invoke-RestMethod $HealthUrl -TimeoutSec 5
-    if ($health.status -eq "healthy") {
+    $vlmReady = !$WithVlm
+    if ($WithVlm) {
+      try {
+        $vlmHealth = Invoke-RestMethod $VlmHealthUrl -TimeoutSec 5
+        $vlmReady = $vlmHealth.status -eq "healthy"
+      } catch {
+        $vlmReady = $false
+      }
+    }
+    if ($health.status -eq "healthy" -and $vlmReady) {
       Write-Host "MinerU AMD Docker is ready: $HealthUrl"
+      if ($WithVlm) { Write-Host "Official MinerU2.5 VLM is ready: $VlmHealthUrl" }
       exit 0
     }
   } catch {}

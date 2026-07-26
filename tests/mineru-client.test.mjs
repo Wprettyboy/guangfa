@@ -63,18 +63,26 @@ test("MinerU v2 remains a fallback when the stable v1 list is absent", () => {
   assert.equal(blocks[0].anchor, "_Toc100");
 });
 
-test("MinerU runtime configuration fails closed outside Hybrid backends", () => {
+test("MinerU runtime configuration accepts Pipeline and rejects unknown backends", () => {
   const originalBackend = process.env.MINERU_BACKEND;
   const originalEffort = process.env.MINERU_EFFORT;
+  const originalVlmUrl = process.env.MINERU_VLM_URL;
   try {
     process.env.MINERU_BACKEND = "pipeline";
-    assert.throws(() => readMinerUConfig(), /必须使用 Hybrid 后端/);
+    process.env.MINERU_EFFORT = "medium";
+    assert.equal(readMinerUConfig().backend, "pipeline");
+    process.env.MINERU_BACKEND = "legacy";
+    assert.throws(() => readMinerUConfig(), /只能是 pipeline/);
     process.env.MINERU_BACKEND = "hybrid-http-client";
     process.env.MINERU_EFFORT = "ultra";
     assert.throws(() => readMinerUConfig(), /medium 或 high/);
+    process.env.MINERU_EFFORT = "medium";
+    process.env.MINERU_VLM_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+    assert.throws(() => readMinerUConfig(), /不能使用通用云端 VLM/);
   } finally {
     restoreEnvironment("MINERU_BACKEND", originalBackend);
     restoreEnvironment("MINERU_EFFORT", originalEffort);
+    restoreEnvironment("MINERU_VLM_URL", originalVlmUrl);
   }
 });
 
@@ -106,7 +114,7 @@ test("MinerU client submits Hybrid tasks and persists structured ZIP artifacts",
       if (url === "http://mineru.test/tasks" && options.method === "POST") {
         assert.equal(options.body.get("backend"), "hybrid-http-client");
         assert.equal(options.body.get("effort"), "medium");
-        assert.equal(options.body.get("server_url"), "http://host.docker.internal:5173");
+        assert.equal(options.body.get("server_url"), "http://mineru-vlm:30000");
         return Response.json({ task_id: "TASK-1" });
       }
       if (url === "http://mineru.test/tasks/TASK-1") return Response.json({ status: "completed" });
@@ -127,6 +135,47 @@ test("MinerU client submits Hybrid tasks and persists structured ZIP artifacts",
     restoreEnvironment("MINERU_BACKEND", originalBackend);
     restoreEnvironment("MINERU_EFFORT", originalEffort);
     restoreEnvironment("MINERU_VLM_URL", originalVlmUrl);
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test("MinerU client uses Pipeline without a VLM endpoint", async () => {
+  const workDir = await mkdtemp(path.join(tmpdir(), "guangfa-mineru-pipeline-test-"));
+  const artifactsDir = path.join(workDir, "artifacts");
+  const textPath = path.join(workDir, "source.txt");
+  const sourcePath = path.join(workDir, "source.pdf");
+  const zip = new JSZip();
+  zip.file("source/auto/source_content_list.json", JSON.stringify([
+    { type: "table", table_body: "<table><tr><td>完整表格</td></tr></table>", page_idx: 0, bbox: [1, 2, 3, 4] },
+  ]));
+  const resultZip = await zip.generateAsync({ type: "nodebuffer" });
+  const originalFetch = globalThis.fetch;
+  const originalApiUrl = process.env.MINERU_API_URL;
+  const originalBackend = process.env.MINERU_BACKEND;
+  try {
+    await writeFile(sourcePath, "%PDF-1.7\n");
+    process.env.MINERU_API_URL = "http://mineru.test";
+    process.env.MINERU_BACKEND = "pipeline";
+    globalThis.fetch = async (url, options = {}) => {
+      if (url === "http://mineru.test/tasks" && options.method === "POST") {
+        assert.equal(options.body.get("backend"), "pipeline");
+        assert.equal(options.body.has("server_url"), false);
+        assert.equal(options.body.has("effort"), false);
+        return Response.json({ task_id: "TASK-PIPELINE" });
+      }
+      if (url === "http://mineru.test/tasks/TASK-PIPELINE") return Response.json({ status: "completed" });
+      if (url === "http://mineru.test/tasks/TASK-PIPELINE/result") {
+        return new Response(resultZip, { headers: { "content-length": String(resultZip.length) } });
+      }
+      throw new Error(`Unexpected MinerU request: ${url}`);
+    };
+    const parsed = await parseWithMinerU({ sourcePath, fileName: "source.pdf", artifactsDir, textPath });
+    assert.equal(parsed.parser, "mineru-pipeline");
+    assert.equal(parsed.blocks[0].type, "table");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnvironment("MINERU_API_URL", originalApiUrl);
+    restoreEnvironment("MINERU_BACKEND", originalBackend);
     await rm(workDir, { recursive: true, force: true });
   }
 });

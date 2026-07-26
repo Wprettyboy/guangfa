@@ -35,7 +35,7 @@ async function parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath, o
     pages,
     blocks: buildBlocksFromMinerU(contentList, contentListV2),
     images: imageAnalysis.records,
-    parser: path.extname(fileName).toLowerCase() === ".pdf" ? `mineru-${config.effort}` : "mineru-office",
+    parser: getMinerUParserName(fileName, config),
     warning: imageAnalysis.warning,
   };
 }
@@ -67,48 +67,61 @@ async function retryMinerUImageCaptions({ artifactsDir, fileName, textPath, imag
     pages,
     blocks: buildBlocksFromMinerU(contentList, contentListV2),
     images: records,
-    parser: path.extname(fileName).toLowerCase() === ".pdf" ? `mineru-${readMinerUConfig().effort}` : "mineru-office",
+    parser: getMinerUParserName(fileName, readMinerUConfig()),
     warning: records.some((record) => record.status === "failed") ? "部分图片仍未生成语义说明，可稍后重试。" : "",
   };
 }
 
 function readMinerUConfig() {
   const apiUrl = String(process.env.MINERU_API_URL || defaultApiUrl).replace(/\/$/, "");
-  const backend = String(process.env.MINERU_BACKEND || "hybrid-http-client");
+  const backend = String(process.env.MINERU_BACKEND || "pipeline");
   const effort = String(process.env.MINERU_EFFORT || "medium");
-  const provider = String(process.env.MINERU_VLM_PROVIDER || "cloud").toLowerCase();
-  if (!new Set(["local", "gemini-first", "cloud"]).has(provider)) {
-    throw createMinerUError("MINERU_VLM_PROVIDER 只能是 local、gemini-first 或 cloud");
-  }
-  const defaultServerUrl = provider === "local"
-    ? "http://mineru-vlm:30000"
-    : String(process.env.MINERU_VLM_GATEWAY_URL || "http://host.docker.internal:5173");
-  const serverUrl = String(process.env.MINERU_VLM_URL || defaultServerUrl).replace(/\/$/, "");
+  const serverUrl = String(process.env.MINERU_VLM_URL || "http://mineru-vlm:30000").replace(/\/$/, "");
   if (!new Set(["medium", "high"]).has(effort)) throw createMinerUError("MINERU_EFFORT 只能是 medium 或 high");
-  if (!new Set(["hybrid-http-client", "hybrid-engine"]).has(backend)) {
-    throw createMinerUError("MINERU_BACKEND 必须使用 Hybrid 后端");
+  if (!new Set(["pipeline", "hybrid-http-client", "hybrid-engine"]).has(backend)) {
+    throw createMinerUError("MINERU_BACKEND 只能是 pipeline、hybrid-http-client 或 hybrid-engine");
   }
+  if (backend === "hybrid-http-client") assertLocalMinerUVlmUrl(serverUrl);
   return {
     apiUrl,
     backend,
     effort,
-    provider,
     serverUrl,
     timeoutMs: clampNumber(Number(process.env.MINERU_PARSE_TIMEOUT_MS || 60 * 60 * 1000), 60_000, 4 * 60 * 60 * 1000),
     pollMs: clampNumber(Number(process.env.MINERU_POLL_INTERVAL_MS || 1500), 250, 10_000),
   };
 }
 
+function getMinerUParserName(fileName, config) {
+  if (path.extname(fileName).toLowerCase() !== ".pdf") return "mineru-office";
+  return config.backend === "pipeline" ? "mineru-pipeline" : `mineru-${config.effort}`;
+}
+
+function assertLocalMinerUVlmUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw createMinerUError("MINERU_VLM_URL 不是有效 URL");
+  }
+  const allowedHosts = new Set(["mineru-vlm", "127.0.0.1", "localhost", "::1"]);
+  if (url.protocol !== "http:" || !allowedHosts.has(url.hostname)) {
+    throw createMinerUError("MINERU_VLM_URL 必须指向本机官方 MinerU2.5 服务，不能使用通用云端 VLM");
+  }
+}
+
 async function submitTask(config, source, fileName) {
   const form = new FormData();
   form.append("files", new Blob([source]), fileName);
   form.append("backend", config.backend);
-  form.append("effort", config.effort);
   form.append("parse_method", "auto");
   form.append("lang_list", "ch");
   form.append("formula_enable", "true");
   form.append("table_enable", "true");
-  form.append("image_analysis", "false");
+  if (config.backend !== "pipeline") {
+    form.append("effort", config.effort);
+    form.append("image_analysis", "false");
+  }
   if (config.backend === "hybrid-http-client") form.append("server_url", config.serverUrl);
   form.append("return_md", "true");
   form.append("return_middle_json", "true");

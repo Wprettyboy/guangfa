@@ -20,8 +20,6 @@ x-mineru-amd-common: &mineru-amd-common
     - mineru-runtime:/opt/guangfa-mineru:ro
     - mineru-modelscope:/root/.cache/modelscope:ro
   ipc: host
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
   ulimits:
     memlock: -1
     stack: 67108864

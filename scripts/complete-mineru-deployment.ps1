@@ -65,7 +65,7 @@ try {
   & wsl.exe -d $Distro -- bash "/mnt/c/llm/guangfa-repo/scripts/bootstrap-mineru-wsl.sh"
   if ($LASTEXITCODE -ne 0) { throw "MinerU runtime bootstrap failed. Check /opt/guangfa-mineru/logs/bootstrap.log." }
 
-  & (Join-Path $Root "scripts\start-mineru-docker-amd.ps1")
+  & (Join-Path $Root "scripts\start-mineru-docker-amd.ps1") -WithVlm
   if ($LASTEXITCODE -ne 0) { throw "MinerU Docker services failed to start." }
 
   $Health = Invoke-RestMethod "http://127.0.0.1:8010/health" -TimeoutSec 15
@@ -83,11 +83,11 @@ try {
   if (!(Test-Path -LiteralPath $SamplePdf)) { throw "MinerU smoke-test fixture is missing: $SamplePdf" }
   $SmokePdf = "C:\llm\guangfa-mineru-smoke.pdf"
   Copy-Item -LiteralPath $SamplePdf -Destination $SmokePdf -Force
-  $VlmGateway = if ($env:MINERU_VLM_GATEWAY_URL) { $env:MINERU_VLM_GATEWAY_URL } else { "http://host.docker.internal:5173" }
+  $VlmUrl = if ($env:MINERU_VLM_URL) { $env:MINERU_VLM_URL } else { "http://mineru-vlm:30000" }
   $Task = curl.exe -fsS -X POST "http://127.0.0.1:8010/tasks" `
     -F "files=@$SmokePdf" `
     -F "backend=hybrid-http-client" `
-    -F "server_url=$VlmGateway" `
+    -F "server_url=$VlmUrl" `
     -F "effort=medium" `
     -F "parse_method=auto" `
     -F "lang_list=ch" `

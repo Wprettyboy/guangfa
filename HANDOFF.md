@@ -120,7 +120,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/knowledge/mineru-client.js`：MinerU 3.4.4 异步任务适配，提交 Hybrid 解析、轮询、下载并安全展开产物，将 content list 归一为页和结构块，并协调知识库图片 caption 写回。
 - `server/knowledge/image-caption.js`：知识库图片语义适配层；按 MinerU 精确产物路径读取图片，使用 Gemini 生成严格结构化说明，不生成 Mermaid。
 - `server/knowledge/docx-convert.js`：旧解析器的 OnlyOffice DOCX 转 PDF 适配；只有显式设置 `KNOWLEDGE_PARSER=legacy` 时才进入这条链路。
-- 知识解析默认使用 MinerU：PDF/图片走 Hybrid，DOCX/PPTX/XLSX 走 MinerU Office parser，TXT 仍本地解析。原格式文件用于溯源，不再把 Office 文件转换成 PDF；MinerU 失败时不自动回退旧解析器。部署和环境变量见 `docs/mineru-hybrid.md`。
+- 知识解析默认使用 MinerU：PDF/图片走 Pipeline，复杂扫描件可显式选择 Hybrid；DOCX/PPTX/XLSX 走 MinerU Office parser，TXT 仍本地解析。原格式文件用于溯源，MinerU 失败时不自动切换解析路线。部署和环境变量见 `docs/mineru-hybrid.md`。
 
 ### 本地 API 管理
 
@@ -209,28 +209,30 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 
 ### MinerU Hybrid 知识解析
 
-- MinerU 3.4.4 已在本机 AMD Docker 环境完成部署验证并切为默认知识解析器。PDF 使用 Hybrid 与官方 `MinerU2.5-Pro-2605-1.2B`，Office 文件使用 MinerU 自带解析器；MinerU 失败时不静默回退。需要临时诊断旧链路时才显式设置 `KNOWLEDGE_PARSER=legacy`。
+- MinerU 3.4.4 已在本机 AMD Docker 环境完成部署验证并切为默认知识解析器。PDF 默认使用 Pipeline，官方 `MinerU2.5-Pro-2605-1.2B` 只用于显式 Hybrid 高精度模式；Office 文件使用 MinerU 自带解析器，失败时不静默切换路线。
 - MinerU Markdown、middle JSON、content list 与图片按文档保存；结构化块按标题路径组织，表格保持完整，并把页码、bbox、块类型、父块、anchor、定位等级和过滤标记写入 SQLite。
 - PDF 使用原始上传文件进行页码与 bbox 溯源；Office 文件保留原格式并使用标题路径/anchor，不伪造 PDF 坐标。上传范围扩展为 PDF、DOCX、PPTX、XLSX、TXT。
 - DOCX 入库后由 `server/knowledge/docx-heading-pages.js` 使用 OnlyOffice 同一转换渲染链按 MinerU 标题路径建立章节起始物理页码，映射结果保存到 `knowledge_document_heading_pages`；临时 PDF 用完即删，不作为用户原文。检索详情显示 `physicalPage` 时必须标注为“章节起始页”，不能当作子块精确页。
 - DOCX 检索详情提供“打开原文”只读预览，优先使用 MinerU `headingPath` 通过 OnlyOffice 大纲管理器精确跳转到原文标题；物理页码只作为标题定位失败时的回退。原文件不存在时返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，前端提示重新上传，不把缺失伪装成定位失败。
 - 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、Docker Desktop 4.74.0；AMD Compose 通过 `/dev/dxg`、ROCDXG 和三个只读 named volumes 运行 ROCm 7.2.1、ROCm PyTorch 2.9.1 与 MinerU 3.4.4。容器 GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`，结果为 `120`。
+- AMD 官方 VLM 每次推理记录输入/输出 token、图片数、耗时与显存，缓存碎片超过 2GiB 才调用 `empty_cache()`，不要在每批后强制清缓存。AOTriton 实验注意力内核在 Radeon 8060S 的对照测试中没有加速，保持关闭。
+- 2026-07-26 使用 8 页 `测试.pdf` 验收默认 Pipeline：250 秒完成，得到 6 个表格块和 1 个图片块；第 2 页流程矩阵生成 1546 字符 HTML，第 4-8 页跨页表格合并为 3584 字符 HTML并包含后续章节。相同 AMD Transformers VLM 的单个 85-token 表格请求约 126-131 秒，因此 Hybrid 不作为默认主线。
 - Docker VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均为 healthy；真实 11 页 PDF 任务约 2 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
 - 切换默认解析器后已通过真实知识库 API 完成上传、解析、Embedding、ZVec、检索和原文读取验收：11 页、54 段、65 个结构块，状态为“已索引”，检索命中携带 PDF 页码/bbox，原文 PDF 返回完整 386,793 字节；验收临时库已删除。
 - 结构切片采用标题/完整表格父块与有界检索子块；父块只用于 SQLite 上下文扩展，Embedding、ZVec 和关键词召回只处理子块。引用文本、页码和 bbox 始终绑定实际命中的子块。
-- `npm run mineru` 和 `scripts/start-all-dev.ps1` 在本机走 AMD Docker；`npm run mineru:wsl` 仅保留为运行时准备/诊断后备，NVIDIA Docker 路线保留为 `npm run mineru:nvidia`。AMD 日志使用 `docker compose -f docker/mineru/compose.amd.yaml logs` 查看。
+- `npm run mineru` 和 `scripts/start-all-dev.ps1` 启动默认 Pipeline API；`npm run mineru:hybrid` 才按需加载官方 MinerU2.5 VLM。`npm run mineru:wsl` 仅保留为诊断后备，NVIDIA 路线为 `npm run mineru:nvidia`。
 - 本轮验证通过 `npm test` 72/72、生产构建、混合检索/知识库选择检查、PowerShell/Node/Compose 语法与 `git diff --check`。
 
 ### MinerU 图片语义与检索证据
 
-- MinerU 只负责提取图片文件、结构块、页码/bbox/anchor/标题路径；请求固定设置 `image_analysis=false`，不再调用本地 VLM 重建 Mermaid。Gemini `gemini-3.1-flash-lite` 只负责图片语义，结果写回 content list V1/V2 的 `image_caption`。
+- 默认 Pipeline 使用 MinerU 自带 OCR、版面和表格模型；Hybrid 高精度模式固定使用官方 `MinerU2.5-Pro-2605-1.2B`，不得把 Gemini 接到 `hybrid-http-client` 模型地址。Gemini `gemini-3.1-flash-lite` 只在结构产物生成后补充 `image_caption`，不生成 Mermaid。
 - Gemini 结果必须是严格 JSON，`kind/summary/visibleText/actors/relations/keywords/uncertain` 均经过类型和长度校验；所有数组元素必须是字符串。格式不合格时图片进入显式失败态，不把 `[object Object]` 或宽松解析结果送入检索。
 - 图片与 MinerU 块只按规范化后的精确 artifact path 关联，不按标题、附近文本或模糊路径猜测；相同物理图片只按精确 SHA-256 复用一次 Gemini 结果。文档图片计数表示结构块出现次数，磁盘图片数可因重复引用更少。
 - `knowledge_document_images` 保存每个图片块的路径、哈希、状态、caption、模型、错误和定位；PDF 图片保留真实页码/bbox，Office 图片只保存结构 anchor/标题路径，不伪造 PDF 坐标。图片检索块通过 `source_asset_id` 指向对应原图。
 - 上传 API 在文件校验和落盘后返回 `202`，后台阶段依次为“解析中 / 图片解析 x/y / 索引中”；管理页只在存在活动阶段时每 2 秒轮询。图片部分失败时正文仍可检索，文档状态为“部分可用”，界面显示“图片 成功数/总数”并提供失败图片重试。
 - 图片重试只读取已保存的 MinerU JSON 和图片产物，不重新执行 MinerU；旧 MinerU 资料没有图片记录时，同一服务函数可基于现有产物执行一次图片补录。重试完成后统一重写 content list、SQLite 图片记录、图片切片和 V4 索引。
 - 管理页图片筛选使用精确 `blockTypes: ["image", "image-segment"]`；图片结果标记为“图片证据”，通过只读图片证据接口打开 `source_asset_id` 对应原图，不复用 `KnowledgeImagePicker` / OnlyOffice 图片插入链路。
-- 2026-07-25 真实 7.4MB DOCX 验收：13 个物理图片文件对应 14 个图片结构块，SHA 去重数为 13，最终 14/14 caption 成功；单图不合格 JSON 被明确置为失败，收紧提示词后重试成功。图片限定检索命中流程图，Reranker 首条得分约 0.9055，证据 ID、标题路径和原图绑定正常，MinerU 队列未执行本地图片 VLM。
+- 2026-07-25 真实 7.4MB DOCX 验收：13 个物理图片文件对应 14 个图片结构块，SHA 去重数为 13，最终 14/14 caption 成功；单图不合格 JSON 被明确置为失败，收紧提示词后重试成功。图片限定检索命中流程图，Reranker 首条得分约 0.9055，证据 ID、标题路径和原图绑定正常；该验收未开启 MinerU 的通用 `image_analysis`。
 
 ### 方案编写工作台迁移
 

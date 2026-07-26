@@ -9,6 +9,7 @@
     "embedding:skip-install": "powershell -ExecutionPolicy Bypass -File scripts/start-local-embedding.ps1 -SkipInstall",
     "retrieval": "powershell -ExecutionPolicy Bypass -File scripts/start-retrieval-docker-amd.ps1",
     "mineru": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-docker-amd.ps1",
+    "mineru:hybrid": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-docker-amd.ps1 -WithVlm",
     "mineru:wsl": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-wsl.ps1",
     "mineru:nvidia": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru.ps1",
     "check:zvec-sparse": "node scripts/check-zvec-sparse.mjs",

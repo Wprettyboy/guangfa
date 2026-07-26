@@ -3,6 +3,7 @@
 
 import base64
 import io
+import json
 import os
 import time
 import uuid
@@ -78,17 +79,34 @@ def to_model_messages(messages: list[dict]) -> tuple[list[dict], list[Image.Imag
     return converted, images
 
 
-def generate(request: ChatRequest) -> str:
+@torch.inference_mode()
+def generate(request: ChatRequest) -> tuple[str, dict]:
     if request.model != MODEL_NAME:
         raise ValueError(f"Unknown model: {request.model}")
     messages, images = to_model_messages(request.messages)
     prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = processor(text=[prompt], images=images or None, padding=True, return_tensors="pt")
     inputs = inputs.to(model.device)
+    input_tokens = int(inputs.input_ids.shape[-1])
     maximum = request.max_completion_tokens or request.max_tokens or 4096
     output_ids = model.generate(**inputs, use_cache=True, do_sample=False, max_new_tokens=min(maximum, 16384))
     generated_ids = [ids[len(input_ids):] for input_ids, ids in zip(inputs.input_ids, output_ids)]
-    return processor.batch_decode(generated_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False)[0]
+    output_tokens = sum(int(ids.shape[-1]) for ids in generated_ids)
+    content = processor.batch_decode(generated_ids, skip_special_tokens=False, clean_up_tokenization_spaces=False)[0]
+    del generated_ids, output_ids, inputs
+    allocated = int(torch.cuda.memory_allocated())
+    reserved = int(torch.cuda.memory_reserved())
+    cache_released = reserved - allocated > 2 * 1024**3
+    if cache_released:
+        torch.cuda.empty_cache()
+    return content, {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "image_count": len(images),
+        "allocated_bytes": allocated,
+        "reserved_bytes": reserved,
+        "cache_released": cache_released,
+    }
 
 
 @asynccontextmanager
@@ -112,13 +130,16 @@ def models():
 
 @app.post("/v1/chat/completions")
 def chat_completions(request: ChatRequest):
+    started_at = time.perf_counter()
     try:
         with generation_lock:
-            content = generate(request)
+            content, metrics = generate(request)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
+    metrics.update({"event": "mineru_vlm_inference", "elapsed_ms": round((time.perf_counter() - started_at) * 1000)})
+    print(json.dumps(metrics, ensure_ascii=True), flush=True)
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",

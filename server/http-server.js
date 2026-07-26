@@ -6,7 +6,6 @@ import path from "node:path";
 import { readAuthenticationCredentials } from "./api/auth.js";
 import { initializeCapabilityService } from "./api/capability.js";
 import { createApiGateway } from "./api/gateway.js";
-import { createMineruVlmGateway } from "./knowledge/mineru-vlm-gateway.js";
 
 const mimeTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -33,8 +32,7 @@ async function startProductionServer(options = {}) {
   initializeCapabilityService({ environment: "production" });
 
   const gateway = createApiGateway({ deploymentMode: "production" });
-  const mineruVlmGateway = createMineruVlmGateway();
-  const handler = createApplicationHandler({ distDir, gateway, mineruVlmGateway });
+  const handler = createApplicationHandler({ distDir, gateway });
   const tls = await readTlsOptions(options);
   const host = String(options.host || process.env.API_HOST || "127.0.0.1");
   const port = readPort(options.port ?? process.env.PORT ?? 5173);
@@ -56,7 +54,7 @@ async function startProductionServer(options = {}) {
   return server;
 }
 
-function createApplicationHandler({ distDir, gateway, mineruVlmGateway = () => {} }) {
+function createApplicationHandler({ distDir, gateway }) {
   return async function handleApplicationRequest(request, response) {
     try {
       applyTransportSecurityHeader(response);
@@ -65,8 +63,7 @@ function createApplicationHandler({ distDir, gateway, mineruVlmGateway = () => {
         sendOperationalStatus(response, url.pathname === "/readyz" ? existsSync(path.join(distDir, "index.html")) : true);
         return;
       }
-      await mineruVlmGateway(request, response, () =>
-        gateway(request, response, () => serveStaticRequest(request, response, url, distDir)));
+      await gateway(request, response, () => serveStaticRequest(request, response, url, distDir));
     } catch (error) {
       console.error(JSON.stringify({ event: "http_unhandled_error", message: error?.message || String(error), stack: error?.stack }));
       if (!response.headersSent) sendPlain(response, 500, "Internal Server Error");

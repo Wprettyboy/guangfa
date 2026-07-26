@@ -73,7 +73,7 @@ if (Test-PortListening $MineruPort) {
 } else {
   Start-HiddenPowerShell `
     -Name "MinerU Hybrid" `
-    -Command "powershell -ExecutionPolicy Bypass -File `"$Root\scripts\start-mineru-docker-amd.ps1`"" `
+    -Command "npm run mineru" `
     -Stdout "$LogDir\guangfa-mineru.log" `
     -Stderr "$LogDir\guangfa-mineru.err.log"
 }
