@@ -857,6 +857,83 @@
   background: #f7f9fc;
 }
 
+.knowledge-pdf-evidence-modal {
+  width: min(1400px, calc(100vw - 56px));
+  height: min(900px, calc(100vh - 56px));
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 52px rgba(20, 32, 52, 0.24);
+}
+
+.knowledge-pdf-evidence-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e5ecf5;
+}
+
+.knowledge-pdf-evidence-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.knowledge-pdf-evidence-header strong {
+  color: #25324a;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-pdf-evidence-header span {
+  color: #738096;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-pdf-evidence-body {
+  min-height: 0;
+  position: relative;
+  background: #f7f9fc;
+}
+
+/* PdfHighlighter 内部容器是 position:absolute + 100% 尺寸，需要一个已定位且有确定高度的父级。 */
+.knowledge-pdf-evidence-viewer {
+  position: absolute;
+  inset: 0;
+}
+
+.knowledge-pdf-evidence-viewer .PdfHighlighter {
+  background: #edf1f7;
+}
+
+.knowledge-pdf-evidence-viewer .pdfViewer {
+  padding: 14px 0 24px;
+}
+
+.knowledge-pdf-evidence-viewer .pdfViewer .page {
+  margin: 0 auto 16px !important;
+  border: 1px solid #d7dfeb !important;
+  box-shadow: 0 10px 22px rgba(42, 57, 82, 0.12);
+  background: #fff;
+}
+
+.knowledge-pdf-evidence-highlight-part {
+  position: absolute;
+  border: 1.5px solid rgba(214, 141, 0, 0.85);
+  border-radius: 2px;
+  background: rgba(255, 213, 79, 0.32);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
 .knowledge-source-viewer-body .onlyoffice-preview-host {
   width: 100%;
   height: 100%;
@@ -1380,6 +1457,11 @@
   }
 
   .knowledge-source-viewer-modal {
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+  }
+
+  .knowledge-pdf-evidence-modal {
     width: calc(100vw - 24px);
     height: calc(100vh - 24px);
   }

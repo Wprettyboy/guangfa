@@ -148,7 +148,7 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `server/solution-writing/plantuml-image.js`：方案 AI 生图业务模块，只使用当前文档大纲/全文文本，调用本地 PlantUML 服务渲染 PNG，并生成可被 OnlyOffice 插入的 DOCX 图片片段；默认字体使用 `SimHei`，由 `scripts/start-plantuml.ps1` 把 Windows 黑体/微软雅黑等字体复制到 PlantUML 容器。
 - `server/knowledge-base.js`：知识库兼容入口；当前返回 `apiMiddleware()` 并继续导出 `searchKnowledgeBase`，避免旧脚本和 AI 检索链路断开。
 - `server/knowledge/documents.js`：知识库管理、资料原文件持久化、检索与召回业务实现。
-- 检索结果保留 `documentId + page + sourcePdfAvailable + sourceFileAvailable + sourceFileType`；PDF 通过认证 API 使用 `#page=N` 打开，DOCX 通过 `knowledge.documents.officePreview` 创建只读原格式预览，不生成 `source.pdf`，不把短期资源票据写入草稿。
+- 检索结果保留 `documentId + page + sourcePdfAvailable + sourceFileAvailable + sourceFileType`；PDF 通过认证 API 在应用内 `KnowledgePdfEvidenceViewer` 打开并按 MinerU bbox 高亮，DOCX 通过 `knowledge.documents.officePreview` 创建只读原格式预览，不生成 `source.pdf`，不把短期资源票据写入草稿。
 - `server/knowledge/tables.js`：从知识库原 DOCX 文件抽取表格结构，按知识库范围检索可插入表格。
 
 ### 样式高频区
@@ -186,6 +186,16 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/v1/_meta/routes` 和 `/api/v1/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
 
 ## 最近已完成
+
+### 检索溯源按 MinerU 坐标高亮
+
+- PDF 溯源改为应用内 `src/features/knowledge/KnowledgePdfEvidenceViewer.jsx`，不再用 `window.open` 交给浏览器内置 PDF 阅读器（那条路无法从 URL 指定高亮区域，`#page=N` 是它少数支持的参数之一）。已删除 `openKnowledgeSourcePdf()`。
+- 高亮坐标直接用 MinerU content list 的 bbox，不做任何 PDF.js 文本项匹配。**MinerU bbox 归一化到 0-1000 画布、每轴独立、左上原点**（实测 `middle.json` 页点坐标 ÷ `page_size` × 1000 == content list bbox，横版页同样成立），而 `react-pdf-highlighter` 的 `scaledToViewport` 按 `viewportWidth * x1 / width` 换算，因此把参考尺寸固定成 1000 即可直接复用，既不需要把 `page_size` 入库，也不需要重新解析已有资料。
+- `src/features/knowledge/pdfEvidenceHighlight.js` 是纯逻辑层：bbox 必须是 4 个 0-1000 的有限数且右下大于左上，否则返回 `null` 失败关闭——此时只把视图滚到权威页码并在弹窗标注“没有可用解析区域”，不画猜测框。历史上 `e30b8bd` 那套按引用短语反算坐标的高亮已被 `1395d79` 回滚，不再启用。
+- `KnowledgeSourceLink` 现在统一打开这个应用内查看器；填充工作台的调用点没有 bbox，会只定位到页码而不高亮（要在填充链路也高亮，需要把 `locator.bbox` 从 `server/ai/fill.js` 一路透传到卡片，尚未做）。
+- 检索面板的关键词高亮改用 `src/features/knowledge/searchHighlight.js`。原实现只按空格和标点切词，中文自然语言查询整句会变成一个 term，要求原文逐字包含整句，实际几乎永不高亮。现在中文按“查询片段与原文的最长公共子串”匹配，逐位取最长重合段（≥2 字），纯功能词片段（的了是什么这类）直接丢弃，拉丁词仍是整词不区分大小写匹配；不做同义扩展或模糊匹配。
+- 顺带修掉 `getKnowledgePreview()` 的潜在缺陷：原来固定留 70 字符前导，当 `maxLength` 小于 70 时命中会被挤出预览窗口，现在前导量按 `maxLength/3` 收敛，默认长度下行为不变。
+- 新增 `tests/knowledge-search-highlight.test.mjs`（bbox→viewport 换算、非法 bbox 失败关闭、中文片段高亮、功能词去噪、区间合并、预览窗口定位）。
 
 ### 知识入库提速：增量 Embedding 缓存与解析配置调优
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiRequest, isApiRequestUrl } from "../services/apiClient.js";
 
-function useApiAssetUrl(source) {
+function useApiAssetUrl(source, fallbackMessage = "图片读取失败") {
   const sourceUrl = String(source || "");
   const [state, setState] = useState({ source: "", url: "", loading: false, error: "" });
 
@@ -19,7 +19,7 @@ function useApiAssetUrl(source) {
     apiRequest(value, {
       responseType: "blob",
       signal: controller.signal,
-      fallbackMessage: "图片读取失败",
+      fallbackMessage,
     })
       .then((blob) => {
         if (cancelled) return;
@@ -28,7 +28,7 @@ function useApiAssetUrl(source) {
       })
       .catch((error) => {
         if (error?.code !== "REQUEST_ABORTED") {
-          setState({ source: value, url: "", loading: false, error: error?.message || "图片读取失败" });
+          setState({ source: value, url: "", loading: false, error: error?.message || fallbackMessage });
         }
       });
 
@@ -37,7 +37,7 @@ function useApiAssetUrl(source) {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [sourceUrl]);
+  }, [sourceUrl, fallbackMessage]);
 
   if (state.source === sourceUrl) return state;
   const loading = Boolean(sourceUrl && isApiRequestUrl(sourceUrl));

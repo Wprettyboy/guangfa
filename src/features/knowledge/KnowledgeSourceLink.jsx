@@ -1,24 +1,34 @@
+import { useState } from "react";
 import { ExternalLink } from "lucide-react";
-import { openKnowledgeSourcePdf } from "../../services/knowledgeBase.js";
+import KnowledgePdfEvidenceViewer from "./KnowledgePdfEvidenceViewer.jsx";
 
-function KnowledgeSourceLink({ documentId, page, available = true }) {
+function KnowledgeSourceLink({ documentId, page, available = true, bbox = null, documentName = "", sourceText = "" }) {
+  const [open, setOpen] = useState(false);
   if (!available || !documentId || !page) return null;
   return (
-    <button
-      className="text-button knowledge-source-link"
-      type="button"
-      onClick={async (event) => {
-        event.stopPropagation();
-        try {
-          await openKnowledgeSourcePdf(documentId, page);
-        } catch (error) {
-          window.alert(error.message || "原文 PDF 读取失败");
-        }
-      }}
-    >
-      <ExternalLink size={14} />
-      查看原文第{page}页
-    </button>
+    <>
+      <button
+        className="text-button knowledge-source-link"
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        <ExternalLink size={14} />
+        查看原文第{page}页
+      </button>
+      {open ? (
+        <KnowledgePdfEvidenceViewer
+          documentId={documentId}
+          page={page}
+          bbox={bbox}
+          documentName={documentName}
+          sourceText={sourceText}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 

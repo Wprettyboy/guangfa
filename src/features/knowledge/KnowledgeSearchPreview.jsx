@@ -6,6 +6,7 @@ import { readKnowledgeTableEvidence } from "../../services/knowledgeBase.js";
 import KnowledgeSourceLink from "./KnowledgeSourceLink.jsx";
 import KnowledgeSourceViewer from "./KnowledgeSourceViewer.jsx";
 import KnowledgeSearchFilters from "./KnowledgeSearchFilters.jsx";
+import { getKnowledgePreview, splitKnowledgeHighlightParts } from "./searchHighlight.js";
 
 const degradedReasonLabels = {
   encode_timeout: "查询编码超时",
@@ -153,7 +154,14 @@ function KnowledgeResultDetailContent({ result, query, onOpenImageEvidence, expa
           <span>{result.documentName} · {getSourceLabel(result)} · {getLocatorLabel(result)}</span>
         </div>
         <div className="knowledge-result-actions">
-          <KnowledgeSourceLink documentId={result.documentId} page={result.physicalPage || result.page} available={result.sourcePdfAvailable} />
+          <KnowledgeSourceLink
+            documentId={result.documentId}
+            page={result.physicalPage || result.page}
+            available={result.sourcePdfAvailable}
+            bbox={result.locator?.type === "pdf" ? result.locator.bbox : null}
+            documentName={result.documentName}
+            sourceText={result.sourceText || result.text}
+          />
           <KnowledgeSourceViewer result={result} />
           {result.sourceAssetId ? (
             <button className="tool-button" type="button" onClick={() => onOpenImageEvidence(result.sourceAssetId)}>
@@ -382,42 +390,13 @@ function formatLocatorNumber(value) {
   return Number.isFinite(number) ? String(Math.round(number * 100) / 100) : "-";
 }
 
-function getKnowledgePreview(text, query, maxLength = 220) {
-  const value = String(text || "").trim();
-  if (value.length <= maxLength) return value;
-  const terms = createKnowledgeDisplayTerms(query);
-  const hitIndex = terms.reduce((best, term) => {
-    const index = value.toLowerCase().indexOf(term.toLowerCase());
-    if (index < 0) return best;
-    return best < 0 ? index : Math.min(best, index);
-  }, -1);
-  const start = hitIndex >= 0 ? Math.max(0, hitIndex - 70) : 0;
-  const end = Math.min(value.length, start + maxLength);
-  return `${start > 0 ? "..." : ""}${value.slice(start, end).trim()}${end < value.length ? "..." : ""}`;
-}
-
 function renderKnowledgeText(text, query) {
-  const value = String(text || "");
-  const terms = createKnowledgeDisplayTerms(query);
-  if (!value || terms.length === 0) return value;
-  const escapedTerms = terms.map(escapeKnowledgeRegExp).filter(Boolean);
-  if (escapedTerms.length === 0) return value;
-  const pattern = new RegExp(`(${escapedTerms.join("|")})`, "gi");
-  return value.split(pattern).map((part, index) => {
-    if (!part) return null;
-    return terms.some((term) => part.toLowerCase() === term.toLowerCase())
-      ? <mark className="knowledge-hit" key={`${part}-${index}`}>{part}</mark>
-      : part;
-  });
-}
-
-function createKnowledgeDisplayTerms(query) {
-  return [...new Set(String(query || "").trim().split(/[\s,，。；;、:：()（）]+/).map((term) => term.trim()).filter((term) => term.length >= 2))]
-    .sort((left, right) => right.length - left.length);
-}
-
-function escapeKnowledgeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = splitKnowledgeHighlightParts(text, query);
+  if (parts.length === 0) return "";
+  if (parts.length === 1 && !parts[0].hit) return parts[0].text;
+  return parts.map((part, index) => (part.hit
+    ? <mark className="knowledge-hit" key={`hit-${index}`}>{part.text}</mark>
+    : part.text));
 }
 
 export default KnowledgeSearchPreview;
