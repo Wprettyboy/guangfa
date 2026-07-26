@@ -75,6 +75,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 | `MINERU_VL_MODEL_PATH` | `/opt/guangfa-mineru/models/MinerU2.5-Pro-2605-1.2B` | Docker runtime volume 内的 VLM 模型目录。 |
 | `MINERU_VL_MODEL_NAME` | `opendatalab/MinerU2.5-Pro-2605-1.2B` | API 与 vLLM 共同使用的模型服务名。 |
 | `MINERU_PARSE_TIMEOUT_MS` | `3600000` | 单个解析任务总超时，范围 1 至 4 小时。 |
+| `MINERU_VIRTUAL_VRAM_SIZE` | `8` | AMD Pipeline 使用的虚拟显存档位；避免把 8060S 统一内存误判为 80GB 独立显存。 |
 | `MINERU_VLM_GPU_DEVICE` | `0` | VLM 容器使用的 NVIDIA GPU。 |
 | `MINERU_API_GPU_DEVICE` | `0` | Hybrid Pipeline 容器使用的 NVIDIA GPU。 |
 | `MINERU_VLM_GPU_MEMORY_UTILIZATION` | `0.55` | vLLM KV cache 显存比例。 |
@@ -92,7 +93,8 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 - V1 共 70 个结构块，全部带 `page_idx` 与 `bbox`；V2 保留 11 页及标题级别。样本没有表格，因此表格抽取仍由结构化单元测试覆盖。
 - 将真实页面 PNG 直接提交给 VLM 后，模型正确返回中文文档标题、章节与正文，确认视觉模型不是仅健康检查可用。
 - MinerU 的专用 `Table Recognition`/OTSL 输出必须由官方 MinerU2.5 模型生成；Gemini 只在结构解析完成后生成图片语义说明，不能作为 `hybrid-http-client` 的模型服务器。
-- 2026-07-26 使用 8 页 `测试.pdf` 验收 Pipeline：250 秒完成，得到 6 个表格块和 1 个图片块；流程矩阵生成 1546 字符 HTML，物理第 4-8 页跨页表格合并为 3584 字符 HTML并保留后续章节内容。相同 AMD Transformers VLM 的单个 85-token 表格请求约 126-131 秒，因此不作为默认主线。
+- 2026-07-26 使用 8 页 `测试.pdf` 验收 Pipeline：原配置与 Retrieval 共存时约 208 秒；隔离 Retrieval 后，Batch Ratio 16/8/4 分别约 171/168/139 秒；Batch Ratio 4 与 Retrieval 共存约 158 秒。AMD Compose 因此默认设置 `MINERU_VIRTUAL_VRAM_SIZE=8`。四轮均得到 8 页、29 个块、6 个表格和 1 张图片，跨页表格 HTML 保持完整，仅有无业务影响的空格级 OCR 波动。
+- Retrieval 常驻会使当前样本首次解析变慢约 14%，但解析结束后立即需要它完成向量索引，业务服务不自动启停 Retrieval；需要离线批量解析时可由运维显式暂停 Retrieval。
 - 默认解析器切换后，真实知识库 API 验收得到 11 页、54 段和 65 个父子结构块；Embedding/ZVec 状态为“已索引”，查询命中包含 PDF 页码、bbox 和可读取的原文 PDF。验收临时知识库及索引已删除。
 
 ## 入库与溯源语义

@@ -216,7 +216,7 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - DOCX 检索详情提供“打开原文”只读预览，优先使用 MinerU `headingPath` 通过 OnlyOffice 大纲管理器精确跳转到原文标题；物理页码只作为标题定位失败时的回退。原文件不存在时返回 `KNOWLEDGE_SOURCE_FILE_MISSING`，前端提示重新上传，不把缺失伪装成定位失败。
 - 本机为 Ryzen AI MAX+ 395、Radeon 8060S、`gfx1151`、Docker Desktop 4.74.0；AMD Compose 通过 `/dev/dxg`、ROCDXG 和三个只读 named volumes 运行 ROCm 7.2.1、ROCm PyTorch 2.9.1 与 MinerU 3.4.4。容器 GPU 张量实算识别为 `AMD Radeon(TM) 8060S Graphics`，结果为 `120`。
 - AMD 官方 VLM 每次推理记录输入/输出 token、图片数、耗时与显存，缓存碎片超过 2GiB 才调用 `empty_cache()`，不要在每批后强制清缓存。AOTriton 实验注意力内核在 Radeon 8060S 的对照测试中没有加速，保持关闭。
-- 2026-07-26 使用 8 页 `测试.pdf` 验收默认 Pipeline：250 秒完成，得到 6 个表格块和 1 个图片块；第 2 页流程矩阵生成 1546 字符 HTML，第 4-8 页跨页表格合并为 3584 字符 HTML并包含后续章节。相同 AMD Transformers VLM 的单个 85-token 表格请求约 126-131 秒，因此 Hybrid 不作为默认主线。
+- 2026-07-26 使用 8 页 `测试.pdf` 验收默认 Pipeline：原配置与 Retrieval 共存时约 208 秒；隔离 Retrieval 后，Batch Ratio 16/8/4 分别约 171/168/139 秒；Batch Ratio 4 与 Retrieval 共存约 158 秒。AMD Compose 默认设置 `MINERU_VIRTUAL_VRAM_SIZE=8`，避免将 8060S 统一内存误判为 80GB 独立显存。四轮均得到 8 页、29 个块、6 个表格和 1 张图片，跨页表格保持完整，仅有空格级 OCR 波动。业务链路不自动启停 Retrieval，因为 MinerU 完成后立即需要它构建向量索引。
 - Docker VLM `127.0.0.1:30000` 与 MinerU API `127.0.0.1:8010` 均为 healthy；真实 11 页 PDF 任务约 2 分 10 秒完成，ZIP 同时包含 Markdown、middle JSON、content list V1/V2。V1 的 70 个块均带页码和 bbox，真实页面图片的 VLM 推理也已返回正确中文标题与正文。
 - 切换默认解析器后已通过真实知识库 API 完成上传、解析、Embedding、ZVec、检索和原文读取验收：11 页、54 段、65 个结构块，状态为“已索引”，检索命中携带 PDF 页码/bbox，原文 PDF 返回完整 386,793 字节；验收临时库已删除。
 - 结构切片采用标题/完整表格父块与有界检索子块；父块只用于 SQLite 上下文扩展，Embedding、ZVec 和关键词召回只处理子块。引用文本、页码和 bbox 始终绑定实际命中的子块。

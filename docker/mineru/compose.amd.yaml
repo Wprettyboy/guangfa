@@ -70,6 +70,7 @@ services:
       MINERU_MODEL_SOURCE: local
       MINERU_PROCESSING_WINDOW_SIZE: "${MINERU_PROCESSING_WINDOW_SIZE:-16}"
       MINERU_TOOLS_CONFIG_JSON: /opt/guangfa-mineru/mineru.json
+      MINERU_VIRTUAL_VRAM_SIZE: "${MINERU_VIRTUAL_VRAM_SIZE:-8}"
       MINERU_VL_MODEL_PATH: /opt/guangfa-mineru/models/MinerU2.5-Pro-2605-1.2B
     volumes:
       - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
