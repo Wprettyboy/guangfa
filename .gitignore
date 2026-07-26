@@ -3,7 +3,10 @@ dist/
 data/
 logs/
 tmp/
+output/
 *.log
+# Office 打开文档时生成的临时锁文件
+~$*
 __pycache__/
 *.pyc
 .venv-embedding/
