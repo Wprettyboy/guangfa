@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { getKnowledgeDatabase } from "../server/knowledge/db.js";
 import { readKnowledgeIndexChunks } from "../server/knowledge/indexer.js";
 import { searchKnowledgeV4 } from "../server/knowledge/search.js";
+import { resolveChunkAnchor, resolveDocumentName, resolveKnowledgeBaseAnchor } from "./lib/retrieval-case-anchors.mjs";
 
 const options = readOptions(process.argv.slice(2));
 const database = await getKnowledgeDatabase();
@@ -11,7 +12,7 @@ try {
   const chunks = readKnowledgeIndexChunks(database);
   assert(chunks.length > 0, "No retrieval chunks are available for evaluation");
   const cases = options.casesPath
-    ? normalizeCases(JSON.parse(await readFile(options.casesPath, "utf8")))
+    ? normalizeCases(JSON.parse(await readFile(options.casesPath, "utf8")), chunks, readKnowledgeBases(database))
     : buildDerivedCases(chunks, options.caseCount);
   const evaluation = await evaluateCases(cases, chunks);
   console.log(JSON.stringify(evaluation, null, 2));
@@ -70,6 +71,14 @@ async function evaluateCases(cases, chunks) {
   };
 }
 
+function readKnowledgeBases(database) {
+  return database.prepare(`
+    SELECT id, name, scope, project_id AS projectId
+    FROM knowledge_bases
+    WHERE deleted_at IS NULL
+  `).all();
+}
+
 function buildDerivedCases(chunks, count) {
   const candidates = chunks.filter((chunk) => String(chunk.sourceText || chunk.text || "").replace(/\s+/g, "").length >= 36);
   const byDocument = Map.groupBy(candidates, (chunk) => chunk.documentId);
@@ -104,21 +113,45 @@ function buildExactEvidenceQuery(chunk) {
   return source.slice(start, start + 80).trim();
 }
 
-function normalizeCases(value) {
+// 用例文件只接受内容锚点。chunk id 带入库时间戳，重新入库即失效，
+// 因此不再支持直接写 id，避免用例悄悄退回到易碎的写法。
+function normalizeCases(value, chunks, bases) {
   const rows = Array.isArray(value) ? value : value?.cases;
   assert(Array.isArray(rows) && rows.length > 0, "Evaluation cases must be a non-empty array");
   return rows.map((item, index) => {
+    const id = String(item?.id || `case-${index + 1}`);
     const query = String(item?.query || "").trim();
-    const expectedChunkIds = uniqueStrings(item?.expectedChunkIds);
-    assert(query && expectedChunkIds.length > 0, `Evaluation case ${index + 1} requires query and expectedChunkIds`);
-    return {
-      id: String(item.id || `case-${index + 1}`),
-      query,
-      expectedChunkIds,
-      kbIds: uniqueStrings(item.kbIds),
-      filters: item.filters && typeof item.filters === "object" ? item.filters : {},
-    };
+    const anchors = Array.isArray(item?.expectedAnchors) ? item.expectedAnchors : [];
+    assert(item?.expectedChunkIds === undefined, `Evaluation case ${id} uses expectedChunkIds; chunk ids embed an ingestion timestamp, use expectedAnchors instead`);
+    assert(query && anchors.length > 0, `Evaluation case ${id} requires query and expectedAnchors`);
+    const expectedChunkIds = uniqueStrings(anchors.map((anchor, position) =>
+      resolveChunkAnchor(anchor, chunks, `Evaluation case ${id} anchor ${position + 1}`)));
+    assert(expectedChunkIds.length === anchors.length, `Evaluation case ${id} has anchors resolving to the same chunk`);
+    return { id, query, expectedChunkIds, kbIds: resolveCaseKbIds(item, bases, id), filters: normalizeCaseFilters(item.filters, chunks, id) };
   });
+}
+
+// 知识库 id 带时间戳，用例改写成 kbAnchors。留空表示不限定知识库（跨库检索）。
+function resolveCaseKbIds(item, bases, caseId) {
+  assert(item?.kbIds === undefined, `Evaluation case ${caseId} uses kbIds; knowledge base ids embed a creation timestamp, use kbAnchors instead`);
+  if (item?.kbAnchors === undefined) return [];
+  assert(Array.isArray(item.kbAnchors), `Evaluation case ${caseId} requires kbAnchors to be an array`);
+  const kbIds = uniqueStrings(item.kbAnchors.map((anchor, position) =>
+    resolveKnowledgeBaseAnchor(anchor, bases, `Evaluation case ${caseId} kbAnchor ${position + 1}`)));
+  assert(kbIds.length === item.kbAnchors.length, `Evaluation case ${caseId} has kbAnchors resolving to the same knowledge base`);
+  return kbIds;
+}
+
+// documentIds 同样带时间戳，用例改写 documentNames，这里解析成当前库里的 id。
+function normalizeCaseFilters(rawFilters, chunks, caseId) {
+  const filters = rawFilters && typeof rawFilters === "object" ? { ...rawFilters } : {};
+  assert(filters.documentIds === undefined, `Evaluation case ${caseId} uses filters.documentIds; use filters.documentNames instead`);
+  if (filters.documentNames === undefined) return filters;
+  const names = uniqueStrings(filters.documentNames);
+  assert(names.length > 0, `Evaluation case ${caseId} has an empty filters.documentNames`);
+  delete filters.documentNames;
+  filters.documentIds = names.map((name) => resolveDocumentName(name, chunks, `Evaluation case ${caseId} filters.documentNames`));
+  return filters;
 }
 
 async function runAlternatingGpuStress(rounds) {

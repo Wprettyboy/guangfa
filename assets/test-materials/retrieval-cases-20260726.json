@@ -1,0 +1,210 @@
+{
+  "cases": [
+    {
+      "id": "sem-01-企业信息改写",
+      "query": "建客户档案时要填公司的哪些基本信息？",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "6e5983c315be995694807c567649e21fbbbe75642e76c6983aefc201991630b1",
+          "documentName": "测试.pdf",
+          "blockType": "text"
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "合同审核",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-02-图片证据",
+      "query": "客户档案录入表单界面上有哪些字段",
+      "filters": {
+        "blockTypes": [
+          "image",
+          "image-segment"
+        ]
+      },
+      "expectedAnchors": [
+        {
+          "sha256": "b9fe9d238656408b9a0a8016d14421c55674654a6755c49a49bc4e7a505d7c2c",
+          "documentName": "测试.pdf",
+          "blockType": "image"
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "合同审核",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-03-表格过滤",
+      "query": "业务流程一共分成哪几个阶段",
+      "filters": {
+        "isTable": true
+      },
+      "expectedAnchors": [
+        {
+          "sha256": "507eadf5fe994b59525b0de7eca846ca01837cf32bc1e0743c4a3b979700af5d",
+          "documentName": "测试.pdf",
+          "blockType": "table-row-group",
+          "isTable": true
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "合同审核",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-04-特价审批",
+      "query": "销售想给客户申请特殊价格，审批流程依据什么发起？",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "ad54beb32b3f180df8d8675822aef5c32a08206caedf989a668e18212551f57e",
+          "documentName": "测试.pdf",
+          "blockType": "table-row-group"
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "合同审核",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-05-页码加表格",
+      "query": "功能清单中客户基础档案支持录入哪些内容",
+      "filters": {
+        "pageFrom": 4,
+        "pageTo": 4,
+        "isTable": true,
+        "documentNames": [
+          "测试.pdf"
+        ]
+      },
+      "expectedAnchors": [
+        {
+          "sha256": "c62f2b85e92cfd9d203a9d90ccd9cb4fb08dc8bb5405c9daf3d5b9f23910409b",
+          "documentName": "测试.pdf",
+          "blockType": "table-row-group",
+          "page": 4,
+          "isTable": true
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "合同审核",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-06-跨库法条",
+      "query": "参加政府采购的供应商需要具备什么资格条件",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "3f4d4283e6fd23ae1d852caa176210f3835d7620fef13c401f5c92d212e716c2",
+          "documentName": "中华人民共和国招标投标法.txt",
+          "blockType": ""
+        }
+      ],
+      "kbAnchors": []
+    },
+    {
+      "id": "sem-07-废标情形",
+      "query": "什么情况下采购项目会被废标",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "d4333ddada1e7a58c8555db4cb9b08ed2724969c858e6411e2b40eb194ad44d4",
+          "documentName": "中华人民共和国招标投标法.txt",
+          "blockType": ""
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "02 招采与采购合同",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-08-付款期限",
+      "query": "如果甲方一直拖着不验收，给中小企业的付款期限从什么时候开始算",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "83fed20c18c52fc8c9fb39ed7e4d6e073f7087db6e2e411079d52a4ece4dd9a4",
+          "documentName": "保障中小企业款项支付条例.txt",
+          "blockType": ""
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "06 交易秩序与付款",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-09-密码安全",
+      "query": "系统对用户密码安全有哪些技术要求",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "86e8148f865a000e79ba4248bebb72d840c50867abc4b2ec5e30c53c73075eb5",
+          "documentName": "招标文件技术要求.docx",
+          "blockType": ""
+        },
+        {
+          "sha256": "b574dc53e461ffb8b06c13b44809a89827165fa5b6c41e433009be64409fd3a2",
+          "documentName": "招标文件技术要求.docx",
+          "blockType": ""
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "XX单",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    },
+    {
+      "id": "sem-10-角色职责",
+      "query": "样品的出入库和发货物流跟踪是哪个岗位负责",
+      "filters": {},
+      "expectedAnchors": [
+        {
+          "sha256": "0cbba2eed4e6664610020fda2403d742d47072d808d24d605598bfcc2496b6d2",
+          "documentName": "CRM.pdf",
+          "blockType": "text"
+        }
+      ],
+      "kbAnchors": [
+        {
+          "name": "XXX",
+          "scope": "project",
+          "projectId": "default-project"
+        }
+      ]
+    }
+  ]
+}
