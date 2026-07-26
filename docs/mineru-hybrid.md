@@ -49,6 +49,8 @@ npm run mineru:hybrid
 docker compose -f docker/mineru/compose.amd.yaml logs -f mineru-vlm mineru-api
 ```
 
+`npm run mineru:hybrid` 只管理 Docker 服务，不修改应用配置。使用 Hybrid 时还必须设置 `MINERU_BACKEND=hybrid-http-client` 并重启 Web/Node；切回 Pipeline 时恢复 `MINERU_BACKEND=pipeline` 并执行 `npm run mineru`，该入口会停止 VLM 释放资源。
+
 NVIDIA Compose 日志：
 
 ```powershell

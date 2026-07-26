@@ -221,6 +221,7 @@ node scripts/evaluate-knowledge-retrieval.mjs --stress-rounds 50
 - 切换默认解析器后已通过真实知识库 API 完成上传、解析、Embedding、ZVec、检索和原文读取验收：11 页、54 段、65 个结构块，状态为“已索引”，检索命中携带 PDF 页码/bbox，原文 PDF 返回完整 386,793 字节；验收临时库已删除。
 - 结构切片采用标题/完整表格父块与有界检索子块；父块只用于 SQLite 上下文扩展，Embedding、ZVec 和关键词召回只处理子块。引用文本、页码和 bbox 始终绑定实际命中的子块。
 - `npm run mineru` 和 `scripts/start-all-dev.ps1` 启动默认 Pipeline API；`npm run mineru:hybrid` 才按需加载官方 MinerU2.5 VLM。`npm run mineru:wsl` 仅保留为诊断后备，NVIDIA 路线为 `npm run mineru:nvidia`。
+- `npm run mineru:hybrid` 不修改应用环境；真正切换 Hybrid 必须同时设置 `MINERU_BACKEND=hybrid-http-client` 并重启 Web/Node。恢复 `MINERU_BACKEND=pipeline` 后执行 `npm run mineru` 会停止 VLM，避免后台继续占用资源。
 - 本轮验证通过 `npm test` 72/72、生产构建、混合检索/知识库选择检查、PowerShell/Node/Compose 语法与 `git diff --check`。
 
 ### MinerU 图片语义与检索证据
