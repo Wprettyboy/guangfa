@@ -13,18 +13,22 @@ const maxArtifactEntries = 4096;
 async function parseWithMinerU({ sourcePath, fileName, artifactsDir, textPath, onImageProgress }) {
   const config = readMinerUConfig();
   const source = await readFile(sourcePath);
+  const submittedAt = Date.now();
   const task = await submitTask(config, source, fileName);
   await waitForTask(config, task.task_id);
+  const parsedAt = Date.now();
   const resultZip = await downloadTaskResult(config, task.task_id);
   const artifacts = await extractMinerUArtifacts(resultZip, artifactsDir);
   const contentList = parseJsonArtifact(artifacts, "_content_list.json");
   const contentListV2 = parseJsonArtifact(artifacts, "_content_list_v2.json");
+  const extractedAt = Date.now();
   const imageAnalysis = await enrichMinerUImageCaptions({
     artifacts,
     contentList,
     contentListV2,
     onProgress: onImageProgress,
   });
+  console.log(`[mineru] ${fileName}：MinerU 解析 ${formatSeconds(parsedAt - submittedAt)}、产物下载/解包 ${formatSeconds(extractedAt - parsedAt)}、图片语义 ${formatSeconds(Date.now() - extractedAt)}（${imageAnalysis.records.length} 张）`);
   await rewriteJsonArtifact(artifacts, artifactsDir, "_content_list.json", contentList);
   await rewriteJsonArtifact(artifacts, artifactsDir, "_content_list_v2.json", contentListV2);
   await writeFile(path.join(artifactsDir, "image-analysis.json"), JSON.stringify(imageAnalysis.records, null, 2), "utf8");
@@ -362,6 +366,10 @@ function createMinerUError(message, statusCode = 502) {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+}
+
+function formatSeconds(ms) {
+  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
 }
 
 function clampNumber(value, min, max) {

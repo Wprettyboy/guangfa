@@ -80,6 +80,43 @@ test("structured filters are exact and RRF uses ranks instead of raw scores", ()
   assert.equal(fused[0].matchedChannels.length, 2);
 });
 
+test("index generation reuses cached embeddings and only encodes new chunks", async () => {
+  const chunks = [
+    chunk("C-10", "cached qualification text", 1),
+    chunk("C-11", "cached business text", 2),
+    chunk("C-12", "fresh technical text", 1),
+  ];
+  const store = new Map();
+  const fakeCache = {
+    hash: (text) => `hash:${text}`,
+    load: (hashes) => new Map([...new Set(hashes)].filter((hash) => store.has(hash)).map((hash) => [hash, store.get(hash)])),
+    save: (entries) => entries.forEach((entry) => store.set(entry.hash, {
+      denseEmbedding: entry.denseEmbedding,
+      sparseEmbedding: entry.sparseEmbedding,
+    })),
+    prune: () => 0,
+  };
+  store.set("hash:cached qualification text", embedding(11));
+  store.set("hash:cached business text", embedding(12));
+
+  const encodedTexts = [];
+  const encode = async (texts) => {
+    encodedTexts.push(...texts);
+    return texts.map((_, index) => embedding(index + 30));
+  };
+  const manifest = await buildKnowledgeIndexGeneration(chunks, {
+    encode,
+    embeddingCache: fakeCache,
+    now: new Date("2026-07-26T10:00:00Z"),
+    publish: false,
+  });
+  assert.equal(manifest.chunkCount, 3);
+  assert.equal(manifest.encodedChunkCount, 1);
+  assert.equal(manifest.cachedChunkCount, 2);
+  assert.deepEqual(encodedTexts.filter((text) => text !== chunks[0].text), ["fresh technical text"]);
+  assert.equal(store.has("hash:fresh technical text"), true);
+});
+
 test("immutable generation publishes only after close and reopen validation", async () => {
   const chunks = [
     chunk("C-1", "ISO27001 qualification requirement", 1),

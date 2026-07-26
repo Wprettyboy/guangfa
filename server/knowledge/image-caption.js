@@ -6,6 +6,12 @@ import { getModelConfig } from "../settings.js";
 const promptVersion = "knowledge-image-v1";
 const maxCaptionLength = 2400;
 
+function readImageCaptionConcurrency() {
+  const value = Number(process.env.KNOWLEDGE_IMAGE_CAPTION_CONCURRENCY || 4);
+  if (!Number.isFinite(value)) return 4;
+  return Math.min(8, Math.max(1, Math.floor(value)));
+}
+
 async function enrichMinerUImageCaptions({ artifacts, contentList, contentListV2, onlyPaths, onProgress, analyze = analyzeKnowledgeImage }) {
   const allowedPaths = onlyPaths ? new Set([...onlyPaths].map(normalizeArtifactPath)) : null;
   const detectedItems = collectV1ImageItems(contentList);
@@ -16,7 +22,7 @@ async function enrichMinerUImageCaptions({ artifacts, contentList, contentListV2
   const byHash = new Map();
   const records = new Array(imageItems.length);
   let completed = 0;
-  await runWithConcurrency(imageItems, 2, async ({ item, imageIndex }, index) => {
+  await runWithConcurrency(imageItems, readImageCaptionConcurrency(), async ({ item, imageIndex }, index) => {
     const imagePath = normalizeArtifactPath(item.img_path || item.image_path || "");
     const buffer = artifacts.get(imagePath);
     let record;

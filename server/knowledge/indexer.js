@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { encodeRetrieval } from "../retrieval/model-client.js";
 import { filterRetrievalKnowledgeChunks } from "./chunker.js";
+import { createKnowledgeEmbeddingCache } from "./embedding-cache.js";
 import {
   createKnowledgeZvecGeneration,
   createKnowledgeZvecV4Document,
@@ -39,10 +40,16 @@ function readKnowledgeIndexChunks(database) {
 
 async function rebuildKnowledgeIndexV4(database, options = {}) {
   return enqueueKnowledgeIndexWrite(async () => {
+    const startedAt = Date.now();
     const chunks = readKnowledgeIndexChunks(database);
-    const manifest = await buildKnowledgeIndexGeneration(chunks, options);
+    const embeddingCache = options.embeddingCache === null
+      ? null
+      : options.embeddingCache || createKnowledgeEmbeddingCache(database);
+    const manifest = await buildKnowledgeIndexGeneration(chunks, { ...options, embeddingCache });
     updateKnowledgeIndexState(database, manifest);
     await pruneKnowledgeZvecGenerations(manifest.generation, 1);
+    if (embeddingCache) embeddingCache.prune(chunks.map((chunk) => embeddingCache.hash(chunk.text)));
+    console.log(`[knowledge] V4 索引重建完成：${manifest.chunkCount} 个子块（新编码 ${manifest.encodedChunkCount}、缓存复用 ${manifest.cachedChunkCount}），耗时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
     return manifest;
   });
 }
@@ -52,18 +59,20 @@ async function buildKnowledgeIndexGeneration(chunks, {
   batchSize = 8,
   now = new Date(),
   publish = true,
+  embeddingCache = null,
 } = {}) {
   const generation = createGenerationName(now);
   const { collection } = await createKnowledgeZvecGeneration(generation);
   const sparseCounts = [];
   let closed = false;
   try {
+    const resolved = await resolveChunkEmbeddings(chunks, { encode, batchSize, embeddingCache });
     for (let start = 0; start < chunks.length; start += batchSize) {
       const batch = chunks.slice(start, start + batchSize);
-      const embeddings = await encodeIndexBatch(batch.map((chunk) => chunk.text), encode);
       const documents = batch.map((chunk, index) => {
-        sparseCounts.push(Object.keys(embeddings[index].sparseEmbedding).length);
-        return createKnowledgeZvecV4Document(chunk, embeddings[index]);
+        const embedding = resolved.embeddings[start + index];
+        sparseCounts.push(Object.keys(embedding.sparseEmbedding).length);
+        return createKnowledgeZvecV4Document(chunk, embedding);
       });
       assertStatuses(collection.insertSync(documents));
     }
@@ -84,6 +93,8 @@ async function buildKnowledgeIndexGeneration(chunks, {
       sparseMinWeight: 0.01,
       sparseMaxTerms: 192,
       sparseTerms: summarizeSparseCounts(sparseCounts),
+      encodedChunkCount: resolved.encodedCount,
+      cachedChunkCount: resolved.cachedCount,
     };
     if (publish) await publishActiveKnowledgeZvecManifest(manifest);
     return manifest;
@@ -94,6 +105,36 @@ async function buildKnowledgeIndexGeneration(chunks, {
     await removeKnowledgeZvecGeneration(generation).catch(() => {});
     throw error;
   }
+}
+
+async function resolveChunkEmbeddings(chunks, { encode, batchSize, embeddingCache }) {
+  if (!embeddingCache) {
+    const embeddings = [];
+    for (let start = 0; start < chunks.length; start += batchSize) {
+      const batch = chunks.slice(start, start + batchSize);
+      embeddings.push(...await encodeIndexBatch(batch.map((chunk) => chunk.text), encode));
+    }
+    return { embeddings, encodedCount: chunks.length, cachedCount: 0 };
+  }
+  const hashes = chunks.map((chunk) => embeddingCache.hash(chunk.text));
+  const cached = embeddingCache.load(hashes);
+  const embeddings = new Array(chunks.length);
+  const missing = [];
+  chunks.forEach((chunk, index) => {
+    const hit = cached.get(hashes[index]);
+    if (hit) embeddings[index] = hit;
+    else missing.push(index);
+  });
+  for (let start = 0; start < missing.length; start += batchSize) {
+    const batchIndexes = missing.slice(start, start + batchSize);
+    const encoded = await encodeIndexBatch(batchIndexes.map((index) => chunks[index].text), encode);
+    const entries = batchIndexes.map((chunkIndex, position) => {
+      embeddings[chunkIndex] = encoded[position];
+      return { hash: hashes[chunkIndex], ...encoded[position] };
+    });
+    embeddingCache.save(entries);
+  }
+  return { embeddings, encodedCount: missing.length, cachedCount: chunks.length - missing.length };
 }
 
 async function encodeIndexBatch(texts, encode) {

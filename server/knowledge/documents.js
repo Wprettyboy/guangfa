@@ -156,6 +156,7 @@ async function processKnowledgeDocument(context) {
     let headingMappingWarning = "";
     let parsed = null;
     let imageProgress = { captioned: 0, failed: 0 };
+    const parseStartedAt = Date.now();
     try {
       parsed = await parseKnowledgeDocument({
         documentId, sourcePath, pdfPath, textPath, artifactsDir, fileExt, fileName,
@@ -224,6 +225,7 @@ async function processKnowledgeDocument(context) {
       });
       status = "关键词可用";
       error = [parsed.warning || "未配置 embedding，当前资料仅支持关键词/全文检索。", headingMappingWarning].filter(Boolean).join("；");
+      console.log(`[knowledge] ${fileName} 解析完成：${parsed.pages?.length || 0} 页、${chunks.length} 个子块、${parsed.images?.length || 0} 张图片，耗时 ${((Date.now() - parseStartedAt) / 1000).toFixed(1)}s`);
     } catch (parseError) {
       parsed = null;
       error = parseError?.message || "资料解析失败";

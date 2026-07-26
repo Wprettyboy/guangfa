@@ -19,6 +19,11 @@ x-mineru-amd-common: &mineru-amd-common
     - mineru-rocm:/opt/rocm:ro
     - mineru-runtime:/opt/guangfa-mineru:ro
     - mineru-modelscope:/root/.cache/modelscope:ro
+    # ROCm 内核编译缓存与 MIOpen 调优库必须跨容器重建保留：全空时首解析实测 210s，命中后 10s。
+    # /root/.config/miopen 存 find-db（每个卷积形状的实测最优算法），是三者中决定性的一个。
+    - mineru-kernel-cache:/root/.cache/comgr
+    - mineru-miopen-cache:/root/.cache/miopen
+    - mineru-miopen-userdb:/root/.config/miopen
   ipc: host
   ulimits:
     memlock: -1
@@ -66,7 +71,7 @@ services:
       HF_HUB_DISABLE_XET: "1"
       MINERU_API_MAX_CONCURRENT_REQUESTS: "1"
       MINERU_API_OUTPUT_ROOT: /data/output
-      MINERU_HYBRID_BATCH_RATIO: "${MINERU_HYBRID_BATCH_RATIO:-1}"
+      MINERU_HYBRID_BATCH_RATIO: "${MINERU_HYBRID_BATCH_RATIO:-4}"
       MINERU_MODEL_SOURCE: local
       MINERU_PROCESSING_WINDOW_SIZE: "${MINERU_PROCESSING_WINDOW_SIZE:-16}"
       MINERU_TOOLS_CONFIG_JSON: /opt/guangfa-mineru/mineru.json
@@ -77,6 +82,10 @@ services:
       - mineru-rocm:/opt/rocm:ro
       - mineru-runtime:/opt/guangfa-mineru:ro
       - mineru-modelscope:/root/.cache/modelscope:ro
+      # 与 x-mineru-amd-common 保持一致：本服务重定义 volumes 会整体覆盖锚点，缓存卷必须在此重复声明。
+      - mineru-kernel-cache:/root/.cache/comgr
+      - mineru-miopen-cache:/root/.cache/miopen
+      - mineru-miopen-userdb:/root/.config/miopen
       - mineru-output:/data/output
     healthcheck:
       test: ["CMD", "/opt/guangfa-mineru/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
@@ -97,3 +106,9 @@ volumes:
     name: guangfa-mineru-modelscope
   mineru-output:
     name: guangfa-mineru-output
+  mineru-kernel-cache:
+    name: guangfa-mineru-kernel-cache
+  mineru-miopen-cache:
+    name: guangfa-mineru-miopen-cache
+  mineru-miopen-userdb:
+    name: guangfa-mineru-miopen-userdb

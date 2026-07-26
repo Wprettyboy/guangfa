@@ -27,7 +27,8 @@ Docker 容器拓扑：
 AMD Compose 不复用 NVIDIA 的 `--gpus` 配置。服务进程全部运行在 Docker 容器中；首次准备时把已经过 GPU 实算验证的 WSL ROCm、MinerU 虚拟环境和模型导入三个只读 Docker named volumes，避免重复下载约 20 GB 运行时：
 
 - `docker/mineru/Dockerfile.amd`：仅安装 Ubuntu、Python、OpenCV 和 ROCm 动态链接所需的系统库；ROCm、Python 包和模型不烘焙进镜像。
-- `docker/mineru/compose.amd.yaml`：把 `/dev/dxg` 与 WSL GPU 用户态库映射给 VLM/API 容器，并挂载 `guangfa-mineru-rocm`、`guangfa-mineru-runtime`、`guangfa-mineru-modelscope` 三个只读 volume。
+- `docker/mineru/compose.amd.yaml`：把 `/dev/dxg` 与 WSL GPU 用户态库映射给 VLM/API 容器，并挂载 `guangfa-mineru-rocm`、`guangfa-mineru-runtime`、`guangfa-mineru-modelscope` 三个只读 volume，另外挂载三个可写的 ROCm 缓存 volume 用于跨容器保留内核编译与卷积调优结果。
+- ROCm 缓存 volume：`guangfa-mineru-kernel-cache` -> `/root/.cache/comgr`（内核编译缓存）、`guangfa-mineru-miopen-cache` -> `/root/.cache/miopen`（MIOpen 内核缓存）、`guangfa-mineru-miopen-userdb` -> `/root/.config/miopen`（MIOpen find-db，保存每个卷积形状实测出的最优算法，是三者中决定性的一个）。缓存全空时首次解析实测约 210 秒，命中后约 10 秒；删除这三个 volume 或换 ROCm/MIOpen 版本会退回冷启动耗时。`x-mineru-amd-common` 锚点和 `mineru-api` 服务各自声明一次 `volumes`，服务级 `volumes` 会整体覆盖锚点，新增挂载必须两处同步。
 - `scripts/prepare-mineru-docker-amd.ps1`：只在 volume 未准备时，从 WSL 导入已验证的 ROCm、MinerU 虚拟环境、VLM 模型和 Pipeline 模型；完成标记存在时直接复用。
 - `scripts/start-mineru-docker-amd.ps1`：构建 AMD 镜像并执行 GPU 张量实算；`-WithVlm` 同时启动官方 VLM 并等待两个健康接口，省略时只启动 API。
 - `scripts/complete-mineru-deployment.ps1`：首次下载和准备 WSL ROCm/MinerU 运行时，随后导入 Docker volumes、启动容器并提交真实 PDF 冒烟任务。
@@ -80,7 +81,7 @@ docker compose -f docker/mineru/compose.yaml logs -f mineru-vlm mineru-api
 | `MINERU_API_GPU_DEVICE` | `0` | Hybrid Pipeline 容器使用的 NVIDIA GPU。 |
 | `MINERU_VLM_GPU_MEMORY_UTILIZATION` | `0.55` | vLLM KV cache 显存比例。 |
 | `MINERU_PROCESSING_WINDOW_SIZE` | `16` | Hybrid 分页处理窗口。 |
-| `MINERU_HYBRID_BATCH_RATIO` | `1` | Pipeline 小模型批处理倍率。 |
+| `MINERU_HYBRID_BATCH_RATIO` | `4` | Pipeline 小模型批处理倍率；本机 Radeon 8060S 用 8 页 `测试.pdf` 实测 4 最快（139 秒 vs 16 档 171 秒），因此 AMD Compose 默认 4。修改后需重启 MinerU 容器生效。 |
 
 多 GPU 主机建议把 VLM 与 API 分配到不同设备。单 GPU 部署需要按显存实测下调 vLLM 比例和处理窗口。
 

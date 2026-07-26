@@ -187,6 +187,18 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 
 ## 最近已完成
 
+### 知识入库提速：增量 Embedding 缓存与解析配置调优
+
+- `server/knowledge/embedding-cache.js` 新增 `knowledge_chunk_embeddings` 缓存表（按 `sha256(model + 文本)` 键控，自建表）。`rebuildKnowledgeIndexV4` 默认启用缓存：V4 重建仍是全量不可变 generation，但只对缓存未命中的子块调用 Retrieval 编码，命中子块直接复用缓存向量；每批编码成功后立即落缓存，构建失败也保留已编码结果。成功构建后按当前存活子块修剪缓存，防止无限增长。缓存行读取时严格校验 dense 1024 维/sparse 非空合法，不合法即删除按未命中处理，不把损坏向量写入索引。
+- 效果：上传新文档时不再把整库全部子块重新编码（此前每次上传都全量重编，库越大越慢），编码量降为“新文档子块数”。`buildKnowledgeIndexGeneration` 未传缓存时行为与旧版完全一致，现有测试与 `scripts/rebuild-knowledge-index-v4.mjs` 不受影响；manifest 新增 `encodedChunkCount/cachedChunkCount` 诊断字段。
+- AMD Compose 的 `MINERU_HYBRID_BATCH_RATIO` 默认值从 1 改为 4（2026-07-26 用 8 页 `测试.pdf` 实测 4 档最快：139 秒 vs 16 档 171 秒；此前默认 1 实际跑在最慢档，约 208 秒）。修改后需重启 MinerU 容器（`npm run mineru`）生效。
+- AMD Compose 新增三个可写 ROCm 缓存 volume：`guangfa-mineru-kernel-cache` -> `/root/.cache/comgr`、`guangfa-mineru-miopen-cache` -> `/root/.cache/miopen`、`guangfa-mineru-miopen-userdb` -> `/root/.config/miopen`。此前每次重建容器都要重新编译 ROCm 内核并重跑 MIOpen 卷积调优，缓存全空时首次解析实测约 210 秒，命中后约 10 秒；find-db（`/root/.config/miopen`）是三者中决定性的一个。`x-mineru-amd-common` 锚点与 `mineru-api` 服务各声明一次 `volumes`，服务级会整体覆盖锚点，新增挂载必须两处同步。
+- 知识库图片 Gemini caption 并发从固定 2 改为 `KNOWLEDGE_IMAGE_CAPTION_CONCURRENCY`（默认 4，钳制 1-8）；同图 SHA 去重复用逻辑不变。
+- 入库链路新增阶段耗时日志：`[mineru]`（MinerU 解析/产物下载解包/图片语义分段耗时）、`[knowledge] 解析完成`（页/子块/图片与总解析耗时）、`[knowledge] V4 索引重建完成`（新编码/缓存复用子块数与耗时），后续再查“慢”直接看 Node 控制台即可分段定位。
+- 新增 `tests/knowledge-embedding-cache.test.mjs`（缓存存取、损坏行拒绝、修剪）与 `tests/retrieval-v4.test.mjs` 的缓存复用回归（只编码新子块、命中数正确）。
+- 2026-07-26 真实验收（8 页 `测试.pdf`，521 子块库，与 Retrieval 共存）：优化前上传→已索引 ≥3.5 分钟且索引曾卡死；优化后全程 2 分 49 秒（169 秒），其中 MinerU 解析约 163 秒（Batch Ratio 1 时约 205 秒，重启容器启用 4 档后 -21%）、V4 索引重建约 6 秒（新编码 23、缓存复用 498）。缓存冷启动为一次性全量编码（当日实测约 2 分钟），此后每次上传只编码新文档子块。
+- 注意：上传处理是内存后台任务，dev 服务重启会丢任务并把文档状态残留在“解析中/索引中”；重传同一文件会自动替换废弃占位（`isAbandonedKnowledgeReservation`），这不是解析卡死。
+
 ### 知识库检索 V4
 
 - 检索主链为 MinerU 结构子块 -> BGE-M3 Dense/Sparse -> ZVec Dense/Sparse/FTS 三路 Top-60 -> RRF Top-20 -> `bge-reranker-v2-m3` -> 有界父块/相邻块扩展。SQLite 关键词只在整个 V4 ZVec 不可用时降级，不混入正常 RRF。
