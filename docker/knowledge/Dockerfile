@@ -10,6 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY server ./server
+COPY scripts/migrate-knowledge-to-service.mjs ./scripts/migrate-knowledge-to-service.mjs
 
 ENV NODE_ENV=production \
     KNOWLEDGE_API_HOST=0.0.0.0 \

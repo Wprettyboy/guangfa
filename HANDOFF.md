@@ -196,7 +196,9 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 - `docker/knowledge/` 提供 Node 22 镜像和 Compose，服务只绑定 `127.0.0.1:8787`，持久卷为 `guangfa-knowledge-data`。`npm run knowledge:docker` 会在被 Git 忽略的 `data/knowledge-service/` 生成强随机服务凭证和客户端配置，不向终端打印密钥；MinerU、Retrieval、OnlyOffice 通过 `host.docker.internal` 访问现有容器端口。
 - 图片 Caption 优先读取独立的 `KNOWLEDGE_GEMINI_*` / Secret file 配置，未设置时才回退主项目模型设置。详细调用和部署约定见 `docs/knowledge-service.md`。
 - 真实验收：Linux 容器内 ZVec V4 成功构建 1 个 Dense/Sparse/FTS 子块，精确查询命中、`indexVersion=4`、无降级；删除临时知识库后重建为空索引。容器重启后仍为 healthy，默认两个知识库、0 文档，端口仅监听回环。全量测试 128/128 和生产构建通过。
-- 当前主项目尚未切换到独立服务，也未自动复制现有 12 个知识库；这是有意避免新旧库双写和静默数据分叉。切换前必须单独完成一次性知识表/文件迁移和主项目服务端检索代理，不要只把浏览器请求地址改到 `8787`。
+- 2026-07-28 已执行正式迁移：源 `data/guangfa.sqlite` 的 12 个知识库、21 份资料、776 个 Chunk、683 条 Embedding 缓存及原文件/MinerU 产物已复制到 `guangfa-knowledge-data`；Linux 容器重建活动 V4 generation 后查询无降级。迁移前卷备份保存在被 Git 忽略的 `data/knowledge-service/backups/`。
+- 主项目已通过 `.env.local` 的 `KNOWLEDGE_SERVICE_BASE_URL/API_KEY` 切到独立服务。浏览器仍请求主应用 `/api/v1`；`server/api/router.js` 先完成主应用认证、角色、限流和协议校验，再由 `server/knowledge/service-client.js` 只转发 `knowledge` 标签路由。内部 AI 检索统一经 `server/knowledge/search-provider.js`，避免浏览器持有服务 Key 和新旧库双写。
+- `npm run knowledge:migrate` 是可重复的停写迁移入口：先备份卷，复制表/文件并重写 Linux 路径，不复制 Windows ZVec；目标数量、引用文件、V4 重建和真实查询全部通过后才写主项目连接配置，失败自动恢复。外部服务接入见 `docs/knowledge-api-integration.md`。
 
 ### 检索溯源按 MinerU 坐标高亮
 

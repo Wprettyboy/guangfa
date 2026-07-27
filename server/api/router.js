@@ -14,6 +14,7 @@ function createApiMiddleware({
   metaRoles = ["viewer"],
   notFoundPrefixes = [],
   rateLimit,
+  forwardRoute,
 } = {}) {
   const authenticator = createAuthenticator(auth);
   const limiter = createRateLimiter(rateLimit);
@@ -80,7 +81,7 @@ function createApiMiddleware({
       validateQuery(route.query, url.searchParams);
       validateHeaders(route.headers, request.headers);
       const body = await readRequestBody(request, route);
-      const result = await route.handler({
+      const context = {
         body,
         params,
         principal,
@@ -88,8 +89,11 @@ function createApiMiddleware({
         request,
         requestId,
         response,
+        route,
         url,
-      });
+      };
+      const forwarded = await forwardRoute?.(context);
+      const result = forwarded?.handled ? forwarded.result : await route.handler(context);
       if (response.writableEnded) return;
       if (result?.kind === "buffer") {
         sendBuffer(response, result, { head: method === "HEAD" });

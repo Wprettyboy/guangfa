@@ -5,7 +5,7 @@ import { buildCapabilityResource, capabilityScopes, signCapabilityUrl } from "..
 import { inspectRasterImage, loadSafeDocx, readSafeZipEntry } from "../document-security.js";
 import { getKnowledgeDatabase } from "./db.js";
 
-const publicBaseUrl = process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
+const publicBaseUrl = process.env.KNOWLEDGE_PUBLIC_BASE_URL || process.env.OFFICE_PUBLIC_BASE_URL || "http://host.docker.internal:5173";
 
 async function searchKnowledgeImages(payload = {}) {
   const kbIds = normalizeIds([...(payload.kbIds || []), ...(payload.globalKbIds || [])]);

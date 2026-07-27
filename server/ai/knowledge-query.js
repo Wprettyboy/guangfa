@@ -1,4 +1,4 @@
-import { searchKnowledgeBase } from "../knowledge/documents.js";
+import { searchKnowledgeBase } from "../knowledge/search-provider.js";
 
 import { getAiRuntimeConfig, materialChunkOverlap, materialChunkSize } from "./config.js";
 

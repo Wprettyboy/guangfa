@@ -9,6 +9,7 @@
     "embedding:skip-install": "powershell -ExecutionPolicy Bypass -File scripts/start-local-embedding.ps1 -SkipInstall",
     "retrieval": "powershell -ExecutionPolicy Bypass -File scripts/start-retrieval-docker-amd.ps1",
     "knowledge:docker": "powershell -ExecutionPolicy Bypass -File scripts/start-knowledge-docker.ps1",
+    "knowledge:migrate": "powershell -ExecutionPolicy Bypass -File scripts/migrate-knowledge-service.ps1",
     "mineru": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-docker-amd.ps1",
     "mineru:hybrid": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-docker-amd.ps1 -WithVlm",
     "mineru:wsl": "powershell -ExecutionPolicy Bypass -File scripts/start-mineru-wsl.ps1",

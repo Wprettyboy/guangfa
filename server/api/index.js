@@ -7,6 +7,7 @@ import { registerPlantumlRoutes } from "./routes/plantuml.routes.js";
 import { registerSettingsRoutes } from "./routes/settings.routes.js";
 import { registerTemplateRoutes } from "./routes/templates.routes.js";
 import { createApiMiddleware } from "./router.js";
+import { createKnowledgeServiceForwarder } from "../knowledge/service-client.js";
 
 let registered = false;
 
@@ -25,6 +26,9 @@ function ensureApiRoutesRegistered() {
 
 function apiMiddleware(options = {}) {
   ensureApiRoutesRegistered();
+  const forwardRoute = options.forwardRoute === undefined
+    ? createKnowledgeServiceForwarder()
+    : options.forwardRoute;
   return createApiMiddleware({
     notFoundPrefixes: [
       "/api/_meta/",
@@ -42,6 +46,7 @@ function apiMiddleware(options = {}) {
       "/api/templates",
     ],
     ...options,
+    forwardRoute,
   });
 }
 

@@ -147,6 +147,8 @@
 | `scripts/start-plantuml.ps1` | PlantUML 部署启动。启动容器并映射 8090，复制中文字体、刷新缓存并验证服务。 |
 | `scripts/start-retrieval-docker-amd.ps1` | AMD Retrieval Docker 启动入口。准备 ROCm/模型 volumes、执行 GPU 张量探针、启动 8000 并验证 Encode/Rerank。 |
 | `scripts/start-knowledge-docker.ps1` | 独立 Knowledge API 启动入口。生成本地服务凭证、构建容器、挂载专用数据卷，并验证认证后的 API 就绪状态。 |
+| `scripts/migrate-knowledge-service.ps1` | 知识服务切换入口。冻结主服务写入后备份 Docker volume，执行数据导入、V4 重建和检索探针，失败自动恢复，成功后写入本机服务端连接配置。 |
+| `scripts/migrate-knowledge-to-service.mjs` | 离线知识迁移器。复制知识表和 Embedding 缓存，重写容器文件路径，复制原文件/MinerU 产物并校验数量与引用文件，不复制旧 ZVec。 |
 | `scripts/test-qwen-vulkan-variants.ps1` | Qwen Vulkan 参数诊断。轮换 Flash Attention、卸载和 GPU 层数配置，检查健康、聊天结果、耗时和错误。 |
 
 ## 8. `server/` API 与后端业务服务
@@ -216,6 +218,8 @@
 | `server/knowledge/scope.js` | 检索范围控制。根据显式项目库/全局库选择计算可访问库和切片；未选择时不隐式全库搜索。 |
 | `server/knowledge/search-filters.js` | 结构筛选合同。严格校验文档、页码、表格、星号、块类型和标题路径，并生成等价 ZVec/SQLite 过滤。 |
 | `server/knowledge/search.js` | V4 检索主流程。Dense/Sparse/FTS 各取 Top-60，经 RRF 得到 Top-20 后精排；ZVec 整体不可用时才走 SQLite 关键词。 |
+| `server/knowledge/search-provider.js` | 知识检索选择入口。配置独立服务时走 Knowledge API，否则保留本地检索，供 AI 和兼容入口共用。 |
+| `server/knowledge/service-client.js` | 独立 Knowledge API 服务端客户端。校验地址、注入 API Key，转发 JSON/multipart/二进制协议并映射超时和上游错误。 |
 | `server/knowledge/source-resolver.js` | 原文定位与上下文扩展。按命中子块生成 MinerU 解析页、DOCX 章节起始物理页和 bbox 引用，并从 SQLite 父子关系扩展相邻正文或表格行窗口。 |
 | `server/knowledge/tables.js` | DOCX 表格提取。安全解析表格、合并单元格、标题和页码，支持检索并生成带短期能力票据的单表格 DOCX 供 OnlyOffice 插入。 |
 | `server/knowledge/text-ranking.js` | 关键词排序。清理查询、扩展招投标词，对短语和关键词评分，用于基础检索与混合召回。 |

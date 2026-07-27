@@ -61,6 +61,7 @@ if ($RecreateCredentials -or !(Test-Path -LiteralPath $ServiceEnv)) {
 
   $lines = @(
     "KNOWLEDGE_API_PORT=8787",
+    "KNOWLEDGE_PUBLIC_BASE_URL=http://127.0.0.1:8787",
     "API_AUTH_API_KEYS=$credentials",
     "API_CAPABILITY_SECRET=$capabilitySecret",
     "API_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173",
