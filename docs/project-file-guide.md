@@ -146,6 +146,7 @@
 | `scripts/start-onlyoffice.ps1` | OnlyOffice 部署启动。准备 Docker、同步指定中文/方正字体和别名、安装桥接并健康检查；还会生成或读取独立 JWT Secret，校验并重建不合规容器，配置 inbox/outbox JWT、签名资源 URL 例外及无外部权限的 AI 客户端占位 Key。 |
 | `scripts/start-plantuml.ps1` | PlantUML 部署启动。启动容器并映射 8090，复制中文字体、刷新缓存并验证服务。 |
 | `scripts/start-retrieval-docker-amd.ps1` | AMD Retrieval Docker 启动入口。准备 ROCm/模型 volumes、执行 GPU 张量探针、启动 8000 并验证 Encode/Rerank。 |
+| `scripts/start-knowledge-docker.ps1` | 独立 Knowledge API 启动入口。生成本地服务凭证、构建容器、挂载专用数据卷，并验证认证后的 API 就绪状态。 |
 | `scripts/test-qwen-vulkan-variants.ps1` | Qwen Vulkan 参数诊断。轮换 Flash Attention、卸载和 GPU 层数配置，检查健康、聊天结果、耗时和错误。 |
 
 ## 8. `server/` API 与后端业务服务
@@ -169,12 +170,13 @@
 
 | 文件 | 功能说明 |
 | --- | --- |
-| `server/api/auth.js` | API 身份与 RBAC。解析 Bearer Token/API Key，以恒定时间比较凭证，规范 principal 和 viewer/editor/admin/service 角色，并处理可选认证资源。 |
+| `server/api/auth.js` | API 身份与 RBAC。解析 Bearer Token/API Key，以恒定时间比较凭证，规范 principal、角色和可选 `projectIds`，并处理可选认证资源。 |
 | `server/api/capability.js` | 精确资源能力票据。使用 HMAC-SHA256 签发和校验有 TTL、scope、resource 绑定的短期 `accessToken`，供图片和 DOCX 等资源匿名读取。 |
 | `server/api/errors.js` | API 错误模型。定义 `ApiError`，把业务异常归一为稳定 HTTP 状态、公开错误码/消息、详情和响应头，避免暴露内部异常。 |
 | `server/api/gateway.js` | API Gateway。验证 Origin/CORS 与预检请求，将稳定 `/api/v1` 重写到内部路由，为旧 `/api` 返回后继版本提示，并在网关失败时生成请求 ID 和统一错误体。 |
-| `server/api/http.js` | HTTP 通用读写。按字节限制并严格解码 JSON，处理超限、中止和非法 UTF-8，统一发送 JSON 或带 MIME/下载头的 Buffer，并支持 HEAD。 |
+| `server/api/http.js` | HTTP 通用读写。按字节限制读取 JSON 或 multipart，处理超限、中止和非法输入，统一发送 JSON 或带 MIME/下载头的 Buffer，并支持 HEAD。 |
 | `server/api/index.js` | API 聚合入口。一次注册认证、AI、草稿、知识库、Office、PlantUML、设置和模板路由，并用统一 Router 创建中间件。 |
+| `server/api/knowledge.js` | 独立 Knowledge API 注册入口。只登记知识库路由及其 OnlyOffice 预览依赖。 |
 | `server/api/openapi.js` | API 元数据生成。把路由 schema、角色、认证方式、MIME、并发请求头和标准错误转换为 `/api/v1` 路由清单与 OpenAPI 3.0.3。 |
 | `server/api/rate-limit.js` | 进程内限流器。按 principal/客户端地址与路由维护窗口，区分读取、写入、AI 和上传额度，并返回剩余额度与重试时间。 |
 | `server/api/registry.js` | 路由注册表。校验 ID、方法、路径、认证和角色策略、请求体上限，拒绝重复签名，并把 `:param` 编译为精确路径匹配。 |
@@ -199,6 +201,7 @@
 | 文件 | 功能说明 |
 | --- | --- |
 | `server/knowledge/chunker.js` | 文档切片。旧文本按页和段落聚合；MinerU 标题/完整表格作为父块，正文和表格行组作为有界检索子块，并注入章节路径。 |
+| `server/knowledge/access.js` | 独立服务项目隔离。把 API principal 的 `projectIds` 绑定到知识库、文档、图片和 Chunk 资源访问。 |
 | `server/knowledge/context-budget.js` | 检索上下文预算。先保留命中证据，再按分数扩展父块/相邻块，限制单项 1600、全局 6000 estimated tokens 和 12,000 字符。 |
 | `server/knowledge/db.js` | 知识库 SQLite 初始化。创建库、资料、页面、段落、切片和上传幂等表/索引，迁移旧 JSON，并初始化默认项目库/全局库。 |
 | `server/knowledge/documents.js` | 知识文档主服务。先做类型/内容安全校验，再按“知识库+身份+幂等键”预留、内容去重、解析、切片、Embedding 和 ZVec 入库；并处理并发上传、删除、重建和检索回溯。 |
@@ -208,6 +211,7 @@
 | `server/knowledge/indexer.js` | V4 索引编排。串行编码/写入不可变 generation，处理索引 OOM 批量减半、关闭重开验证、manifest 发布和旧版本清理。 |
 | `server/knowledge/mineru-client.js` | MinerU 3.4.4 适配。提交/轮询 Hybrid 任务、安全展开 ZIP 产物，并把 content list V1/V2 归一为页、块、标题级别和 bbox。 |
 | `server/knowledge/parser.js` | 有界资料解析调度。非 TXT 文件默认交给 MinerU，失败时不回退；只有显式设置 `KNOWLEDGE_PARSER=legacy` 才进入旧 PDF/DOCX 解析链路。 |
+| `server/knowledge/paths.js` | 知识库存储路径边界。主项目保持默认目录，独立容器通过环境变量切换专用 SQLite 和数据卷。 |
 | `server/knowledge/pdf-text.js` | PDF 分页文本抽取。使用 `pdfjs-dist` 在页数、文本量和截止时间限制内逐页读取并规范空白。 |
 | `server/knowledge/scope.js` | 检索范围控制。根据显式项目库/全局库选择计算可访问库和切片；未选择时不隐式全库搜索。 |
 | `server/knowledge/search-filters.js` | 结构筛选合同。严格校验文档、页码、表格、星号、块类型和标题路径，并生成等价 ZVec/SQLite 过滤。 |
@@ -240,6 +244,8 @@
 | `server/embedding.js` | Embedding 适配。复用 AI 安全网络请求层调用 OpenAI 兼容 `/embeddings`，执行本地/云端端点策略、代理、超时和响应上限，并校验数量及向量维度。 |
 | `server/http-server.js` | 生产 HTTP(S) 服务。启动前检查 dist、认证和独立强密钥，复用 API Gateway，托管 SPA/静态资源，设置 CSP/缓存/安全头，提供 health/ready 探针、TLS 边界和优雅退出。 |
 | `server/index.js` | 正式服务入口。加载 `.env.local`，固定 production 部署模式，再动态启动 `server/http-server.js`。 |
+| `server/knowledge-http-server.js` | 独立 Knowledge API HTTP 服务。强制认证和专用存储，提供 health/ready、统一网关、请求边界及 SQLite 优雅关闭。 |
+| `server/knowledge-service.js` | 独立知识库容器入口。加载服务环境并以 production 模式启动 Knowledge API。 |
 | `server/knowledge-base.js` | 知识库兼容入口。旧 middleware 转向统一 API，同时继续导出搜索服务。 |
 | `server/office.js` | OnlyOffice 服务端集成。安全接收 DOCX，记录不可猜测 ID、所有者和 TTL，签发编辑配置/文件 JWT；校验并串行处理回调、防重放和旧保存，原子落盘，限制 Document Server 下载来源并清理过期/超量文档。 |
 | `server/outline-probe.js` | 大纲调试持久化。保存最近一次 OnlyOffice 原生大纲到 `data/debug` 并提供读取。 |

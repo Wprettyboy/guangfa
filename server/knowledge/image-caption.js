@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { inspectRasterImage } from "../document-security.js";
 import { requestChatCompletion } from "../ai/chat-completions.js";
 import { getModelConfig } from "../settings.js";
@@ -71,7 +72,7 @@ async function enrichMinerUImageCaptions({ artifacts, contentList, contentListV2
 }
 
 async function analyzeKnowledgeImage({ buffer, imagePath }) {
-  const config = await getModelConfig();
+  const config = await getKnowledgeImageModelConfig();
   const runtime = config.cloud;
   if (!isGeminiRuntime(runtime)) throw new Error("知识库图片解析需要配置 Gemini 云端模型");
   const mimeType = inspectRasterImage(buffer, imagePath);
@@ -102,6 +103,28 @@ async function analyzeKnowledgeImage({ buffer, imagePath }) {
     ...parseImageAnalysisContent(result?.choices?.[0]?.message?.content),
     model: String(result?.model || runtime.model || ""),
   };
+}
+
+async function getKnowledgeImageModelConfig() {
+  const apiKey = await readConfiguredSecret("KNOWLEDGE_GEMINI_API_KEY", "KNOWLEDGE_GEMINI_API_KEY_FILE");
+  const baseUrl = String(process.env.KNOWLEDGE_GEMINI_BASE_URL || "").trim();
+  const model = String(process.env.KNOWLEDGE_GEMINI_MODEL || "").trim();
+  if (!apiKey && !baseUrl && !model) return getModelConfig();
+  return {
+    proxyUrl: String(process.env.KNOWLEDGE_GEMINI_PROXY_URL || "").trim(),
+    cloud: {
+      baseUrl: baseUrl || "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: model || "gemini-3.1-flash-lite",
+      apiKey,
+    },
+  };
+}
+
+async function readConfiguredSecret(valueName, fileName) {
+  const direct = String(process.env[valueName] || "").trim();
+  if (direct) return direct;
+  const secretPath = String(process.env[fileName] || "").trim();
+  return secretPath ? String(await readFile(secretPath, "utf8")).trim() : "";
 }
 
 function parseImageAnalysisContent(value) {

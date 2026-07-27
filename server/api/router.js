@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createAuthenticator } from "./auth.js";
 import { ApiError, normalizeApiError } from "./errors.js";
-import { readJsonBody, sendBuffer, sendJson } from "./http.js";
+import { readJsonBody, readMultipartBody, sendBuffer, sendJson } from "./http.js";
 import { buildOpenApiDocument, buildRouteList } from "./openapi.js";
 import { createRateLimiter } from "./rate-limit.js";
 import { findRoutesByPath, getRoutes } from "./registry.js";
@@ -148,6 +148,9 @@ async function readRequestBody(request, route) {
     if (descriptor.parse === "json") {
       const body = await readJsonBody(request, { limitBytes: route.bodyLimitBytes });
       return validateSchema(descriptor.schema || "object", body);
+    }
+    if (descriptor.parse === "multipart") {
+      return readMultipartBody(request, { limitBytes: route.bodyLimitBytes });
     }
   }
   return {};

@@ -19,8 +19,9 @@ import { retryMinerUImageCaptions } from "./mineru-client.js";
 import { resolveKnowledgeSearchScope } from "./scope.js";
 import { searchKnowledgeV4 } from "./search.js";
 import { resolveChunkSource } from "./source-resolver.js";
+import { knowledgeDataDir } from "./paths.js";
 
-const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
+const knowledgeDir = knowledgeDataDir;
 const filesDir = path.join(knowledgeDir, "files");
 const activeKnowledgeDocumentIds = new Set();
 const knowledgeDocumentTasks = new Map();
@@ -44,6 +45,12 @@ async function listKnowledgeBases() {
     ORDER BY scope DESC, created_at
   `).all();
   return bases.map((base) => hydrateKnowledgeBase(database, base));
+}
+
+async function readKnowledgeDocumentStatus(documentId) {
+  const database = await getKnowledgeDatabase();
+  const row = getKnowledgeDocumentRow(database, documentId);
+  return row ? hydrateKnowledgeDocument(database, row) : null;
 }
 
 async function createKnowledgeBase(payload = {}) {
@@ -967,6 +974,7 @@ function touchKnowledgeBase(database, kbId) {
 }
 
 function decodeDocumentPayload(payload) {
+  if (Buffer.isBuffer(payload.fileBuffer)) return payload.fileBuffer;
   if (payload.fileBase64) {
     const value = String(payload.fileBase64).replace(/\s+/g, "");
     if (!isValidBase64(value)) {
@@ -1049,6 +1057,7 @@ export {
   createKnowledgeDocumentOfficePreview,
   readKnowledgeDocumentImage,
   readKnowledgeDocumentPdf,
+  readKnowledgeDocumentStatus,
   retryKnowledgeDocumentImages,
   reindexKnowledgeBase,
   searchKnowledgeBase,

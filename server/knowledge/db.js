@@ -1,19 +1,45 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { getTemplateDatabase } from "../template-db.js";
 import { hasExplicitStarMarker, nonContentBlockTypes } from "./chunker.js";
+import { knowledgeDataDir, knowledgeDatabasePath } from "./paths.js";
 
-const legacyKnowledgeFile = path.resolve(process.cwd(), "data", "knowledge", "library.json");
+const legacyKnowledgeFile = path.join(knowledgeDataDir, "library.json");
 const defaultProjectId = "default-project";
+let standaloneDatabasePromise = null;
 
 async function getKnowledgeDatabase() {
-  const database = await getTemplateDatabase();
+  const database = knowledgeDatabasePath
+    ? await getStandaloneKnowledgeDatabase()
+    : await getTemplateDatabase();
   database.exec(knowledgeSchemaSql);
   ensureKnowledgeSchemaMigrations(database);
   await migrateLegacyKnowledge(database);
   ensureDefaultKnowledgeBases(database);
   return database;
+}
+
+async function getStandaloneKnowledgeDatabase() {
+  if (!standaloneDatabasePromise) {
+    standaloneDatabasePromise = (async () => {
+      await mkdir(path.dirname(knowledgeDatabasePath), { recursive: true });
+      const database = new DatabaseSync(knowledgeDatabasePath);
+      database.exec("PRAGMA busy_timeout = 5000");
+      database.exec("PRAGMA foreign_keys = ON");
+      database.exec("PRAGMA journal_mode = WAL");
+      return database;
+    })();
+  }
+  return standaloneDatabasePromise;
+}
+
+async function closeKnowledgeDatabase() {
+  if (!standaloneDatabasePromise) return;
+  const database = await standaloneDatabasePromise;
+  database.close();
+  standaloneDatabasePromise = null;
 }
 
 async function migrateLegacyKnowledge(database) {
@@ -229,6 +255,11 @@ function ensureKnowledgeSchemaMigrations(database) {
 }
 
 const knowledgeSchemaSql = `
+CREATE TABLE IF NOT EXISTS schema_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_bases (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -370,4 +401,4 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_kb ON knowledge_chunks(kb_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id);
 `;
 
-export { defaultProjectId, getKnowledgeDatabase, runTransaction };
+export { closeKnowledgeDatabase, defaultProjectId, getKnowledgeDatabase, runTransaction };

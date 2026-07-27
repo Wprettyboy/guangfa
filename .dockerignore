@@ -1,5 +1,11 @@
 *
+!package.json
+!package-lock.json
+!server/
+!server/**
 !docker/
+!docker/knowledge/
+!docker/knowledge/Dockerfile
 !docker/mineru/
 !docker/mineru/Dockerfile
 !docker/mineru/Dockerfile.amd

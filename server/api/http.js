@@ -74,6 +74,60 @@ function readJsonBody(request, { limitBytes = 1024 * 1024 } = {}) {
   });
 }
 
+async function readMultipartBody(request, { limitBytes = 1024 * 1024 } = {}) {
+  const contentType = String(request.headers?.["content-type"] || "");
+  const buffer = await readBufferBody(request, { limitBytes });
+  let formData;
+  try {
+    formData = await new Response(buffer, { headers: { "Content-Type": contentType } }).formData();
+  } catch (error) {
+    throw new ApiError(400, "INVALID_MULTIPART", "multipart/form-data 请求格式错误", { cause: error });
+  }
+  const body = {};
+  for (const [name, value] of formData.entries()) {
+    if (Object.hasOwn(body, name)) {
+      throw new ApiError(400, "DUPLICATE_FORM_FIELD", `multipart 字段重复：${name}`);
+    }
+    if (typeof value === "string") {
+      body[name] = value;
+      continue;
+    }
+    body[name] = {
+      buffer: Buffer.from(await value.arrayBuffer()),
+      fileName: value.name,
+      mimeType: value.type,
+      size: value.size,
+    };
+  }
+  return body;
+}
+
+function readBufferBody(request, { limitBytes }) {
+  if (!Number.isSafeInteger(limitBytes) || limitBytes <= 0) {
+    throw new TypeError("请求体字节上限必须是正整数");
+  }
+  const declaredLength = Number(request.headers?.["content-length"]);
+  if (Number.isFinite(declaredLength) && declaredLength > limitBytes) {
+    request.on("error", () => {});
+    request.resume?.();
+    return Promise.reject(payloadTooLargeError(limitBytes));
+  }
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let byteLength = 0;
+    request.on("data", (chunk) => {
+      byteLength += chunk.byteLength;
+      if (byteLength <= limitBytes) chunks.push(chunk);
+    });
+    request.once("end", () => {
+      if (byteLength > limitBytes) reject(payloadTooLargeError(limitBytes));
+      else resolve(Buffer.concat(chunks, byteLength));
+    });
+    request.once("aborted", () => reject(new ApiError(400, "REQUEST_ABORTED", "请求在读取完成前已中止")));
+    request.once("error", reject);
+  });
+}
+
 function decodeUtf8(buffer) {
   return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
 }
@@ -100,4 +154,4 @@ function sendBuffer(response, { statusCode = 200, buffer, contentType = "applica
   response.end(head ? undefined : buffer);
 }
 
-export { readJsonBody, sendBuffer, sendJson };
+export { readJsonBody, readMultipartBody, sendBuffer, sendJson };

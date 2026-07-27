@@ -15,7 +15,8 @@ function createApiGateway(options = {}) {
   const deploymentMode = String(options.deploymentMode || process.env.API_DEPLOYMENT_MODE || process.env.NODE_ENV || "development").toLowerCase();
   const production = deploymentMode === "production";
   const apiOptions = options.api || {};
-  const middleware = apiMiddleware({
+  const middlewareFactory = options.middlewareFactory || apiMiddleware;
+  const middleware = middlewareFactory({
     ...apiOptions,
     auth: { environment: deploymentMode, ...(apiOptions.auth || {}) },
     rateLimit: { environment: deploymentMode, ...(apiOptions.rateLimit || {}) },

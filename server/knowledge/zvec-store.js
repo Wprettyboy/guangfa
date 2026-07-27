@@ -2,8 +2,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getEmbeddingConfig } from "../embedding.js";
+import { knowledgeDataDir } from "./paths.js";
 
-const knowledgeDir = path.resolve(process.cwd(), "data", "knowledge");
+const knowledgeDir = knowledgeDataDir;
 const zvecDir = path.join(knowledgeDir, "zvec");
 const knowledgeZvecCollectionPath = path.join(zvecDir, "chunks_v3");
 const generationsDir = path.join(zvecDir, "generations");

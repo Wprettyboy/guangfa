@@ -134,16 +134,20 @@ test("state-changing contracts expose concurrency and idempotency outcomes", () 
     assert.ok(operation.responses["428"], id);
   }
 
-  const knowledgeUpload = operationsById.get("knowledge.documents.create");
-  const idempotencyKey = knowledgeUpload.parameters.find((parameter) =>
-    parameter.in === "header" && parameter.name === "Idempotency-Key");
-  assert.equal(idempotencyKey?.required, true);
-  assert.equal(idempotencyKey?.schema.type, "string");
-  assert.equal(idempotencyKey?.schema.maxLength, 128);
-  assert.equal(idempotencyKey?.schema.pattern, "^[\\x21-\\x7E]+$");
-  assert.ok(knowledgeUpload.responses["200"]);
-  assert.ok(knowledgeUpload.responses["202"]);
-  assert.ok(knowledgeUpload.responses["409"]);
+  for (const id of ["knowledge.documents.create", "knowledge.documents.uploadMultipart"]) {
+    const knowledgeUpload = operationsById.get(id);
+    const idempotencyKey = knowledgeUpload.parameters.find((parameter) =>
+      parameter.in === "header" && parameter.name === "Idempotency-Key");
+    assert.equal(idempotencyKey?.required, true, id);
+    assert.equal(idempotencyKey?.schema.type, "string", id);
+    assert.equal(idempotencyKey?.schema.maxLength, 128, id);
+    assert.equal(idempotencyKey?.schema.pattern, "^[\\x21-\\x7E]+$", id);
+    assert.ok(knowledgeUpload.responses["200"], id);
+    assert.ok(knowledgeUpload.responses["202"], id);
+    assert.ok(knowledgeUpload.responses["409"], id);
+  }
+  assert.ok(operationsById.get("knowledge.documents.uploadMultipart").requestBody.content["multipart/form-data"]);
+  assert.ok(operationsById.get("knowledge.documents.status").responses["200"]);
 
   const retryImages = operationsById.get("knowledge.documents.retryImages");
   assert.ok(retryImages.responses["202"]);

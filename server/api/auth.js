@@ -158,11 +158,28 @@ function normalizePrincipal(value, index) {
   roles.forEach((role) => {
     if (!validRoles.has(role)) throw new Error(`API 身份 ${id} 使用了无效角色：${role}`);
   });
-  return { id, roles };
+  const projectIds = normalizeProjectIds(source.projectIds, id);
+  return { id, roles, projectIds };
 }
 
 function freezePrincipal(principal) {
-  return Object.freeze({ ...principal, roles: Object.freeze([...(principal.roles || [])]) });
+  return Object.freeze({
+    ...principal,
+    roles: Object.freeze([...(principal.roles || [])]),
+    projectIds: Object.freeze([...(principal.projectIds || [])]),
+  });
+}
+
+function normalizeProjectIds(value, principalId) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 100) {
+    throw new Error(`API 身份 ${principalId} 的 projectIds 必须是最多 100 项的数组`);
+  }
+  const projectIds = value.map((item) => String(item || "").trim());
+  if (projectIds.some((item) => !item || Buffer.byteLength(item, "utf8") > 128 || /[\u0000-\u001f\u007f]/.test(item))) {
+    throw new Error(`API 身份 ${principalId} 包含无效 projectId`);
+  }
+  return [...new Set(projectIds)];
 }
 
 function readCredentialEnvironment(name) {

@@ -1,6 +1,6 @@
 # 项目交接文档
 
-更新时间：2026-07-25
+更新时间：2026-07-27
 
 ## 新会话先读
 
@@ -186,6 +186,17 @@ Invoke-RestMethod http://127.0.0.1:8129/v1/models
 6. 本地接口已统一进入 `server/api/` 注册表；新增或调整接口时以 `server/api/routes/*.routes.js`、`/api/v1/_meta/routes` 和 `/api/v1/_meta/openapi.json` 为准，`HANDOFF.md` 只记录规则和入口，不继续维护接口清单。
 
 ## 最近已完成
+
+### 独立 Knowledge API Docker 服务
+
+- `server/knowledge-service.js` / `server/knowledge-http-server.js` 是独立知识库服务入口，只注册知识库及其 OnlyOffice 预览依赖，不加载 React 静态站、AI 业务、模板、草稿或系统设置路由。正式模式强制 API Key/Bearer Token 和独立 Capability Secret。
+- 容器设置 `KNOWLEDGE_DATABASE_PATH=/data/knowledge.sqlite` 与 `KNOWLEDGE_DATA_DIR=/data/knowledge` 后使用专用 SQLite、原文件目录和 ZVec generations；主项目未设置这些变量时继续使用原 `data/guangfa.sqlite`，现有数据不会自动迁移或被改写。
+- API 凭证 principal 支持 `projectIds`。`KNOWLEDGE_TENANT_MODE=required` 时，知识库列表、创建、上传、检索、删除、状态、原文件、PDF、表格、图片和 Chunk 证据均由服务端按项目校验；非管理员不能写全局知识库，不能依赖请求正文伪造 `projectId`。
+- 新增 `POST /api/v1/knowledge-bases/:kbId/documents/upload` multipart 上传和 `GET /api/v1/knowledge-documents/:documentId/status` 状态查询；原 Base64 JSON 上传继续兼容。multipart 仍受 120MiB 请求体上限、统一文件安全校验、`Idempotency-Key` 和内容哈希去重保护。
+- `docker/knowledge/` 提供 Node 22 镜像和 Compose，服务只绑定 `127.0.0.1:8787`，持久卷为 `guangfa-knowledge-data`。`npm run knowledge:docker` 会在被 Git 忽略的 `data/knowledge-service/` 生成强随机服务凭证和客户端配置，不向终端打印密钥；MinerU、Retrieval、OnlyOffice 通过 `host.docker.internal` 访问现有容器端口。
+- 图片 Caption 优先读取独立的 `KNOWLEDGE_GEMINI_*` / Secret file 配置，未设置时才回退主项目模型设置。详细调用和部署约定见 `docs/knowledge-service.md`。
+- 真实验收：Linux 容器内 ZVec V4 成功构建 1 个 Dense/Sparse/FTS 子块，精确查询命中、`indexVersion=4`、无降级；删除临时知识库后重建为空索引。容器重启后仍为 healthy，默认两个知识库、0 文档，端口仅监听回环。全量测试 128/128 和生产构建通过。
+- 当前主项目尚未切换到独立服务，也未自动复制现有 12 个知识库；这是有意避免新旧库双写和静默数据分叉。切换前必须单独完成一次性知识表/文件迁移和主项目服务端检索代理，不要只把浏览器请求地址改到 `8787`。
 
 ### 检索溯源按 MinerU 坐标高亮
 
