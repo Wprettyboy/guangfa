@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $name = "guangfa-onlyoffice"
-$image = "onlyoffice/documentserver:latest"
+$image = "onlyoffice/documentserver:9.4.0"
 
 function Test-DockerReady {
   try {
@@ -72,6 +72,7 @@ if ($onlyOfficeJwtSecret.Length -lt 32) {
 $officeAiBaseUrl = $localAiBaseUrl -replace "^http://(?:127\.0\.0\.1|localhost)(:\d+)", 'http://host.docker.internal$1'
 
 docker pull $image
+$desiredImageId = docker image inspect $image --format "{{.Id}}"
 
 $existing = docker ps -a --filter "name=^/$name$" --format "{{.Names}}"
 if ($existing -eq $name) {
@@ -81,11 +82,13 @@ if ($existing -eq $name) {
     -and $bindings[0].HostIp -in @("127.0.0.1", "::1") `
     -and $bindings[0].HostPort -eq "8080"
   $containerEnv = @($inspection[0].Config.Env)
+  $imageReferenceMatches = $inspection[0].Config.Image -eq $image
+  $imageIdMatches = $inspection[0].Image -eq $desiredImageId
   $jwtConfigMatches = $containerEnv -contains "JWT_ENABLED=true" `
     -and $containerEnv -contains "JWT_SECRET=$onlyOfficeJwtSecret" `
     -and $containerEnv -contains "JWT_HEADER=Authorization" `
     -and $containerEnv -contains "JWT_IN_BODY=true"
-  if (!$bindingIsLocal -or !$jwtConfigMatches) {
+  if (!$bindingIsLocal -or !$imageReferenceMatches -or !$imageIdMatches -or !$jwtConfigMatches) {
     docker rm -f $name | Out-Null
     $existing = ""
   }

@@ -53,6 +53,8 @@ npm run mineru
 - Embedding：`http://127.0.0.1:8000/v1`
 - MinerU：`http://127.0.0.1:8010`
 
+OnlyOffice Document Server 固定使用 `onlyoffice/documentserver:9.4.0`（容器内包版本 `9.4.0-129`）。`scripts/start-onlyoffice.ps1` 会同时校验容器的镜像标签、镜像 ID、本地端口绑定和 JWT 配置；任一不一致时重建容器，避免 `latest` 漂移或旧容器继续运行。
+
 常用检查：
 
 ```powershell
