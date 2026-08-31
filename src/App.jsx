@@ -1816,7 +1816,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
         const writeResult = await requestOnlyOfficeFillPlaceholderVariable({
           ...card,
           value: appliedFill.value,
-        });
+        }, { signal: options.signal });
         if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
         writeSucceeded = writeResult?.ok === true;
         if (!writeSucceeded) nextFill = markPlaceholderFillFailure(appliedFill, writeResult);
@@ -1913,7 +1913,7 @@ export default function App({ onResetApiCredential = null, principal = null }) {
         const writeResult = await requestOnlyOfficeFillComplexFillField({
           ...card,
           value: appliedFill.value,
-        });
+        }, { signal: options.signal });
         if (!isCurrentFillDocumentIdentity(fillIdentity)) return null;
         writeSucceeded = writeResult?.ok === true;
         if (!writeSucceeded) nextFill = markComplexFillFailure(appliedFill, writeResult);
@@ -2067,7 +2067,10 @@ export default function App({ onResetApiCredential = null, principal = null }) {
       let nextField = appliedField;
       let writeResult = null;
       if (hasOnlyOfficeFillValue(appliedField)) {
-        writeResult = await requestOnlyOfficeFillField(appliedField, { suppressPageSync: Boolean(options.suppressPageSync) });
+        writeResult = await requestOnlyOfficeFillField(appliedField, {
+          suppressPageSync: Boolean(options.suppressPageSync),
+          signal: options.signal,
+        });
         if (!isCurrentFillDocumentIdentity(fillIdentity)) return fieldsSnapshot;
         if (isOnlyOfficeFillFailure(writeResult)) {
           nextField = writeResult?.cleared === true

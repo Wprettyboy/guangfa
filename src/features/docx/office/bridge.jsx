@@ -33,6 +33,23 @@ let activeOnlyOfficeContainer = null;
 
 const complexFillWriteTransientErrorPattern = /复杂类填充书签接口不可用|书签定位接口不可用|未找到对应复杂类填充书签|未找到对应书签|未能选中对应复杂类填充书签范围|书签定位失败|OnlyOffice 当前光标位置不可用/;
 
+function createOnlyOfficeAbortError() {
+  const error = new Error("填充任务已停止。");
+  error.name = "AbortError";
+  error.code = "REQUEST_ABORTED";
+  return error;
+}
+
+function bindOnlyOfficeAbort(signal, onAbort) {
+  if (!signal) return () => {};
+  if (signal.aborted) {
+    onAbort();
+    return () => {};
+  }
+  signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
+}
+
 function OnlyOfficePreview({ config, annotationFields = [], fillFields = [], aiKnowledgeContext = null, trackRevisionsEnabled = false, mode, serverUrl, onReady, onDocumentReady, onError }) {
   const containerRef = useRef(null);
   const holderIdRef = useRef(`onlyoffice-${Math.random().toString(36).slice(2)}`);
@@ -403,16 +420,28 @@ function requestOnlyOfficeFillField(field, options = {}) {
   const requestId = options.requestId || `fill-${Date.now()}-${++onlyOfficeFillRequestSeq}`;
   const timeoutMs = Number(options.timeoutMs || 12000);
   const payload = buildOnlyOfficeFillFieldPayload([field])[0] || {};
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let done = false;
+    let timer = 0;
     let cancelPost = () => {};
+    let cancelAbort = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelAbort();
       cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
+    };
+    const abort = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      cancelAbort();
+      cancelPost();
+      window.removeEventListener("message", handleMessage);
+      reject(createOnlyOfficeAbortError());
     };
     const handleMessage = (event) => {
       const data = event.data || {};
@@ -420,7 +449,9 @@ function requestOnlyOfficeFillField(field, options = {}) {
       if (data.result?.requestId !== requestId) return;
       finish(data.result);
     };
-    const timer = window.setTimeout(() => finish({ ok: false, id: field.id, requestId, timeout: true, error: "OnlyOffice 未在限定时间内确认字段写入。" }), timeoutMs);
+    cancelAbort = bindOnlyOfficeAbort(options.signal, abort);
+    if (done) return;
+    timer = window.setTimeout(() => finish({ ok: false, id: field.id, requestId, timeout: true, error: "OnlyOffice 未在限定时间内确认字段写入。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
     cancelPost = postAllOnlyOfficeFrames({
       source: "guangfa-parent",
@@ -501,17 +532,29 @@ function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
     value: variableFill?.value || "",
     anchors,
   };
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let done = false;
     let firstFailure = null;
+    let timer = 0;
     let cancelPost = () => {};
+    let cancelAbort = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
+      cancelAbort();
       cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
+    };
+    const abort = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      cancelAbort();
+      cancelPost();
+      window.removeEventListener("message", handleMessage);
+      reject(createOnlyOfficeAbortError());
     };
     const handleMessage = (event) => {
       const data = event.data || {};
@@ -523,7 +566,9 @@ function requestOnlyOfficeFillPlaceholderVariable(variableFill, options = {}) {
       }
       firstFailure ||= data.result;
     };
-    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段填充命令。" }), timeoutMs);
+    cancelAbort = bindOnlyOfficeAbort(options.signal, abort);
+    if (done) return;
+    timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: "OnlyOffice 未响应自动字段填充命令。" }), timeoutMs);
     window.addEventListener("message", handleMessage);
     cancelPost = postAllOnlyOfficeFrames(message, 8);
   });
@@ -577,6 +622,7 @@ function requestOnlyOfficeFillComplexFillField(complexFill, options = {}) {
     {
       failureGraceMs: 4500,
       postAttempts: 18,
+      signal: options.signal,
       shouldDeferFailure: isTransientComplexFillWriteFailure,
     },
   );
@@ -775,19 +821,32 @@ function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeo
     requestId,
     ...payload,
   };
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let done = false;
     let firstFailure = null;
     let failureTimer = null;
+    let timer = 0;
     let cancelPost = () => {};
+    let cancelAbort = () => {};
     const finish = (result) => {
       if (done) return;
       done = true;
       window.clearTimeout(timer);
       if (failureTimer) window.clearTimeout(failureTimer);
+      cancelAbort();
       cancelPost();
       window.removeEventListener("message", handleMessage);
       resolve(result);
+    };
+    const abort = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      if (failureTimer) window.clearTimeout(failureTimer);
+      cancelAbort();
+      cancelPost();
+      window.removeEventListener("message", handleMessage);
+      reject(createOnlyOfficeAbortError());
     };
     const handleMessage = (event) => {
       const data = event.data || {};
@@ -806,7 +865,9 @@ function requestOnlyOfficeComplexFillAction(action, resultAction, payload, timeo
         failureTimer = window.setTimeout(() => finish(firstFailure), failureGraceMs);
       }
     };
-    const timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), timeoutMs);
+    cancelAbort = bindOnlyOfficeAbort(options.signal, abort);
+    if (done) return;
+    timer = window.setTimeout(() => finish(firstFailure || { ok: false, timeout: true, requestId, error: timeoutError }), timeoutMs);
     window.addEventListener("message", handleMessage);
     cancelPost = postAllOnlyOfficeFrames(message, postAttempts);
   });

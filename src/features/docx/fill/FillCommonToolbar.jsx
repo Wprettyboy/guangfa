@@ -185,8 +185,9 @@ function FillCommonToolbar({
           {generatingAll ? `一键填充${progressText}` : generateAllLabel}
         </button>
         {generatingAll ? (
-          <button className="icon-button quiet" type="button" onClick={onCancelGeneration} aria-label="取消填充" title="取消填充">
+          <button className="tool-button danger" type="button" onClick={onCancelGeneration} aria-label="停止生成" title="停止当前一键填充任务">
             <Ban size={17} />
+            停止生成
           </button>
         ) : null}
         <button className="tool-button solid" type="button" onClick={onExportDocx} disabled={!canExport || exportState === "exporting"}>
